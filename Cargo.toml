@@ -1,0 +1,19 @@
+[package]
+name = "pi-slideshow-rs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+fastrand = "2.0"
+libc = "0.2"
+image = "0.24"
+signal-hook = "0.3"
+notify = "6.0"
+memmap2 = "0.9"
+num_cpus = "1.16"
+rayon = "1.8"
+clap = { version = "4.0", features = ["derive"] }
+
+[[bin]]
+name = "pi-slideshow-rs"
+path = "src/main.rs"
