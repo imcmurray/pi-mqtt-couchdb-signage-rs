@@ -1,6 +1,6 @@
-# Digital Signage TV Endpoint 🦀📺
+# Pi MQTT CouchDB Signage 🦀📺
 
-A Rust application for Raspberry Pi that serves as a smart digital signage endpoint with MQTT remote control, HTTP API, and seamless integration with a central management server. Features stunning animated transitions and enterprise-grade reliability.
+A Rust-powered Raspberry Pi endpoint for digital signage systems. Part of a hybrid signage management platform featuring MQTT real-time control, CouchDB data synchronization, HTTP API, and professional animated transitions. Designed for enterprise digital signage networks with centralized management.
 
 ## ✨ Key Features
 
@@ -12,9 +12,10 @@ A Rust application for Raspberry Pi that serves as a smart digital signage endpo
 
 ### 🔌 Connectivity & Control
 - **MQTT Integration**: Real-time remote control via MQTT broker
+- **CouchDB Sync**: Direct database access for images and configurations
 - **HTTP REST API**: Local control interface on port 8080
-- **Management Server Sync**: Automatic image downloading and synchronization
-- **WebSocket Updates**: Live status reporting to central dashboard
+- **Hybrid Architecture**: Combines MQTT real-time control with CouchDB persistence
+- **Management Platform**: Seamless integration with Node.js management server
 
 ### 🏢 Enterprise Features
 - **Automatic TV ID Generation**: Hostname-based or UUID fallback identification
@@ -31,13 +32,13 @@ A Rust application for Raspberry Pi that serves as a smart digital signage endpo
 ./build.sh
 
 # Deploy to TV endpoint
-scp target/aarch64-unknown-linux-musl/release/pi-slideshow-rs pi@tv-lobby.local:~/
+scp target/aarch64-unknown-linux-musl/release/pi-mqtt-couchdb-signage-rs pi@tv-lobby.local:~/
 
-# Run with full management integration
+# Run with full CouchDB + MQTT integration
 ssh pi@tv-lobby.local
-sudo ./pi-slideshow-rs \
+sudo ./pi-mqtt-couchdb-signage-rs \
   --mqtt-broker mqtt://management-server:1883 \
-  --management-server http://management-server:3000 \
+  --couchdb-url http://management-server:5984 \
   --tv-id lobby-display \
   --image-dir /var/signage/images \
   --http-port 8080
@@ -51,16 +52,16 @@ cargo build
 cargo run -- --enable-mqtt false --image-dir ./sample-images
 
 # Or on Raspberry Pi without management server
-sudo ./pi-slideshow-rs --enable-mqtt false --delay 10 --transition 800
+sudo ./pi-mqtt-couchdb-signage-rs --enable-mqtt false --delay 10 --transition 800
 ```
 
 ## 🎛️ Command Line Interface
 
 ### Digital Signage Mode (Default)
 ```bash
-./pi-slideshow-rs \
+./pi-mqtt-couchdb-signage-rs \
   --mqtt-broker mqtt://server:1883 \      # MQTT broker URL
-  --management-server http://server:3000 \ # Management server URL
+  --couchdb-url http://server:5984 \       # CouchDB database URL
   --tv-id conference-room-a \              # Unique TV identifier
   --image-dir /var/signage \               # Local image storage
   --delay 30 \                             # Display duration (seconds)
@@ -70,7 +71,7 @@ sudo ./pi-slideshow-rs --enable-mqtt false --delay 10 --transition 800
 
 ### Standalone Mode
 ```bash
-./pi-slideshow-rs \
+./pi-mqtt-couchdb-signage-rs \
   --enable-mqtt false \                    # Disable MQTT
   --image-dir /home/pi/photos \            # Local image directory
   --delay 15 \                             # 15 second display
@@ -82,7 +83,7 @@ sudo ./pi-slideshow-rs --enable-mqtt false --delay 10 --transition 800
 | Option | Description | Default | Example |
 |--------|-------------|---------|---------|
 | `--mqtt-broker` | MQTT broker URL | `mqtt://localhost:1883` | `mqtt://signage.company.com:1883` |
-| `--management-server` | Management server URL | `http://localhost:3000` | `http://signage.company.com:3000` |
+| `--couchdb-url` | CouchDB database URL | `http://localhost:5984` | `http://signage.company.com:5984` |
 | `--tv-id` | Unique TV identifier | Auto-generated | `lobby-tv`, `room-101` |
 | `--image-dir` | Local image directory | `.` | `/var/signage/images` |
 | `--delay` | Display duration (seconds) | `30` | `15`, `60` |
@@ -300,12 +301,13 @@ cargo clippy
 ### Project Structure
 
 ```
-pi-slideshow-rs/
+pi-mqtt-couchdb-signage-rs/
 ├── Cargo.toml                 # Dependencies and build config
 ├── build.sh                   # Cross-compilation script
 ├── src/
 │   ├── main.rs               # Application entry point
 │   ├── mqtt_client.rs        # MQTT integration
+│   ├── couchdb_client.rs     # CouchDB database client
 │   ├── slideshow_controller.rs # Control logic and state
 │   └── http_server.rs        # REST API server
 ├── CLAUDE.md                 # AI development context
@@ -325,18 +327,18 @@ sudo apt update
 sudo apt install libc6
 
 # Copy binary
-scp target/aarch64-unknown-linux-musl/release/pi-slideshow-rs pi@pi:~/
+scp target/aarch64-unknown-linux-musl/release/pi-mqtt-couchdb-signage-rs pi@pi:~/
 
 # Create systemd service
 sudo tee /etc/systemd/system/signage.service > /dev/null <<EOF
 [Unit]
-Description=Digital Signage TV Endpoint
+Description=Pi MQTT CouchDB Signage Endpoint
 After=network.target
 
 [Service]
 Type=simple
 User=pi
-ExecStart=/home/pi/pi-slideshow-rs --mqtt-broker mqtt://server:1883 --management-server http://server:3000 --tv-id %H
+ExecStart=/home/pi/pi-mqtt-couchdb-signage-rs --mqtt-broker mqtt://server:1883 --couchdb-url http://server:5984 --tv-id %H
 Restart=always
 RestartSec=10
 
@@ -413,7 +415,7 @@ iostat -x 1
 
 ```bash
 # Enable verbose logging
-RUST_LOG=debug ./pi-slideshow-rs
+RUST_LOG=debug ./pi-mqtt-couchdb-signage-rs
 
 # Monitor MQTT traffic
 mosquitto_sub -h broker -t "signage/tv/+/+"
