@@ -978,6 +978,19 @@ fn draw_simple_char(
         'X' => vec!["█     █", " █   █ ", "  ███  ", " █   █ ", "█     █"],
         'Y' => vec!["█     █", " █   █ ", "  ███  ", "   █   ", "   █   "],
         'Z' => vec!["███████", "     █ ", "   ██  ", " ██    ", "███████"],
+        '0' => vec![" █████ ", "█     █", "█     █", "█     █", " █████ "],
+        '1' => vec!["   █   ", "  ██   ", "   █   ", "   █   ", "███████"],
+        '2' => vec![" █████ ", "      █", " █████ ", "█      ", "███████"],
+        '3' => vec![" █████ ", "      █", "  ████ ", "      █", " █████ "],
+        '4' => vec!["█     █", "█     █", "███████", "      █", "      █"],
+        '5' => vec!["███████", "█      ", "██████ ", "      █", "██████ "],
+        '6' => vec![" █████ ", "█      ", "██████ ", "█     █", " █████ "],
+        '7' => vec!["███████", "      █", "     █ ", "    █  ", "   █   "],
+        '8' => vec![" █████ ", "█     █", " █████ ", "█     █", " █████ "],
+        '9' => vec![" █████ ", "█     █", " ██████", "      █", " █████ "],
+        ':' => vec!["       ", "   █   ", "       ", "   █   ", "       "],
+        '-' => vec!["       ", "       ", "███████", "       ", "       "],
+        '_' => vec!["       ", "       ", "       ", "       ", "███████"],
         '!' => vec!["   █   ", "   █   ", "   █   ", "       ", "   █   "],
         '?' => vec![" █████ ", "█     █", "    ██ ", "       ", "   █   "],
         '.' => vec!["       ", "       ", "       ", "       ", "   █   "],
@@ -1312,26 +1325,45 @@ fn create_info_placeholder(tv_id: &str, ip_address: &str) -> RgbaImage {
     let center_x = FRAMEBUFFER_WIDTH / 2;
     let center_y = FRAMEBUFFER_HEIGHT / 2;
     
-    // Title
+    // Title - establish maximum width
     let title = "NO IMAGES AVAILABLE";
     let title_width = title.len() as u32 * (7 * char_size + char_size);
+    let max_chars_for_title_width = title.len();
     draw_text(&mut image, title, center_x - title_width / 2, center_y - line_height * 3, char_size, Rgba([255, 255, 255, 255]));
     
-    // TV ID
+    // TV ID - wrap if longer than title
     let tv_line = format!("TV ID: {}", tv_id);
-    let tv_width = tv_line.len() as u32 * (7 * char_size + char_size);
-    draw_text(&mut image, &tv_line, center_x - tv_width / 2, center_y - line_height, char_size, Rgba([255, 255, 0, 255]));
+    if tv_line.len() <= max_chars_for_title_width {
+        let tv_width = tv_line.len() as u32 * (7 * char_size + char_size);
+        draw_text(&mut image, &tv_line, center_x - tv_width / 2, center_y - line_height, char_size, Rgba([255, 255, 0, 255]));
+    } else {
+        let tv_lines = wrap_text(&tv_line, max_chars_for_title_width);
+        for (i, line) in tv_lines.iter().enumerate() {
+            let line_width = line.len() as u32 * (7 * char_size + char_size);
+            let y_pos = center_y - line_height + (i as u32 * (5 * char_size + char_size));
+            draw_text(&mut image, line, center_x - line_width / 2, y_pos, char_size, Rgba([255, 255, 0, 255]));
+        }
+    }
     
-    // IP Address  
+    // IP Address - wrap if longer than title  
     let ip_line = format!("IP: {}", ip_address);
-    let ip_width = ip_line.len() as u32 * (7 * char_size + char_size);
-    draw_text(&mut image, &ip_line, center_x - ip_width / 2, center_y, char_size, Rgba([0, 255, 255, 255]));
+    if ip_line.len() <= max_chars_for_title_width {
+        let ip_width = ip_line.len() as u32 * (7 * char_size + char_size);
+        draw_text(&mut image, &ip_line, center_x - ip_width / 2, center_y, char_size, Rgba([0, 255, 255, 255]));
+    } else {
+        let ip_lines = wrap_text(&ip_line, max_chars_for_title_width);
+        for (i, line) in ip_lines.iter().enumerate() {
+            let line_width = line.len() as u32 * (7 * char_size + char_size);
+            let y_pos = center_y + (i as u32 * (5 * char_size + char_size));
+            draw_text(&mut image, line, center_x - line_width / 2, y_pos, char_size, Rgba([0, 255, 255, 255]));
+        }
+    }
     
-    // Instructions - wrapped text
+    // Instructions - wrapped text using title width as constraint
     let instruction_char_size = char_size - 1;
-    let max_chars_per_line = (FRAMEBUFFER_WIDTH / (7 * instruction_char_size + instruction_char_size)) as usize;
+    let max_chars_for_instruction = (title_width / (7 * instruction_char_size + instruction_char_size)) as usize;
     let instruction = "Contact staff to assign images to this display";
-    let instruction_lines = wrap_text(instruction, max_chars_per_line);
+    let instruction_lines = wrap_text(instruction, max_chars_for_instruction);
     
     let total_instruction_height = instruction_lines.len() as u32 * (5 * instruction_char_size + instruction_char_size);
     let instruction_start_y = center_y + line_height * 2;

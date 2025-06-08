@@ -94,8 +94,12 @@ impl SlideshowController {
         // Load initial images from directory
         self.scan_local_images().await?;
         
-        // Set initial state
-        *self.state.write().await = SlideshowState::Playing;
+        // Check if we have images before setting to playing
+        if self.images.read().await.is_empty() {
+            *self.state.write().await = SlideshowState::Stopped;
+        } else {
+            *self.state.write().await = SlideshowState::Playing;
+        }
         
         // Fetch and apply configuration from CouchDB
         if let Some(ref couchdb_client) = *self.couchdb_client.read().await {
@@ -117,7 +121,16 @@ impl SlideshowController {
             println!("Continuing with local images only");
         }
 
-        println!("Slideshow controller initialized with {} images", self.images.read().await.len());
+        // Update state after fetching from CouchDB
+        let image_count = self.images.read().await.len();
+        if image_count == 0 {
+            *self.state.write().await = SlideshowState::Stopped;
+            println!("No images available - slideshow stopped");
+        } else {
+            *self.state.write().await = SlideshowState::Playing;
+            println!("Slideshow controller initialized with {} images", image_count);
+        }
+        
         Ok(())
     }
 
@@ -343,7 +356,15 @@ impl SlideshowController {
             *current_index = 0;
         }
 
-        println!("Image list updated: {} images", images.len());
+        // Update state based on image availability
+        if images.is_empty() {
+            *self.state.write().await = SlideshowState::Stopped;
+            println!("Image list updated: 0 images - slideshow stopped");
+        } else {
+            *self.state.write().await = SlideshowState::Playing;
+            println!("Image list updated: {} images - slideshow playing", images.len());
+        }
+        
         Ok(())
     }
 
