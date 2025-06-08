@@ -8,11 +8,11 @@ use crate::mqtt_client::SlideshowCommand;
 use crate::slideshow_controller::SlideshowController;
 
 #[derive(Debug)]
-struct ControlError(String);
+struct ControlError(#[allow(dead_code)] String);
 impl warp::reject::Reject for ControlError {}
 
 #[derive(Debug)]
-struct ConfigError(String);
+struct ConfigError(#[allow(dead_code)] String);
 impl warp::reject::Reject for ConfigError {}
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -58,6 +58,20 @@ pub async fn run_http_server(
         .and(warp::get())
         .map(|| {
             reply::json(&ApiResponse::success("healthy", "TV endpoint is running"))
+        });
+
+    // Version endpoint
+    let version = warp::path("version")
+        .and(warp::get())
+        .map(|| {
+            let version_info = serde_json::json!({
+                "version": env!("CARGO_PKG_VERSION"),
+                "commit_hash": env!("GIT_COMMIT_HASH"),
+                "commit_short": env!("GIT_COMMIT_SHORT"),
+                "branch": env!("GIT_BRANCH"),
+                "build_time": env!("BUILD_TIME")
+            });
+            reply::json(&ApiResponse::success(version_info, "Version information"))
         });
 
     // Status endpoint
@@ -116,7 +130,7 @@ pub async fn run_http_server(
 
     // Combine all routes
     let api = warp::path("api")
-        .and(health.or(status).or(control).or(config).or(images))
+        .and(health.or(version).or(status).or(control).or(config).or(images))
         .with(warp::cors().allow_any_origin().allow_headers(vec!["content-type"]).allow_methods(vec!["GET", "POST", "PUT"]));
 
     // Root endpoint
@@ -131,6 +145,7 @@ pub async fn run_http_server(
                 <p>API endpoints:</p>
                 <ul>
                 <li>GET /api/health - Health check</li>
+                <li>GET /api/version - Version information</li>
                 <li>GET /api/status - Get TV status</li>
                 <li>POST /api/control - Control slideshow (play, pause, next, previous)</li>
                 <li>PUT /api/config - Update configuration</li>

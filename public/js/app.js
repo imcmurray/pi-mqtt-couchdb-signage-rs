@@ -23,6 +23,7 @@ class DigitalSignageApp {
         this.loadInitialData();
         this.setupUploadArea();
         this.initTheme();
+        this.loadVersionInfo();
     }
 
     setupEventListeners() {
@@ -79,6 +80,11 @@ class DigitalSignageApp {
 
         document.getElementById('toggle-mqtt-pause').addEventListener('click', () => {
             this.toggleMqttPause();
+        });
+
+        // Version info click handler
+        document.getElementById('version-info').addEventListener('click', () => {
+            this.showVersionModal();
         });
     }
 
@@ -942,6 +948,184 @@ class DigitalSignageApp {
         } else {
             icon.className = 'fas fa-pause';
             button.innerHTML = '<i class="fas fa-pause"></i> Pause';
+        }
+    }
+
+    // Version Management
+    async loadVersionInfo() {
+        try {
+            // Get current git commit for the management server
+            const response = await fetch('/api/version');
+            if (response.ok) {
+                const versionData = await response.json();
+                this.serverVersion = versionData;
+                this.updateVersionDisplay(versionData.commit_short || 'unknown');
+            } else {
+                // Fallback to a simple display
+                this.updateVersionDisplay('unknown');
+            }
+        } catch (error) {
+            console.error('Error loading version info:', error);
+            this.updateVersionDisplay('error');
+        }
+    }
+
+    updateVersionDisplay(shortHash) {
+        const versionDisplay = document.getElementById('version-display');
+        versionDisplay.textContent = `v${shortHash}`;
+        versionDisplay.className = 'version-short';
+    }
+
+    showVersionModal() {
+        const modalHtml = `
+            <div id="version-modal" class="modal show">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>Version Information</h3>
+                        <button class="modal-close">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="version-section">
+                            <h4>Management Server</h4>
+                            <div class="version-details">
+                                <div class="version-item">
+                                    <strong>Commit:</strong> ${this.serverVersion?.commit_hash || 'unknown'}
+                                </div>
+                                <div class="version-item">
+                                    <strong>Branch:</strong> ${this.serverVersion?.branch || 'unknown'}
+                                </div>
+                                <div class="version-item">
+                                    <strong>Build Time:</strong> ${this.serverVersion?.build_time || 'unknown'}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="version-section">
+                            <h4>TV Endpoints</h4>
+                            <div id="tv-versions-list" class="tv-versions">
+                                <div class="loading">Loading TV version information...</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-actions">
+                        <button type="button" class="btn btn-secondary modal-cancel">Close</button>
+                        <button type="button" class="btn btn-primary" onclick="app.refreshTvVersions()">Refresh</button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Remove existing version modal if any
+        const existingModal = document.getElementById('version-modal');
+        if (existingModal) {
+            existingModal.remove();
+        }
+
+        // Add modal to body
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+        // Setup close handlers
+        const modal = document.getElementById('version-modal');
+        modal.querySelector('.modal-close').addEventListener('click', () => {
+            modal.remove();
+        });
+        modal.querySelector('.modal-cancel').addEventListener('click', () => {
+            modal.remove();
+        });
+
+        // Load TV versions
+        this.loadTvVersions();
+    }
+
+    async loadTvVersions() {
+        const tvVersionsList = document.getElementById('tv-versions-list');
+        if (!tvVersionsList) return;
+
+        try {
+            const versions = await Promise.all(
+                this.tvs.map(async (tv) => {
+                    try {
+                        const response = await fetch(`http://${tv.ip_address}:8080/api/version`, {
+                            method: 'GET',
+                            timeout: 5000
+                        });
+                        if (response.ok) {
+                            const versionData = await response.json();
+                            return {
+                                tv: tv,
+                                version: versionData.data,
+                                status: 'success'
+                            };
+                        } else {
+                            return {
+                                tv: tv,
+                                status: 'error',
+                                error: 'Failed to fetch'
+                            };
+                        }
+                    } catch (error) {
+                        return {
+                            tv: tv,
+                            status: 'error',
+                            error: error.message
+                        };
+                    }
+                })
+            );
+
+            // Update the display
+            tvVersionsList.innerHTML = '';
+            versions.forEach(result => {
+                const tvVersionDiv = document.createElement('div');
+                tvVersionDiv.className = 'tv-version-item';
+                
+                if (result.status === 'success') {
+                    tvVersionDiv.innerHTML = `
+                        <div class="tv-version-header">
+                            <strong>${result.tv.name}</strong>
+                            <span class="version-status success">Online</span>
+                        </div>
+                        <div class="tv-version-details">
+                            <div class="version-item">
+                                <strong>Version:</strong> ${result.version.version}
+                            </div>
+                            <div class="version-item">
+                                <strong>Commit:</strong> ${result.version.commit_short} (${result.version.commit_hash.substring(0, 12)}...)
+                            </div>
+                            <div class="version-item">
+                                <strong>Branch:</strong> ${result.version.branch}
+                            </div>
+                            <div class="version-item">
+                                <strong>Build Time:</strong> ${result.version.build_time}
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    tvVersionDiv.innerHTML = `
+                        <div class="tv-version-header">
+                            <strong>${result.tv.name}</strong>
+                            <span class="version-status error">Offline</span>
+                        </div>
+                        <div class="tv-version-details">
+                            <div class="version-item error">
+                                Unable to fetch version: ${result.error}
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                tvVersionsList.appendChild(tvVersionDiv);
+            });
+
+        } catch (error) {
+            tvVersionsList.innerHTML = `<div class="error">Error loading TV versions: ${error.message}</div>`;
+        }
+    }
+
+    refreshTvVersions() {
+        const tvVersionsList = document.getElementById('tv-versions-list');
+        if (tvVersionsList) {
+            tvVersionsList.innerHTML = '<div class="loading">Loading TV version information...</div>';
+            this.loadTvVersions();
         }
     }
 }
