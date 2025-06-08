@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  digital-signage-management:
+    build: .
+    container_name: digital-signage-management
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=dev
+      - PORT=3000
+      - COUCHDB_URL=http://192.168.1.215:5984
+      - MQTT_BROKER_URL=mqtt://192.168.1.215:1883
+    volumes:
+      - .:/app                 # Mount local code into container
+      - /app/node_modules      # Prevent overwriting node_modules
+      - ./uploads:/app/uploads
+      - ./logs:/app/logs
+    command: npm run dev       # Use dev mode (nodemon)
+    networks:
+      - signage-network
+
+networks:
+  signage-network:
+    driver: bridge
+
+volumes:
+  uploads:
+  logs:

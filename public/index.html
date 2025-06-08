@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Digital Signage Management</title>
+    <link rel="stylesheet" href="/public/css/style.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="app">
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <h2><i class="fas fa-tv"></i> Digital Signage</h2>
+            </div>
+            <ul class="nav-links">
+                <li><a href="#dashboard" class="nav-link active" data-section="dashboard">
+                    <i class="fas fa-tachometer-alt"></i> Dashboard
+                </a></li>
+                <li><a href="#tvs" class="nav-link" data-section="tvs">
+                    <i class="fas fa-desktop"></i> TV Management
+                </a></li>
+                <li><a href="#images" class="nav-link" data-section="images">
+                    <i class="fas fa-images"></i> Image Library
+                </a></li>
+                <li><a href="#upload" class="nav-link" data-section="upload">
+                    <i class="fas fa-upload"></i> Upload Images
+                </a></li>
+                <li><a href="#mqtt" class="nav-link" data-section="mqtt">
+                    <i class="fas fa-broadcast-tower"></i> MQTT Activity
+                </a></li>
+            </ul>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="top-bar">
+                <h1 id="page-title">Dashboard</h1>
+                <div class="header-controls">
+                    <div class="status-indicator">
+                        <span id="connection-status" class="status-dot offline"></span>
+                        <span id="connection-text">Connecting...</span>
+                    </div>
+                    <button id="theme-toggle" class="theme-toggle btn btn-secondary">
+                        <i class="fas fa-moon"></i>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Dashboard Section -->
+            <section id="dashboard-section" class="content-section active">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon"><i class="fas fa-tv"></i></div>
+                        <div class="stat-info">
+                            <h3 id="total-tvs">0</h3>
+                            <p>Total TVs</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon online"><i class="fas fa-signal"></i></div>
+                        <div class="stat-info">
+                            <h3 id="online-tvs">0</h3>
+                            <p>Online TVs</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon offline"><i class="fas fa-exclamation-triangle"></i></div>
+                        <div class="stat-info">
+                            <h3 id="offline-tvs">0</h3>
+                            <p>Offline TVs</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon"><i class="fas fa-images"></i></div>
+                        <div class="stat-info">
+                            <h3 id="total-images">0</h3>
+                            <p>Total Images</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tv-grid" id="tv-overview-grid">
+                    <!-- TV cards will be dynamically populated -->
+                </div>
+            </section>
+
+            <!-- TV Management Section -->
+            <section id="tvs-section" class="content-section">
+                <div class="section-header">
+                    <h2>TV Management</h2>
+                    <button class="btn btn-primary" id="add-tv-btn">
+                        <i class="fas fa-plus"></i> Add TV
+                    </button>
+                </div>
+                
+                <div class="tv-list" id="tv-list">
+                    <!-- TV management cards will be populated here -->
+                </div>
+            </section>
+
+            <!-- Image Library Section -->
+            <section id="images-section" class="content-section">
+                <div class="section-header">
+                    <h2>Image Library</h2>
+                    <div class="section-filters">
+                        <select id="filter-tv" class="form-select">
+                            <option value="">All TVs</option>
+                        </select>
+                        <input type="text" id="search-images" placeholder="Search images..." class="form-input">
+                    </div>
+                </div>
+                
+                <div class="image-grid" id="image-grid">
+                    <!-- Images will be populated here -->
+                </div>
+            </section>
+
+            <!-- Upload Section -->
+            <section id="upload-section" class="content-section">
+                <div class="upload-area" id="upload-area">
+                    <div class="upload-content">
+                        <i class="fas fa-cloud-upload-alt upload-icon"></i>
+                        <h3>Upload Images</h3>
+                        <p>Drag and drop images here or click to browse</p>
+                        <input type="file" id="file-input" multiple accept="image/*" hidden>
+                        <button class="btn btn-primary" id="browse-btn">Browse Files</button>
+                    </div>
+                </div>
+                
+                <div class="upload-queue" id="upload-queue" style="display: none;">
+                    <h3>Upload Queue</h3>
+                    <div class="queue-items" id="queue-items">
+                        <!-- Upload queue items will appear here -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- MQTT Activity Section -->
+            <section id="mqtt-section" class="content-section">
+                <div class="section-header">
+                    <h2>MQTT Activity Monitor</h2>
+                    <div class="mqtt-controls">
+                        <button class="btn btn-secondary" id="clear-mqtt-logs">
+                            <i class="fas fa-broom"></i> Clear Logs
+                        </button>
+                        <button class="btn btn-secondary" id="toggle-mqtt-pause">
+                            <i class="fas fa-pause"></i> Pause
+                        </button>
+                    </div>
+                </div>
+
+                <div class="mqtt-activity-container">
+                    <!-- General MQTT Activity -->
+                    <div class="mqtt-panel">
+                        <div class="mqtt-panel-header">
+                            <h3><i class="fas fa-globe"></i> General MQTT Activity</h3>
+                            <span class="message-count" id="general-count">0 messages</span>
+                        </div>
+                        <div class="mqtt-messages" id="general-mqtt-messages">
+                            <div class="no-messages">No MQTT activity detected</div>
+                        </div>
+                    </div>
+
+                    <!-- Digital Signage MQTT Activity -->
+                    <div class="mqtt-panel">
+                        <div class="mqtt-panel-header">
+                            <h3><i class="fas fa-tv"></i> Digital Signage MQTT</h3>
+                            <span class="message-count" id="signage-count">0 messages</span>
+                        </div>
+                        <div class="mqtt-messages" id="signage-mqtt-messages">
+                            <div class="no-messages">No digital signage MQTT activity detected</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Modals -->
+    <!-- Add/Edit TV Modal -->
+    <div id="tv-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="tv-modal-title">Add TV</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <form id="tv-form">
+                <div class="form-group">
+                    <label for="tv-name">TV Name</label>
+                    <input type="text" id="tv-name" class="form-input" required>
+                </div>
+                <div class="form-group">
+                    <label for="tv-location">Location</label>
+                    <input type="text" id="tv-location" class="form-input" required>
+                </div>
+                <div class="form-group">
+                    <label for="tv-ip">IP Address</label>
+                    <input type="text" id="tv-ip" class="form-input" required>
+                </div>
+                <div class="form-group">
+                    <label for="tv-transition">Transition Effect</label>
+                    <select id="tv-transition" class="form-select">
+                        <option value="fade">Fade</option>
+                        <option value="slide">Slide</option>
+                        <option value="wipe">Wipe</option>
+                        <option value="dissolve">Dissolve</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="tv-duration">Display Duration (ms)</label>
+                    <input type="number" id="tv-duration" class="form-input" min="1000" max="60000" value="5000">
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary modal-cancel">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save TV</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Image Assignment Modal -->
+    <div id="assignment-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Assign to TVs</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="tv-assignment-list" id="tv-assignment-list">
+                    <!-- TV checkboxes will be populated here -->
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary modal-cancel">Cancel</button>
+                <button type="button" class="btn btn-primary" id="confirm-assignment">Assign</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay" style="display: none;">
+        <div class="loading-spinner">
+            <i class="fas fa-spinner fa-spin"></i>
+            <p>Loading...</p>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <script src="/public/js/app.js"></script>
+</body>
+</html>

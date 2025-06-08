@@ -1,0 +1,17 @@
+node_modules/
+.env
+.env.local
+uploads/
+logs/
+*.log
+.DS_Store
+Thumbs.db
+coverage/
+.nyc_output/
+.vscode/
+.idea/
+
+# Rust
+pi-slideshow-rs/target/
+pi-slideshow-rs/Cargo.lock
+*.raw
