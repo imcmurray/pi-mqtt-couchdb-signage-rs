@@ -262,7 +262,7 @@ class MQTTService {
               console.log(`Updated TV ${tvData._id} status to offline`);
               
               // Notify WebSocket subscribers about status change
-              this.notifySubscribers(`signage/tv/${tvData._id.replace('tv_', '')}/status`, {
+              this.notifySubscribers(`signage/tv/${tvData.tv_id}/status`, {
                 status: 'offline',
                 timestamp: new Date().toISOString(),
                 reason: 'heartbeat_timeout'

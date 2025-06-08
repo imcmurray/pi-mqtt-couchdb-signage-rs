@@ -1204,6 +1204,17 @@ async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoRe
     
     let mut last_image_change = Instant::now();
     let mut running = true;
+    let mut has_displayed_placeholder = false;
+    
+    // Initial display check - show placeholder immediately if no images
+    if controller.get_image_count().await == 0 {
+        let tv_id = controller.get_tv_id().await;
+        let local_ip = get_local_ip().unwrap_or_else(|| "Unknown IP".to_string());
+        let placeholder = create_info_placeholder(&tv_id, &local_ip);
+        let _ = fb.display_image(&placeholder);
+        has_displayed_placeholder = true;
+        println!("Displayed 'No images available' placeholder on startup");
+    }
     
     while running {
         // Check if we should advance automatically based on controller state
@@ -1229,11 +1240,18 @@ async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoRe
                 }
             }
         } else if controller.get_image_count().await == 0 {
-            // No images available, show a placeholder with TV ID and IP
-            let tv_id = controller.get_tv_id().await;
-            let local_ip = get_local_ip().unwrap_or_else(|| "Unknown IP".to_string());
-            let placeholder = create_info_placeholder(&tv_id, &local_ip);
-            let _ = fb.display_image(&placeholder);
+            // No images available, show a placeholder with TV ID and IP (only if not already displayed)
+            if !has_displayed_placeholder {
+                let tv_id = controller.get_tv_id().await;
+                let local_ip = get_local_ip().unwrap_or_else(|| "Unknown IP".to_string());
+                let placeholder = create_info_placeholder(&tv_id, &local_ip);
+                let _ = fb.display_image(&placeholder);
+                has_displayed_placeholder = true;
+                println!("Displayed 'No images available' placeholder");
+            }
+        } else {
+            // Reset placeholder flag when images become available
+            has_displayed_placeholder = false;
         }
         
         // Handle filesystem events
@@ -1289,30 +1307,41 @@ fn create_info_placeholder(tv_id: &str, ip_address: &str) -> RgbaImage {
         *pixel = Rgba([25, 25, 50, 255]);
     }
     
-    let char_size = 10;
-    let line_height = char_size * 8;
+    let char_size = 8;
+    let line_height = char_size * 7; // Slightly tighter spacing
     let center_x = FRAMEBUFFER_WIDTH / 2;
     let center_y = FRAMEBUFFER_HEIGHT / 2;
     
     // Title
     let title = "NO IMAGES AVAILABLE";
-    let title_width = title.len() as u32 * (7 * char_size);
-    draw_text(&mut image, title, center_x - title_width / 2, center_y - line_height * 2, char_size, Rgba([255, 255, 255, 255]));
+    let title_width = title.len() as u32 * (7 * char_size + char_size);
+    draw_text(&mut image, title, center_x - title_width / 2, center_y - line_height * 3, char_size, Rgba([255, 255, 255, 255]));
     
     // TV ID
     let tv_line = format!("TV ID: {}", tv_id);
-    let tv_width = tv_line.len() as u32 * (7 * char_size);
-    draw_text(&mut image, &tv_line, center_x - tv_width / 2, center_y, char_size, Rgba([255, 255, 0, 255]));
+    let tv_width = tv_line.len() as u32 * (7 * char_size + char_size);
+    draw_text(&mut image, &tv_line, center_x - tv_width / 2, center_y - line_height, char_size, Rgba([255, 255, 0, 255]));
     
     // IP Address  
-    let ip_line = format!("IP Address: {}", ip_address);
-    let ip_width = ip_line.len() as u32 * (7 * char_size);
-    draw_text(&mut image, &ip_line, center_x - ip_width / 2, center_y + line_height, char_size, Rgba([0, 255, 255, 255]));
+    let ip_line = format!("IP: {}", ip_address);
+    let ip_width = ip_line.len() as u32 * (7 * char_size + char_size);
+    draw_text(&mut image, &ip_line, center_x - ip_width / 2, center_y, char_size, Rgba([0, 255, 255, 255]));
     
-    // Instructions
+    // Instructions - wrapped text
+    let instruction_char_size = char_size - 1;
+    let max_chars_per_line = (FRAMEBUFFER_WIDTH / (7 * instruction_char_size + instruction_char_size)) as usize;
     let instruction = "Contact staff to assign images to this display";
-    let inst_width = instruction.len() as u32 * (7 * (char_size - 2));
-    draw_text(&mut image, instruction, center_x - inst_width / 2, center_y + line_height * 3, char_size - 2, Rgba([200, 200, 200, 255]));
+    let instruction_lines = wrap_text(instruction, max_chars_per_line);
+    
+    let total_instruction_height = instruction_lines.len() as u32 * (5 * instruction_char_size + instruction_char_size);
+    let instruction_start_y = center_y + line_height * 2;
+    
+    for (line_idx, line) in instruction_lines.iter().enumerate() {
+        let line_width = line.len() as u32 * (7 * instruction_char_size + instruction_char_size);
+        let line_x = center_x - line_width / 2;
+        let line_y = instruction_start_y + (line_idx as u32 * (5 * instruction_char_size + instruction_char_size));
+        draw_text(&mut image, line, line_x, line_y, instruction_char_size, Rgba([200, 200, 200, 255]));
+    }
     
     image
 }

@@ -208,7 +208,11 @@ router.delete('/:id', async (req, res) => {
             extension: img.getFileExtension()
           }));
         
-        await mqttService.updateImages(tvId.replace('tv_', ''), updatedImageList);
+        // Get TV document to use its tv_id field for MQTT
+        const tv = await TV.findById(tvId);
+        if (tv) {
+          await mqttService.updateImages(tv.tv_id, updatedImageList);
+        }
       } catch (mqttError) {
         console.error(`Error updating TV ${tvId} after image deletion:`, mqttError);
       }
@@ -259,7 +263,11 @@ router.post('/:id/assign', async (req, res) => {
         }));
         
         if (mqttService.isConnected) {
-          await mqttService.updateImages(tvId.replace('tv_', ''), imageList);
+          // Get TV document to use its tv_id field for MQTT
+          const tv = await TV.findById(tvId);
+          if (tv) {
+            await mqttService.updateImages(tv.tv_id, imageList);
+          }
         } else {
           console.log(`MQTT not connected, skipping TV ${tvId} update`);
         }
@@ -301,7 +309,11 @@ router.delete('/:id/assign/:tvId', async (req, res) => {
         extension: img.getFileExtension()
       }));
       
-      await mqttService.updateImages(tvId.replace('tv_', ''), imageList);
+      // Get TV document to use its tv_id field for MQTT
+      const tv = await TV.findById(tvId);
+      if (tv) {
+        await mqttService.updateImages(tv.tv_id, imageList);
+      }
     } catch (mqttError) {
       console.error(`Error updating TV ${tvId}:`, mqttError);
     }
@@ -351,7 +363,11 @@ router.post('/reorder/:tvId', async (req, res) => {
         extension: img.getFileExtension()
       }));
       
-      await mqttService.updateImages(tvId.replace('tv_', ''), imageList);
+      // Get TV document to use its tv_id field for MQTT
+      const tv = await TV.findById(tvId);
+      if (tv) {
+        await mqttService.updateImages(tv.tv_id, imageList);
+      }
     } catch (mqttError) {
       console.error(`Error updating TV ${tvId} order:`, mqttError);
     }
@@ -399,7 +415,11 @@ router.post('/shuffle/:tvId', async (req, res) => {
         extension: img.getFileExtension()
       }));
       
-      await mqttService.updateImages(tvId.replace('tv_', ''), imageList);
+      // Get TV document to use its tv_id field for MQTT
+      const tv = await TV.findById(tvId);
+      if (tv) {
+        await mqttService.updateImages(tv.tv_id, imageList);
+      }
     } catch (mqttError) {
       console.error(`Error updating TV ${tvId} after shuffle:`, mqttError);
     }

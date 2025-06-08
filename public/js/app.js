@@ -228,7 +228,6 @@ class DigitalSignageApp {
             <div class="tv-card-header">
                 <div class="tv-card-title">${tv.name}</div>
                 <div class="tv-card-location">${tv.location}</div>
-                <div class="tv-card-id">TV ID: ${tv.tv_id}</div>
             </div>
             <div class="tv-card-body">
                 <div class="tv-status">
@@ -245,13 +244,13 @@ class DigitalSignageApp {
                     </div>
                 </div>
                 <div class="tv-controls">
-                    <button class="btn btn-sm btn-success" onclick="app.controlTv('${tv.id}', 'play')">
+                    <button class="btn btn-sm btn-success" onclick="app.controlTv('${tv._id}', 'play')">
                         <i class="fas fa-play"></i>
                     </button>
-                    <button class="btn btn-sm btn-warning" onclick="app.controlTv('${tv.id}', 'pause')">
+                    <button class="btn btn-sm btn-warning" onclick="app.controlTv('${tv._id}', 'pause')">
                         <i class="fas fa-pause"></i>
                     </button>
-                    <button class="btn btn-sm btn-primary" onclick="app.controlTv('${tv.id}', 'next')">
+                    <button class="btn btn-sm btn-primary" onclick="app.controlTv('${tv._id}', 'next')">
                         <i class="fas fa-forward"></i>
                     </button>
                 </div>
@@ -282,7 +281,7 @@ class DigitalSignageApp {
                 <div class="tv-name">${tv.name}</div>
                 <div class="tv-details">
                     <span class="status-dot ${statusClass}"></span>
-                    <strong>TV ID:</strong> ${tv.tv_id} • ${tv.location} • ${tv.ip_address} • ${tv.status}
+                    <strong>TV ID:</strong> ${tv.tv_id} • <strong>Location:</strong> ${tv.location} • <strong>IP:</strong> ${tv.ip_address} • <strong>Status:</strong> ${tv.status}
                 </div>
             </div>
             <div class="tv-actions">
@@ -753,7 +752,8 @@ class DigitalSignageApp {
     updateTvStatus(topic, payload) {
         // Update TV status in real-time based on MQTT messages
         const tvId = this.extractTvIdFromTopic(topic);
-        const tv = this.tvs.find(t => t._id === `tv_${tvId}`);
+        // Find TV by matching the tv_id field (without prefix) against the extracted MQTT topic ID
+        const tv = this.tvs.find(t => t.tv_id === tvId);
         
         if (tv) {
             if (topic.includes('/status')) {
@@ -773,7 +773,8 @@ class DigitalSignageApp {
     updateTvCurrentImage(topic, payload) {
         // Update TV current image in real-time when Pi changes images
         const tvId = this.extractTvIdFromTopic(topic);
-        const tv = this.tvs.find(t => t._id === `tv_${tvId}`);
+        // Find TV by matching the tv_id field (without prefix) against the extracted MQTT topic ID
+        const tv = this.tvs.find(t => t.tv_id === tvId);
         
         if (tv) {
             tv.current_image_id = payload.image_id;
