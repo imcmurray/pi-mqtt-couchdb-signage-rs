@@ -1229,8 +1229,10 @@ async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoRe
                 }
             }
         } else if controller.get_image_count().await == 0 {
-            // No images available, show a placeholder
-            let placeholder = create_placeholder_image("No images available");
+            // No images available, show a placeholder with TV ID and IP
+            let tv_id = controller.get_tv_id().await;
+            let local_ip = get_local_ip().unwrap_or_else(|| "Unknown IP".to_string());
+            let placeholder = create_info_placeholder(&tv_id, &local_ip);
             let _ = fb.display_image(&placeholder);
         }
         
@@ -1277,6 +1279,65 @@ fn create_placeholder_image(message: &str) -> RgbaImage {
     draw_text(&mut image, message, start_x, start_y, char_size, Rgba([255, 255, 255, 255]));
     
     image
+}
+
+fn create_info_placeholder(tv_id: &str, ip_address: &str) -> RgbaImage {
+    let mut image = RgbaImage::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT);
+    
+    // Fill with dark blue background
+    for pixel in image.pixels_mut() {
+        *pixel = Rgba([25, 25, 50, 255]);
+    }
+    
+    let char_size = 10;
+    let line_height = char_size * 8;
+    let center_x = FRAMEBUFFER_WIDTH / 2;
+    let center_y = FRAMEBUFFER_HEIGHT / 2;
+    
+    // Title
+    let title = "NO IMAGES AVAILABLE";
+    let title_width = title.len() as u32 * (7 * char_size);
+    draw_text(&mut image, title, center_x - title_width / 2, center_y - line_height * 2, char_size, Rgba([255, 255, 255, 255]));
+    
+    // TV ID
+    let tv_line = format!("TV ID: {}", tv_id);
+    let tv_width = tv_line.len() as u32 * (7 * char_size);
+    draw_text(&mut image, &tv_line, center_x - tv_width / 2, center_y, char_size, Rgba([255, 255, 0, 255]));
+    
+    // IP Address  
+    let ip_line = format!("IP Address: {}", ip_address);
+    let ip_width = ip_line.len() as u32 * (7 * char_size);
+    draw_text(&mut image, &ip_line, center_x - ip_width / 2, center_y + line_height, char_size, Rgba([0, 255, 255, 255]));
+    
+    // Instructions
+    let instruction = "Contact staff to assign images to this display";
+    let inst_width = instruction.len() as u32 * (7 * (char_size - 2));
+    draw_text(&mut image, instruction, center_x - inst_width / 2, center_y + line_height * 3, char_size - 2, Rgba([200, 200, 200, 255]));
+    
+    image
+}
+
+fn get_local_ip() -> Option<String> {
+    use std::net::TcpStream;
+    
+    // Try to connect to a remote address to determine local IP
+    if let Ok(stream) = TcpStream::connect("8.8.8.8:80") {
+        if let Ok(local_addr) = stream.local_addr() {
+            return Some(local_addr.ip().to_string());
+        }
+    }
+    
+    // Fallback: try to get IP from network interfaces
+    use std::process::Command;
+    if let Ok(output) = Command::new("hostname").arg("-I").output() {
+        if let Ok(ip_str) = String::from_utf8(output.stdout) {
+            if let Some(ip) = ip_str.split_whitespace().next() {
+                return Some(ip.to_string());
+            }
+        }
+    }
+    
+    None
 }
 
 fn run_original_slideshow(config: Config) -> IoResult<()> {

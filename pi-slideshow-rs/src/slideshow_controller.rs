@@ -454,6 +454,10 @@ impl SlideshowController {
         self.images.read().await.clone()
     }
 
+    pub async fn get_tv_id(&self) -> String {
+        self.config.read().await.tv_id.clone()
+    }
+
     pub async fn run_periodic_tasks(&self) {
         let mut interval = tokio::time::interval(Duration::from_secs(300)); // 5 minutes
         

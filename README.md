@@ -1,6 +1,14 @@
 # Digital Signage Management System 📺
 
-A complete digital signage solution featuring a Node.js management server with CouchDB backend and Rust-based Raspberry Pi TV endpoints. Perfect for managing multiple displays with centralized control, real-time monitoring, and dynamic content distribution.
+**Complete end-to-end digital signage solution** featuring a Node.js management server with CouchDB backend and Rust-based Raspberry Pi TV endpoints. This repository contains both the centralized management infrastructure and the high-performance TV endpoint software - everything needed to deploy a professional digital signage network.
+
+## 📦 What's Included
+
+- **🖥️ Management Server** (`/`) - Node.js/Express backend with web interface
+- **📺 TV Endpoint Software** (`pi-slideshow-rs/`) - Rust application for Raspberry Pi displays  
+- **🐳 Docker Deployment** - Complete containerized infrastructure
+- **⚙️ SystemD Integration** - Auto-startup configuration for Pi endpoints
+- **📖 Complete Documentation** - Setup guides, API references, troubleshooting
 
 ## 🏗️ Architecture Overview
 
@@ -234,22 +242,68 @@ npm run dev
 
 ### 📺 TV Endpoint Setup (Raspberry Pi)
 
+#### Option A: Automated Installation (Recommended)
+
 ```bash
-# Cross-compile for Raspberry Pi
+# 1. Cross-compile for Raspberry Pi
 cd pi-slideshow-rs
-chmod +x build.sh
 ./build.sh
 
-# Copy to Raspberry Pi
+# 2. Copy binary and installer to Pi
+scp target/aarch64-unknown-linux-musl/release/pi-slideshow-rs pi@tv-1.local:~/
+scp install.sh pi@tv-1.local:~/
+
+# 3. Run automated installation on Pi
+ssh pi@tv-1.local
+./install.sh --server 192.168.1.100 --tv-id lobby-tv
+
+# 4. Start the service
+sudo systemctl start signage
+```
+
+This automatically configures:
+- ✅ SystemD service with auto-restart
+- ✅ Proper file permissions and directories  
+- ✅ Video group membership for framebuffer access
+- ✅ Log rotation configuration
+- ✅ Resource limits and security settings
+
+#### Option B: Manual Setup
+
+```bash
+# Cross-compile and copy binary
+cd pi-slideshow-rs && ./build.sh
 scp target/aarch64-unknown-linux-musl/release/pi-slideshow-rs pi@tv-1.local:~/
 
-# Run on Pi with MQTT and CouchDB integration
+# Manual configuration on Pi
 ssh pi@tv-1.local
+sudo mkdir -p /var/signage/images
+sudo chown pi:pi /var/signage
+sudo usermod -a -G video pi
+
+# Run manually (testing)
 sudo ./pi-slideshow-rs \
-  --mqtt-broker mqtt://broker:1883 \
-  --couchdb-url http://couchdb:5984 \
+  --mqtt-broker mqtt://management-server:1883 \
+  --couchdb-url http://management-server:5984 \
   --tv-id lobby-tv \
   --image-dir /var/signage/images
+```
+
+#### Service Management
+
+```bash
+# Service control
+sudo systemctl start signage     # Start service
+sudo systemctl stop signage      # Stop service  
+sudo systemctl restart signage   # Restart service
+sudo systemctl status signage    # Check status
+
+# Monitoring
+sudo journalctl -u signage -f    # Follow logs
+curl http://localhost:8080/api/health  # Health check
+
+# Uninstall
+/home/pi/signage/uninstall.sh    # Remove everything
 ```
 
 ## 🎯 Use Cases
@@ -691,6 +745,8 @@ mosquitto_sub -h mqtt-broker -t "signage/tv/+/status"
 - **CouchDB Client**: Direct database access for images and configs
 - **HTTP Server**: Local REST API for direct control
 - **Framebuffer Rendering**: Hardware-accelerated display without X11
+- **SystemD Integration**: Auto-startup service configuration (`signage.service`)
+- **Automated Installer**: One-command deployment script (`install.sh`)
 
 See [`pi-slideshow-rs/README.md`](pi-slideshow-rs/README.md) for detailed TV endpoint documentation.
 

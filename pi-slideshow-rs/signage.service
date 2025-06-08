@@ -1,0 +1,46 @@
+[Unit]
+Description=Digital Signage TV Endpoint
+Documentation=https://github.com/your-repo/digital-signage-management
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=pi
+Group=video
+WorkingDirectory=/home/pi/signage
+ExecStart=/home/pi/signage/pi-slideshow-rs \
+  --mqtt-broker mqtt://management-server:1883 \
+  --couchdb-url http://management-server:5984 \
+  --tv-id %H \
+  --image-dir /var/signage/images \
+  --delay 30 \
+  --transition 1500 \
+  --http-port 8080
+
+# Restart configuration
+Restart=always
+RestartSec=10
+KillMode=mixed
+TimeoutStopSec=30
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/signage /tmp
+SupplementaryGroups=video
+
+# Environment
+Environment=RUST_LOG=info
+Environment=RUST_BACKTRACE=1
+
+# Resource limits
+MemoryMax=512M
+CPUQuota=80%
+
+[Install]
+WantedBy=multi-user.target
