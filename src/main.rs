@@ -12,6 +12,15 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
+use tokio::sync::{broadcast, mpsc as async_mpsc};
+
+mod mqtt_client;
+mod slideshow_controller;
+mod http_server;
+mod couchdb_client;
+
+use mqtt_client::{MqttClient, SlideshowCommand, TvStatus};
+use slideshow_controller::{ControllerConfig, SlideshowController};
 
 const FRAMEBUFFER_WIDTH: u32 = 1920;
 const FRAMEBUFFER_HEIGHT: u32 = 1080;
@@ -35,6 +44,34 @@ struct Args {
     /// Framebuffer device path
     #[arg(short, long, default_value = "/dev/fb0")]
     framebuffer: PathBuf,
+
+    /// MQTT broker URL
+    #[arg(long, default_value = "mqtt://192.168.1.215:1883")]
+    mqtt_broker: String,
+
+    /// CouchDB server URL
+    #[arg(long, default_value = "http://localhost:5984")]
+    couchdb_url: String,
+
+    /// CouchDB username (optional)
+    #[arg(long)]
+    couchdb_username: Option<String>,
+
+    /// CouchDB password (optional)
+    #[arg(long)]
+    couchdb_password: Option<String>,
+
+    /// TV ID (auto-generated if not provided)
+    #[arg(long)]
+    tv_id: Option<String>,
+
+    /// Enable MQTT remote control
+    #[arg(long, default_value_t = true)]
+    enable_mqtt: bool,
+
+    /// HTTP server port for local control
+    #[arg(long, default_value_t = 8080)]
+    http_port: u16,
 }
 
 struct Config {
@@ -347,7 +384,8 @@ impl ImageManager {
             let path = entry.path();
 
             if let Some(ext) = path.extension() {
-                if ext.to_string_lossy().to_lowercase() == "png" {
+                let ext_lower = ext.to_string_lossy().to_lowercase();
+                if ext_lower == "png" || ext_lower == "jpg" || ext_lower == "jpeg" {
                     self.images.push(path);
                 }
             }
@@ -839,7 +877,8 @@ fn setup_filesystem_watcher(tx: Sender<SlideshowEvent>, watch_dir: &Path) -> Not
                 if let EventKind::Create(_) = event.kind {
                     for path in event.paths {
                         if let Some(ext) = path.extension() {
-                            if ext.to_string_lossy().to_lowercase() == "png" {
+                            let ext_lower = ext.to_string_lossy().to_lowercase();
+                            if ext_lower == "png" || ext_lower == "jpg" || ext_lower == "jpeg" {
                                 // Normalize the path to remove any redundant components
                                 let normalized_path = if path.is_absolute() {
                                     // Convert absolute path to relative by getting just the filename
@@ -1044,15 +1083,203 @@ fn display_exit_joke(fb: &mut Framebuffer) -> IoResult<()> {
     Ok(())
 }
 
-fn main() -> IoResult<()> {
+#[tokio::main]
+async fn main() -> IoResult<()> {
     let args = Args::parse();
-    let config = Config::from(args);
     
-    println!("Raspberry Pi Image Slideshow with Transitions");
-    println!("Image directory: {}", config.image_dir.display());
-    println!("Display duration: {:?}", config.display_duration);
-    println!("Transition duration: {:?}", config.transition_duration);
-    println!("Framebuffer device: {}", config.framebuffer_path.display());
+    // Generate TV ID if not provided
+    let tv_id = args.tv_id.clone().unwrap_or_else(|| {
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(mqtt_client::generate_tv_id())
+        })
+    });
+    
+    println!("Raspberry Pi Image Slideshow with MQTT Control");
+    println!("TV ID: {}", tv_id);
+    println!("Image directory: {}", args.image_dir.display());
+    println!("Display duration: {} seconds", args.delay);
+    println!("Transition duration: {} ms", args.transition);
+    println!("Framebuffer device: {}", args.framebuffer.display());
+    println!("MQTT broker: {}", args.mqtt_broker);
+    println!("CouchDB server: {}", args.couchdb_url);
+    
+    if args.enable_mqtt {
+        run_with_mqtt_control(args, tv_id).await
+    } else {
+        run_standalone_mode(args).await
+    }
+}
+
+async fn run_with_mqtt_control(args: Args, tv_id: String) -> IoResult<()> {
+    // Create communication channels
+    let (command_sender, command_receiver) = broadcast::channel::<SlideshowCommand>(100);
+    let (status_sender, status_receiver) = async_mpsc::channel::<TvStatus>(100);
+    
+    // Create controller config
+    let controller_config = ControllerConfig {
+        image_dir: args.image_dir.clone(),
+        display_duration: Duration::from_secs(args.delay),
+        transition_duration: Duration::from_millis(args.transition),
+        couchdb_url: args.couchdb_url.clone(),
+        couchdb_username: args.couchdb_username.clone(),
+        couchdb_password: args.couchdb_password.clone(),
+        tv_id: tv_id.clone(),
+    };
+    
+    // Initialize slideshow controller
+    let mut controller = SlideshowController::new(
+        controller_config,
+        command_receiver,
+        status_sender,
+    );
+    
+    // Initialize MQTT client
+    let mqtt_client = MqttClient::new(
+        &args.mqtt_broker,
+        tv_id.clone(),
+        command_sender.clone(),
+        status_receiver,
+    ).await.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    
+    // Set MQTT client in controller  
+    controller.set_mqtt_client(mqtt_client.clone()).await;
+    
+    // Start heartbeat publisher
+    let mut heartbeat_client = mqtt_client.clone();
+    tokio::spawn(async move {
+        heartbeat_client.run_status_publisher().await;
+    });
+    
+    // Initialize controller
+    controller.initialize().await
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    
+    // Start command handler
+    let mut controller_clone = controller.clone();
+    tokio::spawn(async move {
+        controller_clone.run_command_handler().await;
+    });
+    
+    // Start periodic tasks
+    let controller_clone = controller.clone();
+    tokio::spawn(async move {
+        controller_clone.run_periodic_tasks().await;
+    });
+    
+    // Start HTTP server for local control
+    let http_controller = controller.clone();
+    let http_command_sender = command_sender.clone();
+    let http_port = args.http_port;
+    tokio::spawn(async move {
+        http_server::run_http_server(http_port, http_controller, http_command_sender).await;
+    });
+    
+    // Run main slideshow loop
+    run_slideshow_loop(args, controller).await
+}
+
+async fn run_standalone_mode(args: Args) -> IoResult<()> {
+    println!("Running in standalone mode (no MQTT control)");
+    
+    // Convert to legacy config and run original slideshow
+    let config = Config {
+        image_dir: args.image_dir,
+        display_duration: Duration::from_secs(args.delay),
+        transition_duration: Duration::from_millis(args.transition),
+        framebuffer_path: args.framebuffer,
+    };
+    
+    run_original_slideshow(config)
+}
+
+async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoResult<()> {
+    let mut fb = Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT, &args.framebuffer)?;
+    let image_manager = ImageManager::new();
+    
+    // Setup event handling for filesystem and signals
+    let (tx, rx): (Sender<SlideshowEvent>, Receiver<SlideshowEvent>) = mpsc::channel();
+    let _watcher = setup_filesystem_watcher(tx.clone(), &args.image_dir)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    let _signal_handle = setup_signal_handler(tx);
+    
+    let mut last_image_change = Instant::now();
+    let mut running = true;
+    
+    while running {
+        // Check if we should advance automatically based on controller state
+        if controller.should_advance_automatically(last_image_change).await {
+            controller.advance_to_next_image().await;
+            last_image_change = Instant::now();
+            controller.publish_current_image_to_mqtt().await;
+        }
+        
+        // Get current image from controller
+        if let Some(current_image_path) = controller.get_current_image_path().await {
+            if controller.is_playing().await {
+                // Load and display the current image
+                match image_manager.load_and_scale_image(&current_image_path) {
+                    Ok(image) => {
+                        if let Err(e) = fb.display_image(&image) {
+                            eprintln!("Failed to display image: {}", e);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to load image {}: {}", current_image_path.display(), e);
+                    }
+                }
+            }
+        } else if controller.get_image_count().await == 0 {
+            // No images available, show a placeholder
+            let placeholder = create_placeholder_image("No images available");
+            let _ = fb.display_image(&placeholder);
+        }
+        
+        // Handle filesystem events
+        match rx.recv_timeout(Duration::from_millis(100)) {
+            Ok(SlideshowEvent::NewImage(_)) => {
+                // Controller will handle image updates via MQTT from management server
+            }
+            Ok(SlideshowEvent::Shutdown) => {
+                running = false;
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                running = false;
+            }
+        }
+        
+        // Small delay to prevent busy waiting
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    
+    println!("Slideshow ended");
+    if let Err(e) = display_exit_joke(&mut fb) {
+        println!("Failed to display exit joke: {}", e);
+    }
+    
+    Ok(())
+}
+
+fn create_placeholder_image(message: &str) -> RgbaImage {
+    let mut image = RgbaImage::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT);
+    
+    // Fill with black background
+    for pixel in image.pixels_mut() {
+        *pixel = Rgba([0, 0, 0, 255]);
+    }
+    
+    // Add text
+    let char_size = 8;
+    let text_width = message.len() as u32 * (7 * char_size + char_size);
+    let start_x = (FRAMEBUFFER_WIDTH - text_width) / 2;
+    let start_y = (FRAMEBUFFER_HEIGHT - 5 * char_size) / 2;
+    
+    draw_text(&mut image, message, start_x, start_y, char_size, Rgba([255, 255, 255, 255]));
+    
+    image
+}
+
+fn run_original_slideshow(config: Config) -> IoResult<()> {
 
     let mut fb = Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT, &config.framebuffer_path)?;
     let mut image_manager = ImageManager::new();

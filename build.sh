@@ -22,6 +22,25 @@ linker = "aarch64-linux-gnu-gcc"
 EOF
 fi
 
+# Set OpenSSL environment variables for cross-compilation
+export OPENSSL_STATIC=1
+
+# Try to find OpenSSL using pkg-config, fallback to common paths
+if command -v pkg-config &> /dev/null && pkg-config --exists openssl; then
+    export OPENSSL_LIB_DIR=$(pkg-config --variable=libdir openssl)
+    export OPENSSL_INCLUDE_DIR=$(pkg-config --variable=includedir openssl)
+    echo "📦 Using OpenSSL from pkg-config: $OPENSSL_LIB_DIR"
+else
+    # Fallback paths for different distributions
+    if [ -d "/usr/lib" ]; then
+        export OPENSSL_LIB_DIR=/usr/lib
+    elif [ -d "/usr/lib/x86_64-linux-gnu" ]; then
+        export OPENSSL_LIB_DIR=/usr/lib/x86_64-linux-gnu
+    fi
+    export OPENSSL_INCLUDE_DIR=/usr/include
+    echo "📦 Using fallback OpenSSL paths: $OPENSSL_LIB_DIR"
+fi
+
 # Build statically linked ARM64 binary using musl
 cargo build --target aarch64-unknown-linux-musl --release
 
