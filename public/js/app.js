@@ -228,6 +228,7 @@ class DigitalSignageApp {
             <div class="tv-card-header">
                 <div class="tv-card-title">${tv.name}</div>
                 <div class="tv-card-location">${tv.location}</div>
+                <div class="tv-card-id">TV ID: ${tv.tv_id}</div>
             </div>
             <div class="tv-card-body">
                 <div class="tv-status">
@@ -281,7 +282,7 @@ class DigitalSignageApp {
                 <div class="tv-name">${tv.name}</div>
                 <div class="tv-details">
                     <span class="status-dot ${statusClass}"></span>
-                    ${tv.location} • ${tv.ip_address} • ${tv.status}
+                    <strong>TV ID:</strong> ${tv.tv_id} • ${tv.location} • ${tv.ip_address} • ${tv.status}
                 </div>
             </div>
             <div class="tv-actions">
@@ -394,6 +395,7 @@ class DigitalSignageApp {
         if (tv) {
             title.textContent = 'Edit TV';
             document.getElementById('tv-name').value = tv.name;
+            document.getElementById('tv-id').value = tv.tv_id || '';
             document.getElementById('tv-location').value = tv.location;
             document.getElementById('tv-ip').value = tv.ip_address;
             document.getElementById('tv-transition').value = tv.config?.transition_effect || 'fade';
@@ -416,6 +418,7 @@ class DigitalSignageApp {
         
         const tvData = {
             name: document.getElementById('tv-name').value,
+            tv_id: document.getElementById('tv-id').value,
             location: document.getElementById('tv-location').value,
             ip_address: document.getElementById('tv-ip').value,
             config: {

@@ -9,6 +9,7 @@ class TV {
     this.name = data.name;
     this.location = data.location;
     this.ip_address = data.ip_address;
+    this.tv_id = data.tv_id || data.name?.toLowerCase().replace(/[^a-z0-9]/g, '-') || 'unknown-tv';
     this.status = data.status || 'offline';
     this.current_image = data.current_image || null;
     this.last_heartbeat = data.last_heartbeat || null;

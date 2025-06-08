@@ -249,6 +249,13 @@ body {
     opacity: 0.9;
 }
 
+.tv-card-id {
+    font-size: 0.8rem;
+    color: #007bff;
+    font-weight: 500;
+    margin-top: 0.25rem;
+}
+
 .tv-card-body {
     padding: 1rem;
 }
@@ -540,6 +547,13 @@ body {
 .form-select:focus {
     outline: none;
     border-color: #3498db;
+}
+
+.form-help {
+    font-size: 0.8rem;
+    color: #6c757d;
+    margin-top: 0.25rem;
+    display: block;
 }
 
 /* Modals */
