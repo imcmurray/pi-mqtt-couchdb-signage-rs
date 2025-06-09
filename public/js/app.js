@@ -224,8 +224,9 @@ class DigitalSignageApp {
         const statusClass = tv.status === 'online' ? 'online' : 'offline';
         const statusIcon = tv.status === 'online' ? 'fa-circle' : 'fa-exclamation-triangle';
         
-        // Get current image for thumbnail
-        const currentImage = tv.current_image_id ? this.images.find(img => img._id === tv.current_image_id) : null;
+        // Get current image for thumbnail - check both field names for compatibility
+        const currentImageId = tv.current_image_id || tv.current_image;
+        const currentImage = currentImageId ? this.images.find(img => img._id === currentImageId) : null;
         const thumbnailHtml = currentImage ? 
             `<img src="/api/images/${currentImage._id}/attachment" alt="${currentImage.original_name}" class="tv-current-thumbnail">` :
             `<div class="tv-no-image"><i class="fas fa-image"></i></div>`;
@@ -274,6 +275,13 @@ class DigitalSignageApp {
             const item = this.createTvListItem(tv);
             list.appendChild(item);
         });
+        
+        // Load version info for all TVs after DOM is updated
+        setTimeout(() => {
+            this.tvs.forEach(tv => {
+                this.loadTvVersionInfo(tv);
+            });
+        }, 100);
     }
 
     createTvListItem(tv) {
@@ -282,41 +290,69 @@ class DigitalSignageApp {
         
         const statusClass = tv.status === 'online' ? 'online' : 'offline';
         
+        // Get current image for thumbnail - check both field names for compatibility
+        const currentImageId = tv.current_image_id || tv.current_image;
+        const currentImage = currentImageId ? this.images.find(img => img._id === currentImageId) : null;
+        const thumbnailHtml = currentImage ? 
+            `<img src="/api/images/${currentImage._id}/attachment" alt="${currentImage.original_name}" class="tv-thumbnail">` :
+            `<div class="tv-thumbnail-placeholder"><i class="fas fa-image"></i><span>No Image</span></div>`;
+        
         item.innerHTML = `
-            <div class="tv-info">
-                <div class="tv-name">${tv.name}</div>
-                <div class="tv-details">
-                    <span class="status-dot ${statusClass}"></span>
-                    <strong>Location:</strong> ${tv.location} • <strong>IP:</strong> ${tv.ip_address} • <strong>TV ID:</strong> ${tv._id.replace('tv_', '')} • <strong>Status:</strong> ${tv.status}
+            <div class="tv-card-layout">
+                <div class="tv-thumbnail-container">
+                    ${thumbnailHtml}
                 </div>
-                <div class="tv-version-info" id="tv-version-${tv._id}">
-                    <strong>Version:</strong> <span class="version-loading">Loading...</span>
+                <div class="tv-info">
+                    <div class="tv-name">${tv.name}</div>
+                    <div class="tv-details-grid">
+                        <div class="tv-detail-item">
+                            <span class="detail-label">Location:</span>
+                            <span class="detail-value">${tv.location}</span>
+                        </div>
+                        <div class="tv-detail-item">
+                            <span class="detail-label">IP Address:</span>
+                            <span class="detail-value">${tv.ip_address}</span>
+                        </div>
+                        <div class="tv-detail-item">
+                            <span class="detail-label">TV ID:</span>
+                            <span class="detail-value">${tv._id.replace('tv_', '')}</span>
+                        </div>
+                        <div class="tv-detail-item">
+                            <span class="detail-label">Status:</span>
+                            <span class="detail-value">
+                                <span class="status-dot ${statusClass}"></span>
+                                ${tv.status}
+                            </span>
+                        </div>
+                    </div>
+                    <div class="tv-version-info" id="tv-version-${tv._id}">
+                        <span class="detail-label">Version:</span>
+                        <span class="version-loading">Loading...</span>
+                    </div>
+                    <div class="tv-current-image" id="tv-current-${tv._id}">
+                        <span class="detail-label">Current Image:</span>
+                        <span class="detail-value">${currentImage ? currentImage.original_name : 'None'}</span>
+                    </div>
                 </div>
-            </div>
-            <div class="tv-actions">
-                <button class="btn btn-sm btn-primary" onclick="app.editTv('${tv._id}')">
-                    <i class="fas fa-edit"></i> Edit
-                </button>
-                <button class="btn btn-sm btn-success" onclick="app.controlTv('${tv._id}', 'play')">
-                    <i class="fas fa-play"></i>
-                </button>
-                <button class="btn btn-sm btn-warning" onclick="app.controlTv('${tv._id}', 'pause')">
-                    <i class="fas fa-pause"></i>
-                </button>
-                <button class="btn btn-sm btn-secondary" onclick="app.shuffleTvImages('${tv._id}')">
-                    <i class="fas fa-random"></i> Shuffle
-                </button>
-                <button class="btn btn-sm btn-info" onclick="app.showTvVersionDetails('${tv._id}')">
-                    <i class="fas fa-info-circle"></i> Version
-                </button>
-                <button class="btn btn-sm btn-danger" onclick="app.deleteTv('${tv._id}')">
-                    <i class="fas fa-trash"></i>
-                </button>
+                <div class="tv-actions">
+                    <button class="btn btn-sm btn-primary" onclick="app.editTv('${tv._id}')">
+                        <i class="fas fa-edit"></i> Edit
+                    </button>
+                    <button class="btn btn-sm btn-success" onclick="app.controlTv('${tv._id}', 'play')">
+                        <i class="fas fa-play"></i>
+                    </button>
+                    <button class="btn btn-sm btn-warning" onclick="app.controlTv('${tv._id}', 'pause')">
+                        <i class="fas fa-pause"></i>
+                    </button>
+                    <button class="btn btn-sm btn-secondary" onclick="app.shuffleTvImages('${tv._id}')">
+                        <i class="fas fa-random"></i> Shuffle
+                    </button>
+                    <button class="btn btn-sm btn-danger" onclick="app.deleteTv('${tv._id}')">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
             </div>
         `;
-        
-        // Load version info for this TV
-        this.loadTvVersionInfo(tv);
         
         return item;
     }
@@ -790,11 +826,31 @@ class DigitalSignageApp {
         const tv = this.tvs.find(t => t._id.replace('tv_', '') === tvId);
         
         if (tv) {
+            // Update both field names for compatibility
             tv.current_image_id = payload.image_id;
+            tv.current_image = payload.image_id;
             
-            // Refresh TV displays to show new thumbnail
+            // Update current image display in TV card
+            const currentImageElement = document.getElementById(`tv-current-${tv._id}`);
+            if (currentImageElement) {
+                const currentImage = payload.image_id ? this.images.find(img => img._id === payload.image_id) : null;
+                currentImageElement.innerHTML = `
+                    <span class="detail-label">Current Image:</span>
+                    <span class="detail-value">${currentImage ? currentImage.original_name : 'None'}</span>
+                `;
+            }
+            
+            // Update thumbnail using same logic as dashboard
+            const thumbnailContainer = document.querySelector(`#tv-version-${tv._id}`).closest('.tv-card-layout').querySelector('.tv-thumbnail-container');
+            if (thumbnailContainer) {
+                const currentImage = payload.image_id ? this.images.find(img => img._id === payload.image_id) : null;
+                thumbnailContainer.innerHTML = currentImage ? 
+                    `<img src="/api/images/${currentImage._id}/attachment" alt="${currentImage.original_name}" class="tv-thumbnail">` :
+                    `<div class="tv-thumbnail-placeholder"><i class="fas fa-image"></i><span>No Image</span></div>`;
+            }
+            
+            // Also refresh dashboard overview
             this.updateTvOverview(this.tvs);
-            this.updateTvList();
         }
     }
 
@@ -1146,23 +1202,37 @@ class DigitalSignageApp {
         if (!versionElement) return;
 
         try {
+            // Use a proper timeout implementation with AbortController
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
+            
             const response = await fetch(`http://${tv.ip_address}:8080/api/version`, {
                 method: 'GET',
-                timeout: 3000
+                signal: controller.signal,
+                headers: {
+                    'Accept': 'application/json',
+                }
             });
+            
+            clearTimeout(timeoutId);
             
             if (response.ok) {
                 const versionData = await response.json();
                 const version = versionData.data;
-                versionElement.innerHTML = `<strong>Version:</strong> ${version.version} (${version.commit_short})`;
+                versionElement.innerHTML = `<span class="detail-label">Version:</span> <span class="detail-value">${version.version} (${version.commit_short})</span>`;
                 
                 // Store version data for detailed view
                 tv.versionInfo = version;
             } else {
-                versionElement.innerHTML = `<strong>Version:</strong> <span class="version-error">Offline</span>`;
+                versionElement.innerHTML = `<span class="detail-label">Version:</span> <span class="detail-value version-error">Offline</span>`;
             }
         } catch (error) {
-            versionElement.innerHTML = `<strong>Version:</strong> <span class="version-error">Unavailable</span>`;
+            if (error.name === 'AbortError') {
+                versionElement.innerHTML = `<span class="detail-label">Version:</span> <span class="detail-value version-error">Timeout</span>`;
+            } else {
+                versionElement.innerHTML = `<span class="detail-label">Version:</span> <span class="detail-value version-error">Unavailable</span>`;
+            }
+            console.log(`Version fetch failed for TV ${tv.name} (${tv.ip_address}):`, error.message);
         }
     }
 

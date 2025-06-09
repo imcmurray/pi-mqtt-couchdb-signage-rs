@@ -20,6 +20,8 @@ Our system uses a **dual-protocol architecture** optimized for different data ty
 - **Benefits**: Low latency, minimal bandwidth, automatic reconnection, QoS levels
 - **Access**: Publish/subscribe through central message broker
 
+- Realtime values should use MQTT and persistent storage will use CouchDB
+
 ### System Components
 - **TV Endpoints**: Raspberry Pi 4 running pi-slideshow-rs with dual CouchDB+MQTT connections
 - **Backend**: Node.js/Express with CouchDB database and MQTT broker integration  
@@ -133,3 +135,6 @@ Each TV operates with hybrid connectivity for optimal performance:
 - **ws**: WebSocket support
 - **joi**: Input validation
 - **helmet**: Security headers
+
+## Development Best Practices
+- Don't duplicate code and create duplicate functions that do the same thing with a different name.

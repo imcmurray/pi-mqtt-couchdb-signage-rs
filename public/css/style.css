@@ -131,6 +131,142 @@ body {
     color: #721c24;
 }
 
+/* TV Management Card Layout */
+.tv-card-layout {
+    display: flex;
+    gap: 1rem;
+    align-items: flex-start;
+}
+
+.tv-thumbnail-container {
+    flex-shrink: 0;
+    width: 120px;
+    height: 90px;
+}
+
+.tv-thumbnail {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 4px;
+    border: 1px solid #ddd;
+}
+
+.tv-thumbnail-placeholder {
+    width: 100%;
+    height: 100%;
+    background: #f8f9fa;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: #666;
+    font-size: 0.8rem;
+}
+
+.tv-thumbnail-placeholder i {
+    font-size: 1.5rem;
+    margin-bottom: 0.25rem;
+}
+
+.tv-details-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+    margin: 0.5rem 0;
+}
+
+.tv-detail-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+}
+
+.detail-label {
+    font-weight: bold;
+    font-size: 0.85rem;
+    color: #666;
+}
+
+.detail-value {
+    font-size: 0.9rem;
+    color: #333;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.tv-version-info,
+.tv-current-image {
+    margin-top: 0.5rem;
+    font-size: 0.9rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+}
+
+.tv-list-item {
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.tv-list-item:hover {
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+
+/* TV Management 2-Column Layout */
+.tv-list {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+
+/* Dark Mode Support for TV Cards */
+.dark-theme .tv-list-item {
+    background: #2d3748;
+    border-color: #4a5568;
+    color: #e2e8f0;
+}
+
+.dark-theme .tv-list-item:hover {
+    box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+}
+
+.dark-theme .detail-label {
+    color: #a0aec0;
+}
+
+.dark-theme .detail-value {
+    color: #e2e8f0;
+}
+
+.dark-theme .tv-thumbnail {
+    border-color: #4a5568;
+}
+
+.dark-theme .tv-thumbnail-placeholder {
+    background: #1a202c;
+    border-color: #4a5568;
+    color: #a0aec0;
+}
+
+.dark-theme .version-error {
+    color: #fc8181;
+}
+
+/* Responsive - Single column on smaller screens */
+@media (max-width: 1200px) {
+    .tv-list {
+        grid-template-columns: 1fr;
+    }
+}
+
 .nav-link {
     display: flex;
     align-items: center;
