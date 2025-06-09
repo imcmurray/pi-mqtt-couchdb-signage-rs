@@ -79,16 +79,29 @@ impl SlideshowController {
     }
 
     pub async fn initialize(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        // Initialize CouchDB client
+        // Try to initialize CouchDB client with timeout - but continue if it fails
         let config = self.config.read().await;
-        let couchdb_client = CouchDbClient::new(
-            &config.couchdb_url,
-            config.couchdb_username.as_deref(),
-            config.couchdb_password.as_deref(),
-        ).await?;
-        
-        // Set CouchDB client
-        self.set_couchdb_client(couchdb_client).await;
+        match tokio::time::timeout(
+            Duration::from_secs(5),
+            CouchDbClient::new(
+                &config.couchdb_url,
+                config.couchdb_username.as_deref(),
+                config.couchdb_password.as_deref(),
+            )
+        ).await {
+            Ok(Ok(couchdb_client)) => {
+                println!("Connected to CouchDB at {}", config.couchdb_url);
+                self.set_couchdb_client(couchdb_client).await;
+            }
+            Ok(Err(e)) => {
+                eprintln!("Warning: Failed to connect to CouchDB: {}", e);
+                println!("Continuing in local-only mode");
+            }
+            Err(_) => {
+                eprintln!("Warning: CouchDB connection timeout after 5 seconds");
+                println!("Continuing in local-only mode");
+            }
+        }
         drop(config);
         
         // Load initial images from directory

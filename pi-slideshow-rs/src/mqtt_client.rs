@@ -91,6 +91,8 @@ impl MqttClient {
         let mut mqttoptions = MqttOptions::new(&tv_id, &hostname, port);
         mqttoptions.set_keep_alive(Duration::from_secs(60));
         mqttoptions.set_clean_session(true);
+        // Add connection timeout for faster failure (if method exists)
+        // Note: Some versions of rumqttc may not have this method
 
         let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
         

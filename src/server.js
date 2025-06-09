@@ -36,6 +36,10 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 // Static files
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 app.use('/public', express.static(path.join(__dirname, '../public')));
+// Serve CSS and JS files directly from root paths for easier HTML references
+app.use('/css', express.static(path.join(__dirname, '../public/css')));
+app.use('/js', express.static(path.join(__dirname, '../public/js')));
+app.use('/images', express.static(path.join(__dirname, '../public/images')));
 
 // Routes
 app.use('/api/tvs', tvRoutes);
@@ -50,6 +54,35 @@ app.get('/api/health', (req, res) => {
     mqtt_connected: mqttService.isConnected,
     uptime: process.uptime()
   });
+});
+
+// Version endpoint
+app.get('/api/version', (req, res) => {
+  const { execSync } = require('child_process');
+  
+  try {
+    const commitHash = execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim();
+    const commitShort = execSync('git rev-parse --short HEAD', { encoding: 'utf8' }).trim();
+    const branch = execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf8' }).trim();
+    const buildTime = new Date().toISOString();
+    
+    res.json({
+      commit_hash: commitHash,
+      commit_short: commitShort,
+      branch: branch,
+      build_time: buildTime,
+      version: `${commitShort}-${branch}`
+    });
+  } catch (error) {
+    console.error('Error getting version info:', error);
+    res.json({
+      commit_hash: 'unknown',
+      commit_short: 'unknown',
+      branch: 'unknown',
+      build_time: new Date().toISOString(),
+      version: 'unknown'
+    });
+  }
 });
 
 // Serve admin panel
@@ -155,7 +188,7 @@ async function startServer() {
 
     // Start HTTP server
     const PORT = process.env.PORT || 3000;
-    server.listen(PORT, () => {
+    server.listen(PORT, '0.0.0.0', () => {
       console.log(`Digital Signage Management Server running on port ${PORT}`);
       console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
       console.log(`WebSocket server running on the same port`);

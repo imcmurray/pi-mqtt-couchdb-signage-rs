@@ -1092,7 +1092,32 @@ fn display_exit_joke(fb: &mut Framebuffer) -> IoResult<()> {
 
     fb.display_image(&exit_image)?;
     println!("Displayed joke on framebuffer: {}", joke);
-    std::thread::sleep(Duration::from_secs(4)); // Show joke longer so people can read it
+    
+    // Check for second SIGINT during sleep to allow immediate exit
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    
+    let interrupted = Arc::new(AtomicBool::new(false));
+    let interrupted_clone = interrupted.clone();
+    
+    // Set up a second signal handler for immediate exit
+    let _handle = thread::spawn(move || {
+        let mut signals = Signals::new(&[SIGINT]).unwrap();
+        for _sig in signals.forever() {
+            println!("Second SIGINT received, exiting immediately");
+            interrupted_clone.store(true, Ordering::Relaxed);
+            std::process::exit(0); // Force immediate exit
+        }
+    });
+    
+    // Sleep in small increments, checking for interruption
+    for _ in 0..20 { // 20 * 200ms = 4 seconds
+        if interrupted.load(Ordering::Relaxed) {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    
     Ok(())
 }
 
@@ -1146,25 +1171,41 @@ async fn run_with_mqtt_control(args: Args, tv_id: String) -> IoResult<()> {
         status_sender,
     );
     
-    // Initialize MQTT client
-    let mqtt_client = MqttClient::new(
-        &args.mqtt_broker,
-        tv_id.clone(),
-        command_sender.clone(),
-        status_receiver,
-    ).await.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    // Try to initialize MQTT client with timeout - but continue if it fails
+    match tokio::time::timeout(
+        Duration::from_secs(5),
+        MqttClient::new(
+            &args.mqtt_broker,
+            tv_id.clone(),
+            command_sender.clone(),
+            status_receiver,
+        )
+    ).await {
+        Ok(Ok(mqtt_client)) => {
+            println!("Connected to MQTT broker at {}", args.mqtt_broker);
+            controller.set_mqtt_client(mqtt_client.clone()).await;
+            
+            // Start heartbeat publisher only if MQTT connected
+            let mut heartbeat_client = mqtt_client.clone();
+            tokio::spawn(async move {
+                heartbeat_client.run_status_publisher().await;
+            });
+        }
+        Ok(Err(e)) => {
+            eprintln!("Warning: Failed to connect to MQTT broker: {}", e);
+            println!("Continuing without MQTT remote control");
+        }
+        Err(_) => {
+            eprintln!("Warning: MQTT connection timeout after 5 seconds");
+            println!("Continuing without MQTT remote control");
+        }
+    }
     
-    // Set MQTT client in controller  
-    controller.set_mqtt_client(mqtt_client.clone()).await;
-    
-    // Start heartbeat publisher
-    let mut heartbeat_client = mqtt_client.clone();
-    tokio::spawn(async move {
-        heartbeat_client.run_status_publisher().await;
-    });
-    
-    // Initialize controller
-    controller.initialize().await
+    // Initialize controller with timeout
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        controller.initialize()
+    ).await.map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "Controller initialization timeout after 10 seconds"))?
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
     
     // Start command handler
@@ -1293,7 +1334,7 @@ async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoRe
     Ok(())
 }
 
-fn create_placeholder_image(message: &str) -> RgbaImage {
+fn _create_placeholder_image(message: &str) -> RgbaImage {
     let mut image = RgbaImage::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT);
     
     // Fill with black background
@@ -1365,7 +1406,7 @@ fn create_info_placeholder(tv_id: &str, ip_address: &str) -> RgbaImage {
     let instruction = "Contact staff to assign images to this display";
     let instruction_lines = wrap_text(instruction, max_chars_for_instruction);
     
-    let total_instruction_height = instruction_lines.len() as u32 * (5 * instruction_char_size + instruction_char_size);
+    let _total_instruction_height = instruction_lines.len() as u32 * (5 * instruction_char_size + instruction_char_size);
     let instruction_start_y = center_y + line_height * 2;
     
     for (line_idx, line) in instruction_lines.iter().enumerate() {
