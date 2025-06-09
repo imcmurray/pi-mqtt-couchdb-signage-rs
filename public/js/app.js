@@ -254,17 +254,17 @@ class DigitalSignageApp {
                     <div class="system-metric">
                         <i class="fas fa-thermometer-half"></i>
                         <span class="metric-label">Temp:</span>
-                        <span class="metric-value" id="temp-${tv._id}">--°C</span>
+                        <span class="metric-value" id="temp-${tv._id}">${this.formatMetricValue(tv.system_metrics?.temperature, '°C', '--°C')}</span>
                     </div>
                     <div class="system-metric">
                         <i class="fas fa-microchip"></i>
                         <span class="metric-label">CPU:</span>
-                        <span class="metric-value" id="cpu-${tv._id}">--%</span>
+                        <span class="metric-value" id="cpu-${tv._id}">${this.formatMetricValue(tv.system_metrics?.cpu_usage, '%', '--%')}</span>
                     </div>
                     <div class="system-metric">
                         <i class="fas fa-memory"></i>
                         <span class="metric-label">RAM:</span>
-                        <span class="metric-value" id="memory-${tv._id}">--%</span>
+                        <span class="metric-value" id="memory-${tv._id}">${this.formatMetricValue(tv.system_metrics?.memory_usage, '%', '--%')}</span>
                     </div>
                 </div>
                 <div class="tv-controls">
@@ -354,19 +354,19 @@ class DigitalSignageApp {
                         <div class="system-info-grid">
                             <div class="system-info-item">
                                 <span class="detail-label">Temperature:</span>
-                                <span class="detail-value" id="temp-detail-${tv._id}">--°C</span>
+                                <span class="detail-value" id="temp-detail-${tv._id}">${this.formatMetricValue(tv.system_metrics?.temperature, '°C', '--°C')}</span>
                             </div>
                             <div class="system-info-item">
                                 <span class="detail-label">CPU Usage:</span>
-                                <span class="detail-value" id="cpu-detail-${tv._id}">--%</span>
+                                <span class="detail-value" id="cpu-detail-${tv._id}">${this.formatMetricValue(tv.system_metrics?.cpu_usage, '%', '--%')}</span>
                             </div>
                             <div class="system-info-item">
                                 <span class="detail-label">Memory:</span>
-                                <span class="detail-value" id="memory-detail-${tv._id}">--%</span>
+                                <span class="detail-value" id="memory-detail-${tv._id}">${this.formatMetricValue(tv.system_metrics?.memory_usage, '%', '--%')}</span>
                             </div>
                             <div class="system-info-item">
                                 <span class="detail-label">Disk Usage:</span>
-                                <span class="detail-value" id="disk-detail-${tv._id}">--%</span>
+                                <span class="detail-value" id="disk-detail-${tv._id}">${this.formatMetricValue(tv.system_metrics?.disk_usage, '%', '--%')}</span>
                             </div>
                         </div>
                     </div>
@@ -835,6 +835,11 @@ class DigitalSignageApp {
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
 
+    formatMetricValue(value, unit, defaultText) {
+        if (value === null || value === undefined) return defaultText;
+        return `${Math.round(value * 10) / 10}${unit}`;
+    }
+
     updateTvStatus(topic, payload) {
         // Update TV status in real-time based on MQTT messages
         const tvId = this.extractTvIdFromTopic(topic);
@@ -848,13 +853,13 @@ class DigitalSignageApp {
                 tv.status = 'online';
                 tv.last_heartbeat = new Date().toISOString();
                 
-                // Update system metrics if available
+                // Store system metrics in TV object for persistence across DOM updates
                 if (payload.system_metrics) {
-                    this.updateSystemMetrics(tv._id, payload.system_metrics);
+                    tv.system_metrics = payload.system_metrics;
                 }
             }
             
-            // Refresh displays
+            // Refresh displays (this will use the stored system_metrics)
             this.updateTvOverview(this.tvs);
             this.updateTvList();
             this.loadDashboardData();
