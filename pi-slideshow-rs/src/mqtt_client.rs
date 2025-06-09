@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{broadcast, mpsc};
 use uuid::Uuid;
+use sysinfo::{CpuExt, DiskExt, System, SystemExt};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MqttCommand {
@@ -23,10 +24,24 @@ pub struct TvStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SystemMetrics {
+    pub cpu_usage: f32,
+    pub memory_usage: f32,
+    pub memory_total: u64,
+    pub memory_used: u64,
+    pub disk_usage: f32,
+    pub disk_total: u64,
+    pub disk_used: u64,
+    pub temperature: Option<f32>,
+    pub load_average: Option<f32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HeartbeatMessage {
     pub tv_id: String,
     pub timestamp: String,
     pub status: String,
+    pub system_metrics: Option<SystemMetrics>,
 }
 
 #[derive(Debug, Clone)]
@@ -212,19 +227,26 @@ impl MqttClient {
         let tv_id = self.tv_id.clone();
         let status_receiver = self.status_receiver.clone();
         
-        // Start heartbeat task
+        // Start heartbeat task with system metrics
         let heartbeat_client = client.clone();
         let heartbeat_tv_id = tv_id.clone();
         tokio::spawn(async move {
             let mut heartbeat_interval = tokio::time::interval(Duration::from_secs(30));
+            let mut system = System::new_all();
             
             loop {
                 heartbeat_interval.tick().await;
+                
+                // Refresh system information
+                system.refresh_all();
+                
+                let system_metrics = Self::collect_system_metrics(&system);
                 
                 let heartbeat = HeartbeatMessage {
                     tv_id: heartbeat_tv_id.clone(),
                     timestamp: chrono::Utc::now().to_rfc3339(),
                     status: "online".to_string(),
+                    system_metrics: Some(system_metrics),
                 };
                 
                 if let Ok(payload) = serde_json::to_string(&heartbeat) {
@@ -249,6 +271,74 @@ impl MqttClient {
                 }
             }
         });
+    }
+
+    fn collect_system_metrics(system: &System) -> SystemMetrics {
+        // Calculate CPU usage (average across all cores)
+        let cpu_usage = system.cpus().iter()
+            .map(|cpu| cpu.cpu_usage())
+            .sum::<f32>() / system.cpus().len() as f32;
+
+        // Memory information
+        let memory_total = system.total_memory();
+        let memory_used = system.used_memory();
+        let memory_usage = if memory_total > 0 {
+            (memory_used as f32 / memory_total as f32) * 100.0
+        } else {
+            0.0
+        };
+
+        // Disk information (get root filesystem)
+        let (disk_total, disk_used, disk_usage) = system.disks()
+            .iter()
+            .find(|disk| disk.mount_point().to_str() == Some("/"))
+            .map(|disk| {
+                let total = disk.total_space();
+                let used = total - disk.available_space();
+                let usage = if total > 0 {
+                    (used as f32 / total as f32) * 100.0
+                } else {
+                    0.0
+                };
+                (total, used, usage)
+            })
+            .unwrap_or((0, 0, 0.0));
+
+        // Try to get CPU temperature (Raspberry Pi specific)
+        let temperature = Self::get_cpu_temperature();
+
+        // Load average (1 minute)
+        let load_average = system.load_average().one;
+
+        SystemMetrics {
+            cpu_usage,
+            memory_usage,
+            memory_total,
+            memory_used,
+            disk_usage,
+            disk_total,
+            disk_used,
+            temperature,
+            load_average: Some(load_average as f32),
+        }
+    }
+
+    fn get_cpu_temperature() -> Option<f32> {
+        // Try Raspberry Pi thermal zone first
+        if let Ok(temp_str) = std::fs::read_to_string("/sys/class/thermal/thermal_zone0/temp") {
+            if let Ok(temp_millidegrees) = temp_str.trim().parse::<f32>() {
+                return Some(temp_millidegrees / 1000.0);
+            }
+        }
+
+        // Try alternative thermal sources
+        if let Ok(temp_str) = std::fs::read_to_string("/sys/devices/virtual/thermal/thermal_zone0/temp") {
+            if let Ok(temp_millidegrees) = temp_str.trim().parse::<f32>() {
+                return Some(temp_millidegrees / 1000.0);
+            }
+        }
+
+        None
     }
 }
 

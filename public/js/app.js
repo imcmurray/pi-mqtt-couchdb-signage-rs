@@ -250,6 +250,23 @@ class DigitalSignageApp {
                         <div class="tv-current-name">${currentImage ? currentImage.original_name : 'None'}</div>
                     </div>
                 </div>
+                <div class="tv-system-metrics" id="system-metrics-${tv._id}">
+                    <div class="system-metric">
+                        <i class="fas fa-thermometer-half"></i>
+                        <span class="metric-label">Temp:</span>
+                        <span class="metric-value" id="temp-${tv._id}">--°C</span>
+                    </div>
+                    <div class="system-metric">
+                        <i class="fas fa-microchip"></i>
+                        <span class="metric-label">CPU:</span>
+                        <span class="metric-value" id="cpu-${tv._id}">--%</span>
+                    </div>
+                    <div class="system-metric">
+                        <i class="fas fa-memory"></i>
+                        <span class="metric-label">RAM:</span>
+                        <span class="metric-value" id="memory-${tv._id}">--%</span>
+                    </div>
+                </div>
                 <div class="tv-controls">
                     <button class="btn btn-sm btn-success" onclick="app.controlTv('${tv._id}', 'play')">
                         <i class="fas fa-play"></i>
@@ -332,6 +349,26 @@ class DigitalSignageApp {
                     <div class="tv-current-image" id="tv-current-${tv._id}">
                         <span class="detail-label">Current Image:</span>
                         <span class="detail-value">${currentImage ? currentImage.original_name : 'None'}</span>
+                    </div>
+                    <div class="tv-system-info" id="system-info-${tv._id}">
+                        <div class="system-info-grid">
+                            <div class="system-info-item">
+                                <span class="detail-label">Temperature:</span>
+                                <span class="detail-value" id="temp-detail-${tv._id}">--°C</span>
+                            </div>
+                            <div class="system-info-item">
+                                <span class="detail-label">CPU Usage:</span>
+                                <span class="detail-value" id="cpu-detail-${tv._id}">--%</span>
+                            </div>
+                            <div class="system-info-item">
+                                <span class="detail-label">Memory:</span>
+                                <span class="detail-value" id="memory-detail-${tv._id}">--%</span>
+                            </div>
+                            <div class="system-info-item">
+                                <span class="detail-label">Disk Usage:</span>
+                                <span class="detail-value" id="disk-detail-${tv._id}">--%</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <div class="tv-actions">
@@ -810,12 +847,88 @@ class DigitalSignageApp {
             } else if (topic.includes('/heartbeat')) {
                 tv.status = 'online';
                 tv.last_heartbeat = new Date().toISOString();
+                
+                // Update system metrics if available
+                if (payload.system_metrics) {
+                    this.updateSystemMetrics(tv._id, payload.system_metrics);
+                }
             }
             
             // Refresh displays
             this.updateTvOverview(this.tvs);
             this.updateTvList();
             this.loadDashboardData();
+        }
+    }
+
+    updateSystemMetrics(tvId, metrics) {
+        // Format temperature with color coding
+        const tempElement = document.getElementById(`temp-${tvId}`);
+        const tempDetailElement = document.getElementById(`temp-detail-${tvId}`);
+        
+        if (metrics.temperature !== null && metrics.temperature !== undefined) {
+            const temp = Math.round(metrics.temperature * 10) / 10;
+            const tempText = `${temp}°C`;
+            const tempClass = temp > 70 ? 'temp-high' : temp > 60 ? 'temp-medium' : 'temp-normal';
+            
+            if (tempElement) {
+                tempElement.textContent = tempText;
+                tempElement.className = `metric-value ${tempClass}`;
+            }
+            if (tempDetailElement) {
+                tempDetailElement.textContent = tempText;
+                tempDetailElement.className = `detail-value ${tempClass}`;
+            }
+        }
+
+        // Update CPU usage with color coding
+        const cpuElement = document.getElementById(`cpu-${tvId}`);
+        const cpuDetailElement = document.getElementById(`cpu-detail-${tvId}`);
+        
+        if (metrics.cpu_usage !== null && metrics.cpu_usage !== undefined) {
+            const cpu = Math.round(metrics.cpu_usage * 10) / 10;
+            const cpuText = `${cpu}%`;
+            const cpuClass = cpu > 80 ? 'cpu-high' : cpu > 50 ? 'cpu-medium' : 'cpu-normal';
+            
+            if (cpuElement) {
+                cpuElement.textContent = cpuText;
+                cpuElement.className = `metric-value ${cpuClass}`;
+            }
+            if (cpuDetailElement) {
+                cpuDetailElement.textContent = cpuText;
+                cpuDetailElement.className = `detail-value ${cpuClass}`;
+            }
+        }
+
+        // Update memory usage with color coding
+        const memoryElement = document.getElementById(`memory-${tvId}`);
+        const memoryDetailElement = document.getElementById(`memory-detail-${tvId}`);
+        
+        if (metrics.memory_usage !== null && metrics.memory_usage !== undefined) {
+            const memory = Math.round(metrics.memory_usage * 10) / 10;
+            const memoryText = `${memory}%`;
+            const memoryClass = memory > 85 ? 'memory-high' : memory > 70 ? 'memory-medium' : 'memory-normal';
+            
+            if (memoryElement) {
+                memoryElement.textContent = memoryText;
+                memoryElement.className = `metric-value ${memoryClass}`;
+            }
+            if (memoryDetailElement) {
+                memoryDetailElement.textContent = memoryText;
+                memoryDetailElement.className = `detail-value ${memoryClass}`;
+            }
+        }
+
+        // Update disk usage (detailed view only)
+        const diskDetailElement = document.getElementById(`disk-detail-${tvId}`);
+        
+        if (metrics.disk_usage !== null && metrics.disk_usage !== undefined && diskDetailElement) {
+            const disk = Math.round(metrics.disk_usage * 10) / 10;
+            const diskText = `${disk}%`;
+            const diskClass = disk > 90 ? 'disk-high' : disk > 75 ? 'disk-medium' : 'disk-normal';
+            
+            diskDetailElement.textContent = diskText;
+            diskDetailElement.className = `detail-value ${diskClass}`;
         }
     }
 

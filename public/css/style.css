@@ -498,6 +498,77 @@ body {
     flex-wrap: wrap;
 }
 
+/* System Metrics Styles */
+.tv-system-metrics {
+    margin: 1rem 0;
+    padding: 0.75rem;
+    background: #f8f9fa;
+    border-radius: 6px;
+    border: 1px solid #e9ecef;
+}
+
+.system-metric {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0.25rem 0;
+    font-size: 0.85rem;
+}
+
+.system-metric i {
+    width: 16px;
+    color: #6c757d;
+}
+
+.metric-label {
+    font-weight: 500;
+    color: #495057;
+    min-width: 40px;
+}
+
+.metric-value {
+    font-weight: 600;
+}
+
+/* System Info Grid for detailed view */
+.tv-system-info {
+    margin: 0.75rem 0;
+    padding: 0.75rem;
+    background: #f8f9fa;
+    border-radius: 6px;
+    border: 1px solid #e9ecef;
+}
+
+.system-info-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+}
+
+.system-info-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.85rem;
+}
+
+/* Color coding for metrics */
+.temp-normal { color: #28a745; }
+.temp-medium { color: #ffc107; }
+.temp-high { color: #dc3545; }
+
+.cpu-normal { color: #28a745; }
+.cpu-medium { color: #ffc107; }
+.cpu-high { color: #dc3545; }
+
+.memory-normal { color: #28a745; }
+.memory-medium { color: #ffc107; }
+.memory-high { color: #dc3545; }
+
+.disk-normal { color: #28a745; }
+.disk-medium { color: #ffc107; }
+.disk-high { color: #dc3545; }
+
 .tv-list {
     display: flex;
     flex-direction: column;
@@ -1114,6 +1185,17 @@ body.dark-theme {
 .dark-theme .tv-assignment-item {
     border-color: #34495e;
     background-color: #34495e;
+}
+
+.dark-theme .tv-system-metrics,
+.dark-theme .tv-system-info {
+    background-color: #34495e;
+    border-color: #4a5f7a;
+}
+
+.dark-theme .metric-label,
+.dark-theme .system-metric i {
+    color: #bdc3c7;
 }
 
 .dark-theme .queue-item {

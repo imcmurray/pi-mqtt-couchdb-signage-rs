@@ -52,8 +52,10 @@ Our architecture uses two complementary protocols, each optimized for different 
 |-----------|----------|-----------|
 | Image files | CouchDB | Large binary data, permanent storage, efficient replication |
 | TV configurations | CouchDB | Persistent settings, complex validation, transaction safety |
+| Current image state | CouchDB | Authoritative source for recovery, queries, audit trails |
 | Play/pause commands | MQTT | Real-time response needed, ephemeral (fire-and-forget) |
 | Status updates | MQTT | Frequent lightweight updates, pub/sub to multiple subscribers |
+| Current image notifications | MQTT | Real-time change events, dashboard updates |
 | Image assignments | CouchDB | Persistent relationships, complex queries, transaction integrity |
 | Heartbeats | MQTT | High-frequency ephemeral data, automatic cleanup |
 
