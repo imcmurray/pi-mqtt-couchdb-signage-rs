@@ -287,7 +287,10 @@ class DigitalSignageApp {
                 <div class="tv-name">${tv.name}</div>
                 <div class="tv-details">
                     <span class="status-dot ${statusClass}"></span>
-                    <strong>TV ID:</strong> ${tv.tv_id} • <strong>Location:</strong> ${tv.location} • <strong>IP:</strong> ${tv.ip_address} • <strong>Status:</strong> ${tv.status}
+                    <strong>Location:</strong> ${tv.location} • <strong>IP:</strong> ${tv.ip_address} • <strong>TV ID:</strong> ${tv._id.replace('tv_', '')} • <strong>Status:</strong> ${tv.status}
+                </div>
+                <div class="tv-version-info" id="tv-version-${tv._id}">
+                    <strong>Version:</strong> <span class="version-loading">Loading...</span>
                 </div>
             </div>
             <div class="tv-actions">
@@ -303,11 +306,17 @@ class DigitalSignageApp {
                 <button class="btn btn-sm btn-secondary" onclick="app.shuffleTvImages('${tv._id}')">
                     <i class="fas fa-random"></i> Shuffle
                 </button>
+                <button class="btn btn-sm btn-info" onclick="app.showTvVersionDetails('${tv._id}')">
+                    <i class="fas fa-info-circle"></i> Version
+                </button>
                 <button class="btn btn-sm btn-danger" onclick="app.deleteTv('${tv._id}')">
                     <i class="fas fa-trash"></i>
                 </button>
             </div>
         `;
+        
+        // Load version info for this TV
+        this.loadTvVersionInfo(tv);
         
         return item;
     }
@@ -400,7 +409,6 @@ class DigitalSignageApp {
         if (tv) {
             title.textContent = 'Edit TV';
             document.getElementById('tv-name').value = tv.name;
-            document.getElementById('tv-id').value = tv.tv_id || '';
             document.getElementById('tv-location').value = tv.location;
             document.getElementById('tv-ip').value = tv.ip_address;
             document.getElementById('tv-transition').value = tv.config?.transition_effect || 'fade';
@@ -423,7 +431,6 @@ class DigitalSignageApp {
         
         const tvData = {
             name: document.getElementById('tv-name').value,
-            tv_id: document.getElementById('tv-id').value,
             location: document.getElementById('tv-location').value,
             ip_address: document.getElementById('tv-ip').value,
             config: {
@@ -758,8 +765,8 @@ class DigitalSignageApp {
     updateTvStatus(topic, payload) {
         // Update TV status in real-time based on MQTT messages
         const tvId = this.extractTvIdFromTopic(topic);
-        // Find TV by matching the tv_id field (without prefix) against the extracted MQTT topic ID
-        const tv = this.tvs.find(t => t.tv_id === tvId);
+        // Find TV by matching the _id field (without prefix) against the extracted MQTT topic ID
+        const tv = this.tvs.find(t => t._id.replace('tv_', '') === tvId);
         
         if (tv) {
             if (topic.includes('/status')) {
@@ -779,8 +786,8 @@ class DigitalSignageApp {
     updateTvCurrentImage(topic, payload) {
         // Update TV current image in real-time when Pi changes images
         const tvId = this.extractTvIdFromTopic(topic);
-        // Find TV by matching the tv_id field (without prefix) against the extracted MQTT topic ID
-        const tv = this.tvs.find(t => t.tv_id === tvId);
+        // Find TV by matching the _id field (without prefix) against the extracted MQTT topic ID
+        const tv = this.tvs.find(t => t._id.replace('tv_', '') === tvId);
         
         if (tv) {
             tv.current_image_id = payload.image_id;
@@ -954,25 +961,25 @@ class DigitalSignageApp {
     // Version Management
     async loadVersionInfo() {
         try {
-            // Get current git commit for the management server
+            // Get server version information for the modal
             const response = await fetch('/api/version');
             if (response.ok) {
-                const versionData = await response.json();
-                this.serverVersion = versionData;
-                this.updateVersionDisplay(versionData.commit_short || 'unknown');
+                this.serverVersion = await response.json();
             } else {
-                // Fallback to a simple display
-                this.updateVersionDisplay('unknown');
+                this.serverVersion = { commit_hash: 'unknown', branch: 'unknown', build_time: 'unknown' };
             }
         } catch (error) {
-            console.error('Error loading version info:', error);
-            this.updateVersionDisplay('error');
+            console.error('Error loading server version info:', error);
+            this.serverVersion = { commit_hash: 'unknown', branch: 'unknown', build_time: 'unknown' };
         }
+        
+        // Always show the management UI version from package.json
+        this.updateVersionDisplay('1.0.0');
     }
 
-    updateVersionDisplay(shortHash) {
+    updateVersionDisplay(version) {
         const versionDisplay = document.getElementById('version-display');
-        versionDisplay.textContent = `v${shortHash}`;
+        versionDisplay.textContent = `v${version}`;
         versionDisplay.className = 'version-short';
     }
 
@@ -985,6 +992,17 @@ class DigitalSignageApp {
                         <button class="modal-close">&times;</button>
                     </div>
                     <div class="modal-body">
+                        <div class="version-section">
+                            <h4>Management UI</h4>
+                            <div class="version-details">
+                                <div class="version-item">
+                                    <strong>Version:</strong> 1.0.0
+                                </div>
+                                <div class="version-item">
+                                    <strong>Package:</strong> digital-signage-management
+                                </div>
+                            </div>
+                        </div>
                         <div class="version-section">
                             <h4>Management Server</h4>
                             <div class="version-details">
@@ -999,16 +1017,9 @@ class DigitalSignageApp {
                                 </div>
                             </div>
                         </div>
-                        <div class="version-section">
-                            <h4>TV Endpoints</h4>
-                            <div id="tv-versions-list" class="tv-versions">
-                                <div class="loading">Loading TV version information...</div>
-                            </div>
-                        </div>
                     </div>
                     <div class="modal-actions">
                         <button type="button" class="btn btn-secondary modal-cancel">Close</button>
-                        <button type="button" class="btn btn-primary" onclick="app.refreshTvVersions()">Refresh</button>
                     </div>
                 </div>
             </div>
@@ -1126,6 +1137,118 @@ class DigitalSignageApp {
         if (tvVersionsList) {
             tvVersionsList.innerHTML = '<div class="loading">Loading TV version information...</div>';
             this.loadTvVersions();
+        }
+    }
+
+    // Load version info for individual TV in the TV Management section
+    async loadTvVersionInfo(tv) {
+        const versionElement = document.getElementById(`tv-version-${tv._id}`);
+        if (!versionElement) return;
+
+        try {
+            const response = await fetch(`http://${tv.ip_address}:8080/api/version`, {
+                method: 'GET',
+                timeout: 3000
+            });
+            
+            if (response.ok) {
+                const versionData = await response.json();
+                const version = versionData.data;
+                versionElement.innerHTML = `<strong>Version:</strong> ${version.version} (${version.commit_short})`;
+                
+                // Store version data for detailed view
+                tv.versionInfo = version;
+            } else {
+                versionElement.innerHTML = `<strong>Version:</strong> <span class="version-error">Offline</span>`;
+            }
+        } catch (error) {
+            versionElement.innerHTML = `<strong>Version:</strong> <span class="version-error">Unavailable</span>`;
+        }
+    }
+
+    // Show detailed version information for a specific TV
+    showTvVersionDetails(tvId) {
+        const tv = this.tvs.find(t => t._id === tvId);
+        if (!tv) return;
+
+        const modalHtml = `
+            <div id="tv-version-detail-modal" class="modal show">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>${tv.name} - Version Details</h3>
+                        <button class="modal-close">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="version-section">
+                            <h4>Raspberry Pi Endpoint</h4>
+                            <div class="version-details">
+                                ${tv.versionInfo ? `
+                                    <div class="version-item">
+                                        <strong>Version:</strong> ${tv.versionInfo.version}
+                                    </div>
+                                    <div class="version-item">
+                                        <strong>Commit:</strong> ${tv.versionInfo.commit_hash}
+                                    </div>
+                                    <div class="version-item">
+                                        <strong>Short Hash:</strong> ${tv.versionInfo.commit_short}
+                                    </div>
+                                    <div class="version-item">
+                                        <strong>Branch:</strong> ${tv.versionInfo.branch}
+                                    </div>
+                                    <div class="version-item">
+                                        <strong>Build Time:</strong> ${tv.versionInfo.build_time}
+                                    </div>
+                                    <div class="version-item">
+                                        <strong>IP Address:</strong> ${tv.ip_address}
+                                    </div>
+                                ` : `
+                                    <div class="version-item error">
+                                        Version information unavailable. TV may be offline.
+                                    </div>
+                                `}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-actions">
+                        <button type="button" class="btn btn-secondary modal-cancel">Close</button>
+                        <button type="button" class="btn btn-primary" onclick="app.refreshTvVersionInfo('${tvId}')">Refresh</button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Remove existing modal if any
+        const existingModal = document.getElementById('tv-version-detail-modal');
+        if (existingModal) {
+            existingModal.remove();
+        }
+
+        // Add modal to body
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+        // Setup close handlers
+        const modal = document.getElementById('tv-version-detail-modal');
+        modal.querySelector('.modal-close').addEventListener('click', () => {
+            modal.remove();
+        });
+        modal.querySelector('.modal-cancel').addEventListener('click', () => {
+            modal.remove();
+        });
+    }
+
+    // Refresh version info for a specific TV
+    async refreshTvVersionInfo(tvId) {
+        const tv = this.tvs.find(t => t._id === tvId);
+        if (!tv) return;
+
+        // Update the version display in the list
+        await this.loadTvVersionInfo(tv);
+        
+        // Close and reopen the modal with updated info
+        const modal = document.getElementById('tv-version-detail-modal');
+        if (modal) {
+            modal.remove();
+            this.showTvVersionDetails(tvId);
         }
     }
 }

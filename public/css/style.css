@@ -48,6 +48,89 @@ body {
     margin: 0.5rem 0;
 }
 
+/* TV Version Info Styles */
+.tv-version-info {
+    margin-top: 0.5rem;
+    font-size: 0.9rem;
+    color: #666;
+}
+
+.version-loading {
+    color: #999;
+    font-style: italic;
+}
+
+.version-error {
+    color: #dc3545;
+    font-style: italic;
+}
+
+/* Version Modal Styles */
+.version-section {
+    margin-bottom: 1.5rem;
+}
+
+.version-section h4 {
+    color: #333;
+    margin-bottom: 0.75rem;
+    font-size: 1.1rem;
+    border-bottom: 2px solid #eee;
+    padding-bottom: 0.25rem;
+}
+
+.version-details {
+    background: #f8f9fa;
+    padding: 1rem;
+    border-radius: 4px;
+    border-left: 4px solid #007bff;
+}
+
+.version-item {
+    margin-bottom: 0.5rem;
+    font-size: 0.95rem;
+}
+
+.version-item:last-child {
+    margin-bottom: 0;
+}
+
+.version-item.error {
+    color: #dc3545;
+    font-style: italic;
+}
+
+.tv-version-item {
+    margin-bottom: 1rem;
+    padding: 1rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background: #fff;
+}
+
+.tv-version-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.version-status {
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: bold;
+}
+
+.version-status.success {
+    background: #d4edda;
+    color: #155724;
+}
+
+.version-status.error {
+    background: #f8d7da;
+    color: #721c24;
+}
+
 .nav-link {
     display: flex;
     align-items: center;

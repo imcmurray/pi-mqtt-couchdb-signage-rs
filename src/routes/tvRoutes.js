@@ -7,7 +7,6 @@ const Joi = require('joi');
 // Validation schemas
 const tvSchema = Joi.object({
   name: Joi.string().required(),
-  tv_id: Joi.string().optional(),
   location: Joi.string().required(),
   ip_address: Joi.string().ip().required(),
   config: Joi.object({
@@ -112,8 +111,8 @@ router.post('/:id/control/:action', async (req, res) => {
     }
 
     const { action } = req.params;
-    // Use the tv_id field from the database document for MQTT communication
-    const tvId = tv.tv_id;
+    // Use the _id field (without tv_ prefix) for MQTT communication
+    const tvId = tv._id.replace('tv_', '');
 
     switch (action) {
       case 'play':
@@ -159,8 +158,8 @@ router.put('/:id/config', async (req, res) => {
     const updatedConfig = { ...tv.config, ...value };
     const updatedTv = await tv.update({ config: updatedConfig });
 
-    // Send config update to TV via MQTT using the tv_id field
-    const tvId = tv.tv_id;
+    // Send config update to TV via MQTT using the _id field (without tv_ prefix)
+    const tvId = tv._id.replace('tv_', '');
     await mqttService.updateConfig(tvId, updatedConfig);
 
     res.json(updatedTv);
