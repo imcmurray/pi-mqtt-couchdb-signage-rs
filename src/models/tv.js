@@ -15,7 +15,8 @@ class TV {
     this.config = {
       transition_effect: data.config?.transition_effect || 'fade',
       display_duration: data.config?.display_duration || 5000,
-      resolution: data.config?.resolution || '1920x1080'
+      resolution: data.config?.resolution || '1920x1080',
+      orientation: data.config?.orientation || 'landscape'
     };
     this.created_at = data.created_at || new Date().toISOString();
     this.updated_at = new Date().toISOString();

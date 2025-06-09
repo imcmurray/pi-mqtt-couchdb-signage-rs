@@ -14,6 +14,30 @@ use std::thread;
 use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, mpsc as async_mpsc};
 
+#[derive(Debug, Clone, PartialEq)]
+enum Orientation {
+    Landscape,
+    Portrait,
+}
+
+impl From<&str> for Orientation {
+    fn from(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "portrait" => Orientation::Portrait,
+            _ => Orientation::Landscape,
+        }
+    }
+}
+
+impl Orientation {
+    fn dimensions(&self) -> (u32, u32) {
+        match self {
+            Orientation::Landscape => (DEFAULT_LANDSCAPE_WIDTH, DEFAULT_LANDSCAPE_HEIGHT),
+            Orientation::Portrait => (DEFAULT_PORTRAIT_WIDTH, DEFAULT_PORTRAIT_HEIGHT),
+        }
+    }
+}
+
 mod mqtt_client;
 mod slideshow_controller;
 mod http_server;
@@ -22,9 +46,12 @@ mod couchdb_client;
 use mqtt_client::{MqttClient, SlideshowCommand, TvStatus};
 use slideshow_controller::{ControllerConfig, SlideshowController};
 
-const FRAMEBUFFER_WIDTH: u32 = 1920;
-const FRAMEBUFFER_HEIGHT: u32 = 1080;
-const MAX_FRAMEBUFFER_SIZE: usize = 1920 * 1080 * 4;
+// Default landscape dimensions
+const DEFAULT_LANDSCAPE_WIDTH: u32 = 1920;
+const DEFAULT_LANDSCAPE_HEIGHT: u32 = 1080;
+const DEFAULT_PORTRAIT_WIDTH: u32 = 1080;
+const DEFAULT_PORTRAIT_HEIGHT: u32 = 1920;
+const MAX_FRAMEBUFFER_SIZE: usize = 1920 * 1920 * 4; // Support up to 1920x1920
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -72,6 +99,10 @@ struct Args {
     /// HTTP server port for local control
     #[arg(long, default_value_t = 8080)]
     http_port: u16,
+
+    /// Display orientation (landscape or portrait)
+    #[arg(long, default_value = "landscape")]
+    orientation: String,
 }
 
 struct Config {
@@ -79,6 +110,7 @@ struct Config {
     display_duration: Duration,
     transition_duration: Duration,
     framebuffer_path: PathBuf,
+    orientation: Orientation,
 }
 
 impl From<Args> for Config {
@@ -88,6 +120,7 @@ impl From<Args> for Config {
             display_duration: Duration::from_secs(args.delay),
             transition_duration: Duration::from_millis(args.transition),
             framebuffer_path: args.framebuffer,
+            orientation: Orientation::from(args.orientation.as_str()),
         }
     }
 }
@@ -396,11 +429,11 @@ impl ImageManager {
         Ok(())
     }
 
-    fn load_and_scale_image(&self, path: &Path) -> Result<RgbaImage, ImageError> {
+    fn load_and_scale_image(&self, path: &Path, width: u32, height: u32) -> Result<RgbaImage, ImageError> {
         let img = image::open(path)?;
         let img = img.resize_exact(
-            FRAMEBUFFER_WIDTH,
-            FRAMEBUFFER_HEIGHT,
+            width,
+            height,
             image::imageops::FilterType::Lanczos3,
         );
         Ok(img.to_rgba8())
@@ -807,10 +840,10 @@ impl ImageManager {
 
         // Load source images
         let from_img = self
-            .load_and_scale_image(&self.images[from_idx])
+            .load_and_scale_image(&self.images[from_idx], fb.width, fb.height)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         let to_img = self
-            .load_and_scale_image(&self.images[to_idx])
+            .load_and_scale_image(&self.images[to_idx], fb.width, fb.height)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
 
         let frame_count = (transition_duration.as_millis() / 33) as usize; // ~30 FPS
@@ -1057,7 +1090,7 @@ fn display_exit_joke(fb: &mut Framebuffer) -> IoResult<()> {
     println!("\n🎭 Parting wisdom: {}", joke);
 
     // Create a black background image
-    let mut exit_image = RgbaImage::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT);
+    let mut exit_image = RgbaImage::new(fb.width, fb.height);
 
     // Fill with black background
     for pixel in exit_image.pixels_mut() {
@@ -1067,7 +1100,7 @@ fn display_exit_joke(fb: &mut Framebuffer) -> IoResult<()> {
     // Text rendering settings
     let char_size = 8; // Size multiplier for characters
     let line_height = 5 * char_size + char_size; // 5 rows per char + spacing
-    let max_chars_per_line = (FRAMEBUFFER_WIDTH / (7 * char_size + char_size)) as usize; // Account for char width + spacing
+    let max_chars_per_line = (fb.width / (7 * char_size + char_size)) as usize; // Account for char width + spacing
 
     // Wrap the joke text
     let lines = wrap_text(joke, max_chars_per_line);
@@ -1076,7 +1109,7 @@ fn display_exit_joke(fb: &mut Framebuffer) -> IoResult<()> {
     let total_text_height = lines.len() as u32 * line_height;
 
     // Center the text vertically
-    let start_y = (FRAMEBUFFER_HEIGHT - total_text_height) / 2;
+    let start_y = (fb.height - total_text_height) / 2;
 
     // Draw each line of text
     let bright_color = Rgba([255, 255, 0, 255]); // Bright yellow
@@ -1084,7 +1117,7 @@ fn display_exit_joke(fb: &mut Framebuffer) -> IoResult<()> {
     for (line_idx, line) in lines.iter().enumerate() {
         // Center each line horizontally
         let text_width = line.len() as u32 * (7 * char_size + char_size);
-        let start_x = (FRAMEBUFFER_WIDTH - text_width) / 2;
+        let start_x = (fb.width - text_width) / 2;
         let y = start_y + (line_idx as u32 * line_height);
 
         draw_text(&mut exit_image, line, start_x, y, char_size, bright_color);
@@ -1241,13 +1274,16 @@ async fn run_standalone_mode(args: Args) -> IoResult<()> {
         display_duration: Duration::from_secs(args.delay),
         transition_duration: Duration::from_millis(args.transition),
         framebuffer_path: args.framebuffer,
+        orientation: Orientation::from(args.orientation.as_str()),
     };
     
     run_original_slideshow(config)
 }
 
 async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoResult<()> {
-    let mut fb = Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT, &args.framebuffer)?;
+    let orientation = Orientation::from(args.orientation.as_str());
+    let (width, height) = orientation.dimensions();
+    let mut fb = Framebuffer::new(width, height, &args.framebuffer)?;
     let image_manager = ImageManager::new();
     
     // Setup event handling for filesystem and signals
@@ -1264,7 +1300,7 @@ async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoRe
     if controller.get_image_count().await == 0 {
         let tv_id = controller.get_tv_id().await;
         let local_ip = get_local_ip().unwrap_or_else(|| "Unknown IP".to_string());
-        let placeholder = create_info_placeholder(&tv_id, &local_ip);
+        let placeholder = create_info_placeholder(&tv_id, &local_ip, fb.width, fb.height);
         let _ = fb.display_image(&placeholder);
         has_displayed_placeholder = true;
         println!("Displayed 'No images available' placeholder on startup");
@@ -1282,7 +1318,7 @@ async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoRe
         if let Some(current_image_path) = controller.get_current_image_path().await {
             if controller.is_playing().await {
                 // Load and display the current image
-                match image_manager.load_and_scale_image(&current_image_path) {
+                match image_manager.load_and_scale_image(&current_image_path, fb.width, fb.height) {
                     Ok(image) => {
                         if let Err(e) = fb.display_image(&image) {
                             eprintln!("Failed to display image: {}", e);
@@ -1298,7 +1334,7 @@ async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoRe
             if !has_displayed_placeholder {
                 let tv_id = controller.get_tv_id().await;
                 let local_ip = get_local_ip().unwrap_or_else(|| "Unknown IP".to_string());
-                let placeholder = create_info_placeholder(&tv_id, &local_ip);
+                let placeholder = create_info_placeholder(&tv_id, &local_ip, fb.width, fb.height);
                 let _ = fb.display_image(&placeholder);
                 has_displayed_placeholder = true;
                 println!("Displayed 'No images available' placeholder");
@@ -1334,8 +1370,8 @@ async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoRe
     Ok(())
 }
 
-fn _create_placeholder_image(message: &str) -> RgbaImage {
-    let mut image = RgbaImage::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT);
+fn _create_placeholder_image(message: &str, width: u32, height: u32) -> RgbaImage {
+    let mut image = RgbaImage::new(width, height);
     
     // Fill with black background
     for pixel in image.pixels_mut() {
@@ -1345,16 +1381,16 @@ fn _create_placeholder_image(message: &str) -> RgbaImage {
     // Add text
     let char_size = 8;
     let text_width = message.len() as u32 * (7 * char_size + char_size);
-    let start_x = (FRAMEBUFFER_WIDTH - text_width) / 2;
-    let start_y = (FRAMEBUFFER_HEIGHT - 5 * char_size) / 2;
+    let start_x = (width - text_width) / 2;
+    let start_y = (height - 5 * char_size) / 2;
     
     draw_text(&mut image, message, start_x, start_y, char_size, Rgba([255, 255, 255, 255]));
     
     image
 }
 
-fn create_info_placeholder(tv_id: &str, ip_address: &str) -> RgbaImage {
-    let mut image = RgbaImage::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT);
+fn create_info_placeholder(tv_id: &str, ip_address: &str, width: u32, height: u32) -> RgbaImage {
+    let mut image = RgbaImage::new(width, height);
     
     // Fill with dark blue background
     for pixel in image.pixels_mut() {
@@ -1363,8 +1399,8 @@ fn create_info_placeholder(tv_id: &str, ip_address: &str) -> RgbaImage {
     
     let char_size = 8;
     let line_height = char_size * 7; // Slightly tighter spacing
-    let center_x = FRAMEBUFFER_WIDTH / 2;
-    let center_y = FRAMEBUFFER_HEIGHT / 2;
+    let center_x = width / 2;
+    let center_y = height / 2;
     
     // Title - establish maximum width
     let title = "NO IMAGES AVAILABLE";
@@ -1444,7 +1480,8 @@ fn get_local_ip() -> Option<String> {
 
 fn run_original_slideshow(config: Config) -> IoResult<()> {
 
-    let mut fb = Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT, &config.framebuffer_path)?;
+    let (width, height) = config.orientation.dimensions();
+    let mut fb = Framebuffer::new(width, height, &config.framebuffer_path)?;
     let mut image_manager = ImageManager::new();
 
     // Initial image scan
@@ -1477,7 +1514,7 @@ fn run_original_slideshow(config: Config) -> IoResult<()> {
 
         // Load and display current image
         let current_image = image_manager
-            .load_and_scale_image(&current_image_path)
+            .load_and_scale_image(&current_image_path, fb.width, fb.height)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
 
         println!(

@@ -56,6 +56,11 @@ Our system uses a **dual-protocol architecture** optimized for different data ty
 - `npm run lint` - Run ESLint
 - `npm run build` - Build for production (Node.js - no build step needed)
 
+## Version Management
+- `./scripts/update-version.sh <version>` - Update version across all components
+- `npm version patch|minor|major` - Alternative npm-based versioning
+- Always update: package.json, pi-slideshow-rs/Cargo.toml, and public/js/app.js
+
 ## Current Implementation Status
 ### Completed Components
 - Basic Express server structure with middleware

@@ -335,6 +335,10 @@ class DigitalSignageApp {
                             <span class="detail-value">${tv._id.replace('tv_', '')}</span>
                         </div>
                         <div class="tv-detail-item">
+                            <span class="detail-label">Orientation:</span>
+                            <span class="detail-value">${tv.config?.orientation || 'landscape'}</span>
+                        </div>
+                        <div class="tv-detail-item">
                             <span class="detail-label">Status:</span>
                             <span class="detail-value">
                                 <span class="status-dot ${statusClass}"></span>
@@ -486,6 +490,7 @@ class DigitalSignageApp {
             document.getElementById('tv-ip').value = tv.ip_address;
             document.getElementById('tv-transition').value = tv.config?.transition_effect || 'fade';
             document.getElementById('tv-duration').value = tv.config?.display_duration || 5000;
+            document.getElementById('tv-orientation').value = tv.config?.orientation || 'landscape';
             form.dataset.tvId = tv._id;
         } else {
             title.textContent = 'Add TV';
@@ -508,7 +513,8 @@ class DigitalSignageApp {
             ip_address: document.getElementById('tv-ip').value,
             config: {
                 transition_effect: document.getElementById('tv-transition').value,
-                display_duration: parseInt(document.getElementById('tv-duration').value)
+                display_duration: parseInt(document.getElementById('tv-duration').value),
+                orientation: document.getElementById('tv-orientation').value
             }
         };
 
