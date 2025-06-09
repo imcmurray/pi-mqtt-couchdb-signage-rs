@@ -1148,7 +1148,7 @@ class DigitalSignageApp {
         }
         
         // Always show the management UI version from package.json
-        this.updateVersionDisplay('1.0.0');
+        this.updateVersionDisplay('0.1.0');
     }
 
     updateVersionDisplay(version) {
