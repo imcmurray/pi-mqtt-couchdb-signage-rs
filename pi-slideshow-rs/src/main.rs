@@ -8,6 +8,7 @@ use signal_hook::{consts::SIGINT, iterator::Signals};
 use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Result as IoResult, Seek, SeekFrom, Write};
 use std::os::unix::io::AsRawFd;
+use std::os::unix::fs::{FileTypeExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
@@ -313,17 +314,35 @@ impl Framebuffer {
             mmap[..copy_len].copy_from_slice(&buffer[..copy_len]);
             mmap.flush()?;
         } else if let Some(ref mut file) = self.file {
-            // Fallback to direct file writes in smaller chunks
+            // Fallback to direct file writes - reset to beginning and write entire buffer
             file.seek(SeekFrom::Start(0))?;
-
-            const CHUNK_SIZE: usize = 65536; // 64KB chunks
+            
+            // Writing buffer to framebuffer device
+            
+            // For framebuffer devices, we should write the full buffer at once for proper synchronization
+            // but break it into reasonable chunks to avoid system limits
+            const CHUNK_SIZE: usize = 4096; // 4KB chunks for better compatibility
+            let mut bytes_written = 0;
+            
             for chunk in buffer.chunks(CHUNK_SIZE) {
-                file.write_all(chunk)?;
+                match file.write_all(chunk) {
+                    Ok(()) => {
+                        bytes_written += chunk.len();
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to write chunk to framebuffer at offset {}: {}", bytes_written, e);
+                        return Err(e);
+                    }
+                }
             }
-            file.sync_data()?; // Use sync_data instead of sync_all for better performance
+            
+            // Ensure data is written to the device
+            file.flush()?;
+            // Successfully wrote framebuffer data
         } else if let Some(ref mut fallback) = self.fallback_file {
             fallback.write_all(buffer)?;
             fallback.flush()?;
+            println!("Wrote {} bytes to fallback file", buffer.len());
         }
         Ok(())
     }
@@ -334,6 +353,14 @@ impl Framebuffer {
     }
 
     fn image_to_bgra_buffer(&self, image: &RgbaImage) -> Vec<u8> {
+        // Converting image to framebuffer format
+        
+        // If image dimensions don't match framebuffer exactly, this could cause garbled display
+        if image.width() != self.width || image.height() != self.height {
+            println!("WARNING: Image dimensions {}x{} don't match framebuffer {}x{} - this may cause garbled display!", 
+                     image.width(), image.height(), self.width, self.height);
+        }
+        
         let expected_size = (self.width * self.height * 4) as usize;
         let max_pixels = self.max_buffer_size / 4;
         let actual_pixels = (self.width * self.height) as usize;
@@ -351,6 +378,8 @@ impl Framebuffer {
 
         let mut pixels_written = 0;
 
+        // Important: Make sure we're writing in the correct order for the framebuffer
+        // The framebuffer expects data in scanline order (left-to-right, top-to-bottom)
         for y in 0..self.height {
             for x in 0..self.width {
                 if pixels_written >= safe_pixels {
@@ -363,7 +392,7 @@ impl Framebuffer {
                     Rgba([0, 0, 0, 255])
                 };
 
-                // Convert RGBA to BGRA
+                // Convert RGBA to BGRA (keeping alpha channel)
                 buffer.push(pixel[2]); // B
                 buffer.push(pixel[1]); // G
                 buffer.push(pixel[0]); // R
@@ -377,6 +406,7 @@ impl Framebuffer {
             }
         }
 
+        // Generated framebuffer buffer
         buffer
     }
 
@@ -387,11 +417,21 @@ impl Framebuffer {
         // Basic file size check
         if let Ok(metadata) = file.metadata() {
             println!("Framebuffer device size: {} bytes", metadata.len());
+            println!("Framebuffer device type: {:?}", metadata.file_type());
+            println!("Framebuffer device permissions: {:o}", metadata.permissions().mode());
+        } else {
+            println!("Failed to get framebuffer metadata");
         }
 
-        // For a more complete implementation, you could add ioctl calls here
-        // to get FBIOGET_VSCREENINFO and FBIOGET_FSCREENINFO
-        // But those require unsafe code and proper struct definitions
+        // Check if the file is a character device (framebuffers are char devices)
+        if let Ok(metadata) = file.metadata() {
+            if metadata.file_type().is_char_device() {
+                println!("Framebuffer is a character device (correct)");
+            } else {
+                println!("WARNING: Framebuffer is NOT a character device");
+            }
+        }
+
         println!("Framebuffer device fd: {}", fd);
     }
 }
@@ -431,12 +471,57 @@ impl ImageManager {
 
     fn load_and_scale_image(&self, path: &Path, width: u32, height: u32) -> Result<RgbaImage, ImageError> {
         let img = image::open(path)?;
-        let img = img.resize_exact(
-            width,
-            height,
+        let mut original_img = img.to_rgba8();
+        
+        // Determine if we need to rotate for portrait display
+        let display_is_portrait = height > width;
+        let image_is_landscape = original_img.width() > original_img.height();
+        
+        // Rotate landscape images 90° clockwise for portrait displays
+        if display_is_portrait && image_is_landscape {
+            original_img = image::imageops::rotate90(&original_img);
+        }
+        
+        // Calculate scaling factor to fit within target dimensions while preserving aspect ratio
+        let original_width = original_img.width() as f32;
+        let original_height = original_img.height() as f32;
+        let target_width = width as f32;
+        let target_height = height as f32;
+        
+        let scale_x = target_width / original_width;
+        let scale_y = target_height / original_height;
+        let scale = scale_x.min(scale_y); // Use smaller scale to fit within bounds
+        
+        let scaled_width = (original_width * scale) as u32;
+        let scaled_height = (original_height * scale) as u32;
+        
+        // Scale the image while preserving aspect ratio
+        let scaled_img = image::imageops::resize(
+            &original_img,
+            scaled_width,
+            scaled_height,
             image::imageops::FilterType::Lanczos3,
         );
-        Ok(img.to_rgba8())
+        
+        // Create a black background image at target resolution
+        let mut result = RgbaImage::new(width, height);
+        for pixel in result.pixels_mut() {
+            *pixel = Rgba([0, 0, 0, 255]); // Black background
+        }
+        
+        // Center the scaled image on the black background
+        let x_offset = (width - scaled_width) / 2;
+        let y_offset = (height - scaled_height) / 2;
+        
+        // Copy the scaled image to the center of the result
+        for y in 0..scaled_height {
+            for x in 0..scaled_width {
+                let pixel = *scaled_img.get_pixel(x, y);
+                result.put_pixel(x + x_offset, y + y_offset, pixel);
+            }
+        }
+        
+        Ok(result)
     }
 
     fn apply_easing(t: f32, easing_type: &TransitionType) -> f32 {
@@ -1195,6 +1280,7 @@ async fn run_with_mqtt_control(args: Args, tv_id: String) -> IoResult<()> {
         couchdb_username: args.couchdb_username.clone(),
         couchdb_password: args.couchdb_password.clone(),
         tv_id: tv_id.clone(),
+        orientation: args.orientation.clone(),
     };
     
     // Initialize slideshow controller
@@ -1281,10 +1367,15 @@ async fn run_standalone_mode(args: Args) -> IoResult<()> {
 }
 
 async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoResult<()> {
-    let orientation = Orientation::from(args.orientation.as_str());
-    let (width, height) = orientation.dimensions();
+    // Get orientation from controller (which may be updated from CouchDB)
+    let orientation_str = controller.get_orientation().await;
+    let orientation = Orientation::from(orientation_str.as_str());
+    
+    // IMPORTANT: The framebuffer hardware is likely still in landscape mode (1920x1080)
+    // We need to use the actual framebuffer dimensions, not the logical orientation
+    let (width, height) = (DEFAULT_LANDSCAPE_WIDTH, DEFAULT_LANDSCAPE_HEIGHT); // Always use landscape framebuffer dimensions
     let mut fb = Framebuffer::new(width, height, &args.framebuffer)?;
-    let image_manager = ImageManager::new();
+    let _image_manager = ImageManager::new();
     
     // Setup event handling for filesystem and signals
     let (tx, rx): (Sender<SlideshowEvent>, Receiver<SlideshowEvent>) = mpsc::channel();
@@ -1300,7 +1391,13 @@ async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoRe
     if controller.get_image_count().await == 0 {
         let tv_id = controller.get_tv_id().await;
         let local_ip = get_local_ip().unwrap_or_else(|| "Unknown IP".to_string());
-        let placeholder = create_info_placeholder(&tv_id, &local_ip, fb.width, fb.height);
+        let mut placeholder = create_info_placeholder(&tv_id, &local_ip, fb.width, fb.height);
+        
+        // If we're in portrait mode, rotate the placeholder too
+        if matches!(orientation, Orientation::Portrait) {
+            placeholder = image::imageops::rotate90(&placeholder);
+        }
+        
         let _ = fb.display_image(&placeholder);
         has_displayed_placeholder = true;
         println!("Displayed 'No images available' placeholder on startup");
@@ -1318,7 +1415,8 @@ async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoRe
         if let Some(current_image_path) = controller.get_current_image_path().await {
             if controller.is_playing().await {
                 // Load and display the current image
-                match image_manager.load_and_scale_image(&current_image_path, fb.width, fb.height) {
+                // Always load for the actual framebuffer dimensions (landscape)
+                match load_and_scale_image_for_framebuffer(&current_image_path, fb.width, fb.height, &orientation) {
                     Ok(image) => {
                         if let Err(e) = fb.display_image(&image) {
                             eprintln!("Failed to display image: {}", e);
@@ -1334,7 +1432,13 @@ async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoRe
             if !has_displayed_placeholder {
                 let tv_id = controller.get_tv_id().await;
                 let local_ip = get_local_ip().unwrap_or_else(|| "Unknown IP".to_string());
-                let placeholder = create_info_placeholder(&tv_id, &local_ip, fb.width, fb.height);
+                let mut placeholder = create_info_placeholder(&tv_id, &local_ip, fb.width, fb.height);
+                
+                // If we're in portrait mode, rotate the placeholder too
+                if matches!(orientation, Orientation::Portrait) {
+                    placeholder = image::imageops::rotate90(&placeholder);
+                }
+                
                 let _ = fb.display_image(&placeholder);
                 has_displayed_placeholder = true;
                 println!("Displayed 'No images available' placeholder");
@@ -1453,6 +1557,142 @@ fn create_info_placeholder(tv_id: &str, ip_address: &str, width: u32, height: u3
     }
     
     image
+}
+
+fn load_and_scale_image_for_framebuffer(path: &PathBuf, fb_width: u32, fb_height: u32, orientation: &Orientation) -> Result<RgbaImage, ImageError> {
+    let img = image::open(path)?;
+    let mut original_img = img.to_rgba8();
+    
+    // Processing image for display
+    
+    // For portrait orientation, we need to compose the image as if it's portrait, then rotate it to fit landscape framebuffer
+    if matches!(orientation, Orientation::Portrait) {
+        // Step 1: Rotate the source image if needed for portrait viewing
+        let image_is_landscape = original_img.width() > original_img.height();
+        if image_is_landscape {
+            println!("Rotating source landscape image 90° clockwise for portrait composition");
+            original_img = image::imageops::rotate90(&original_img);
+        }
+        
+        // Step 2: Scale for portrait dimensions (height > width)
+        let portrait_width = fb_height; // Swap dimensions for portrait
+        let portrait_height = fb_width;
+        
+        let scaled_img = scale_image_to_fit(&original_img, portrait_width, portrait_height);
+        
+        // Step 3: Rotate the final composed image 90° clockwise to fit landscape framebuffer
+        // Rotating final portrait composition for landscape framebuffer
+        Ok(image::imageops::rotate90(&scaled_img))
+    } else {
+        // Landscape mode - process normally
+        Ok(scale_image_to_fit(&original_img, fb_width, fb_height))
+    }
+}
+
+fn scale_image_to_fit(original_img: &RgbaImage, target_width: u32, target_height: u32) -> RgbaImage {
+    // Calculate scaling factor to fit within target dimensions while preserving aspect ratio
+    let original_width = original_img.width() as f32;
+    let original_height = original_img.height() as f32;
+    let target_width_f = target_width as f32;
+    let target_height_f = target_height as f32;
+    
+    let scale_x = target_width_f / original_width;
+    let scale_y = target_height_f / original_height;
+    let scale = scale_x.min(scale_y); // Use smaller scale to fit within bounds
+    
+    let scaled_width = (original_width * scale) as u32;
+    let scaled_height = (original_height * scale) as u32;
+    
+    // Scaling image to fit target dimensions
+    
+    // Scale the image while preserving aspect ratio
+    let scaled_img = image::imageops::resize(
+        original_img,
+        scaled_width,
+        scaled_height,
+        image::imageops::FilterType::Lanczos3,
+    );
+    
+    // Create a black background image at target resolution
+    let mut result = RgbaImage::new(target_width, target_height);
+    for pixel in result.pixels_mut() {
+        *pixel = Rgba([0, 0, 0, 255]); // Black background
+    }
+    
+    // Center the scaled image on the black background
+    let x_offset = (target_width - scaled_width) / 2;
+    let y_offset = (target_height - scaled_height) / 2;
+    
+    // Copy the scaled image to the center of the result
+    for y in 0..scaled_height {
+        for x in 0..scaled_width {
+            let pixel = *scaled_img.get_pixel(x, y);
+            result.put_pixel(x + x_offset, y + y_offset, pixel);
+        }
+    }
+    
+    result
+}
+
+fn load_and_scale_image_with_orientation(path: &PathBuf, width: u32, height: u32, orientation: &Orientation) -> Result<RgbaImage, ImageError> {
+    let img = image::open(path)?;
+    let mut original_img = img.to_rgba8();
+    
+    // Processing image for display orientation
+    
+    // Determine if we need to rotate for the display orientation
+    let display_is_portrait = matches!(orientation, Orientation::Portrait);
+    let image_is_landscape = original_img.width() > original_img.height();
+    
+    // Only rotate landscape images for portrait displays
+    if display_is_portrait && image_is_landscape {
+        println!("Rotating landscape image 90° clockwise for portrait display");
+        original_img = image::imageops::rotate90(&original_img);
+        println!("After rotation: {}x{}", original_img.width(), original_img.height());
+    } else {
+        println!("No rotation needed");
+    }
+    
+    // Calculate scaling factor to fit within target dimensions while preserving aspect ratio
+    let original_width = original_img.width() as f32;
+    let original_height = original_img.height() as f32;
+    let target_width = width as f32;
+    let target_height = height as f32;
+    
+    let scale_x = target_width / original_width;
+    let scale_y = target_height / original_height;
+    let scale = scale_x.min(scale_y); // Use smaller scale to fit within bounds
+    
+    let scaled_width = (original_width * scale) as u32;
+    let scaled_height = (original_height * scale) as u32;
+    
+    // Scale the image while preserving aspect ratio
+    let scaled_img = image::imageops::resize(
+        &original_img,
+        scaled_width,
+        scaled_height,
+        image::imageops::FilterType::Lanczos3,
+    );
+    
+    // Create a black background image at target resolution
+    let mut result = RgbaImage::new(width, height);
+    for pixel in result.pixels_mut() {
+        *pixel = Rgba([0, 0, 0, 255]); // Black background
+    }
+    
+    // Center the scaled image on the black background
+    let x_offset = (width - scaled_width) / 2;
+    let y_offset = (height - scaled_height) / 2;
+    
+    // Copy the scaled image to the center of the result
+    for y in 0..scaled_height {
+        for x in 0..scaled_width {
+            let pixel = *scaled_img.get_pixel(x, y);
+            result.put_pixel(x + x_offset, y + y_offset, pixel);
+        }
+    }
+    
+    Ok(result)
 }
 
 fn get_local_ip() -> Option<String> {

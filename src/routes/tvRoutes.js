@@ -12,14 +12,16 @@ const tvSchema = Joi.object({
   config: Joi.object({
     transition_effect: Joi.string().valid('fade', 'slide', 'wipe', 'dissolve').default('fade'),
     display_duration: Joi.number().min(1000).max(60000).default(5000),
-    resolution: Joi.string().default('1920x1080')
+    resolution: Joi.string().default('1920x1080'),
+    orientation: Joi.string().valid('landscape', 'portrait').default('landscape')
   }).default({})
 });
 
 const configUpdateSchema = Joi.object({
   transition_effect: Joi.string().valid('fade', 'slide', 'wipe', 'dissolve'),
   display_duration: Joi.number().min(1000).max(60000),
-  resolution: Joi.string()
+  resolution: Joi.string(),
+  orientation: Joi.string().valid('landscape', 'portrait')
 });
 
 // GET /api/tvs - Get all TVs

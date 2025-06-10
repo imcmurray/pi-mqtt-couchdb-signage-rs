@@ -1,6 +1,7 @@
-use couch_rs::{Client, database::Database};
+use couch_rs::{Client, database::Database, document::TypedCouchDocument};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::borrow::Cow;
 use crate::mqtt_client::ImageInfo;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,6 +65,35 @@ pub struct CouchTv {
 pub struct TvConfig {
     pub transition_effect: String,
     pub display_duration: u64,
+    #[serde(default = "default_orientation")]
+    pub orientation: String,
+}
+
+fn default_orientation() -> String {
+    "landscape".to_string()
+}
+
+impl TypedCouchDocument for CouchTv {
+    fn get_id(&self) -> Cow<str> {
+        Cow::Borrowed(&self.id)
+    }
+
+    fn get_rev(&self) -> Cow<str> {
+        Cow::Borrowed(self.rev.as_deref().unwrap_or(""))
+    }
+
+    fn set_id(&mut self, id: &str) {
+        self.id = id.to_string();
+    }
+
+    fn set_rev(&mut self, rev: &str) {
+        self.rev = Some(rev.to_string());
+    }
+
+    fn merge_ids(&mut self, other: &Self) {
+        self.id = other.id.clone();
+        self.rev = other.rev.clone();
+    }
 }
 
 pub struct CouchDbClient {
@@ -209,6 +239,7 @@ impl CouchDbClient {
                     config: TvConfig {
                         transition_effect: "fade".to_string(),
                         display_duration: 5000,
+                        orientation: "landscape".to_string(),
                     },
                     current_image: current_image.map(|s| s.to_string()),
                 }
@@ -223,10 +254,7 @@ impl CouchDbClient {
         }
         
         // Save the document back to CouchDB
-        let mut doc_value = serde_json::to_value(&tv_doc)
-            .map_err(|e| format!("Failed to serialize TV document: {}", e))?;
-            
-        self.db.save(&mut doc_value).await
+        self.db.save(&mut tv_doc).await
             .map_err(|e| format!("Failed to save TV document {}: {}", tv_id, e))?;
         
         println!("Successfully updated TV {} status to {}", tv_id, status);
@@ -252,6 +280,7 @@ impl CouchDbClient {
                         Ok(Some(TvConfig {
                             transition_effect: "fade".to_string(),
                             display_duration: 5000,
+                            orientation: "landscape".to_string(),
                         }))
                     }
                 }
@@ -262,6 +291,7 @@ impl CouchDbClient {
                 Ok(Some(TvConfig {
                     transition_effect: "fade".to_string(),
                     display_duration: 5000,
+                    orientation: "landscape".to_string(),
                 }))
             }
         }

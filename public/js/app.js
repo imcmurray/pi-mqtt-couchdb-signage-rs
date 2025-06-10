@@ -507,6 +507,9 @@ class DigitalSignageApp {
         const form = e.target;
         const isEdit = !!form.dataset.tvId;
         
+        const orientation = document.getElementById('tv-orientation').value;
+        const resolution = orientation === 'portrait' ? '1080x1920' : '1920x1080';
+        
         const tvData = {
             name: document.getElementById('tv-name').value,
             location: document.getElementById('tv-location').value,
@@ -514,7 +517,8 @@ class DigitalSignageApp {
             config: {
                 transition_effect: document.getElementById('tv-transition').value,
                 display_duration: parseInt(document.getElementById('tv-duration').value),
-                orientation: document.getElementById('tv-orientation').value
+                orientation: orientation,
+                resolution: resolution
             }
         };
 

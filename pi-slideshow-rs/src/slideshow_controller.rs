@@ -21,6 +21,7 @@ pub struct ControllerConfig {
     pub couchdb_username: Option<String>,
     pub couchdb_password: Option<String>,
     pub tv_id: String,
+    pub orientation: String,
 }
 
 pub struct SlideshowController {
@@ -123,8 +124,9 @@ impl SlideshowController {
             if let Ok(Some(tv_config)) = couchdb_client.get_tv_config(&tv_id).await {
                 let mut config = self.config.write().await;
                 config.display_duration = Duration::from_millis(tv_config.display_duration);
-                println!("Applied config from CouchDB: display_duration={}ms, transition_effect={}", 
-                         tv_config.display_duration, tv_config.transition_effect);
+                config.orientation = tv_config.orientation.clone();
+                println!("Applied CouchDB config: {}ms display, {} orientation", 
+                         tv_config.display_duration, tv_config.orientation);
             }
         }
         
@@ -176,7 +178,9 @@ impl SlideshowController {
         }
 
         images.sort_by(|a, b| a.order.cmp(&b.order));
-        println!("Found {} local images", images.len());
+        if !images.is_empty() {
+            println!("Found {} local images", images.len());
+        }
         Ok(())
     }
 
@@ -184,12 +188,12 @@ impl SlideshowController {
         let config = self.config.read().await;
         let tv_id = format!("tv_{}", config.tv_id);
         
-        println!("Fetching images from CouchDB for TV: {}", tv_id);
-        
         if let Some(ref couchdb_client) = *self.couchdb_client.read().await {
             let couchdb_images = couchdb_client.get_images_for_tv(&tv_id).await?;
             
-            println!("Received {} images from CouchDB", couchdb_images.len());
+            if !couchdb_images.is_empty() {
+                println!("Received {} images from CouchDB for {}", couchdb_images.len(), tv_id);
+            }
 
             // Download and update local images
             let mut local_images = self.images.write().await;
@@ -226,7 +230,9 @@ impl SlideshowController {
             }
 
             local_images.sort_by(|a, b| a.order.cmp(&b.order));
-            println!("Updated to {} images from CouchDB", local_images.len());
+            if !local_images.is_empty() {
+                println!("Updated to {} images from CouchDB", local_images.len());
+            }
             
             Ok(())
         } else {
@@ -249,16 +255,13 @@ impl SlideshowController {
     }
 
     async fn handle_command(&self, command: SlideshowCommand) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        println!("Handling command: {:?}", command);
 
         match command {
             SlideshowCommand::Play => {
                 *self.state.write().await = SlideshowState::Playing;
-                println!("Slideshow resumed");
             }
             SlideshowCommand::Pause => {
                 *self.state.write().await = SlideshowState::Paused;
-                println!("Slideshow paused");
             }
             SlideshowCommand::Next => {
                 self.advance_to_next_image().await;
@@ -293,7 +296,6 @@ impl SlideshowController {
         if !images.is_empty() {
             let mut current_index = self.current_index.write().await;
             *current_index = (*current_index + 1) % images.len();
-            println!("Advanced to next image: index {}", *current_index);
         }
     }
 
@@ -306,7 +308,6 @@ impl SlideshowController {
             } else {
                 *current_index - 1
             };
-            println!("Advanced to previous image: index {}", *current_index);
         }
     }
 
@@ -314,7 +315,9 @@ impl SlideshowController {
         let config = self.config.read().await;
         let mut images = self.images.write().await;
         
-        println!("Updating images: received {} new images", new_images.len());
+        if !new_images.is_empty() {
+            println!("Updating images: received {} new images", new_images.len());
+        }
 
         // Download new images from CouchDB
         if let Some(ref couchdb_client) = *self.couchdb_client.read().await {
@@ -386,17 +389,10 @@ impl SlideshowController {
         
         if let Some(duration) = new_config.display_duration {
             config.display_duration = Duration::from_millis(duration);
-            println!("Updated display duration to {}ms", duration);
         }
         
         if let Some(transition) = new_config.transition_duration {
             config.transition_duration = Duration::from_millis(transition);
-            println!("Updated transition duration to {}ms", transition);
-        }
-        
-        if let Some(effect) = new_config.transition_effect {
-            println!("Transition effect update requested: {} (will be applied on next transition)", effect);
-            // Note: The transition effect would need to be stored and used by the main slideshow loop
         }
     }
 
@@ -490,6 +486,10 @@ impl SlideshowController {
 
     pub async fn get_tv_id(&self) -> String {
         self.config.read().await.tv_id.clone()
+    }
+
+    pub async fn get_orientation(&self) -> String {
+        self.config.read().await.orientation.clone()
     }
 
     pub async fn run_periodic_tasks(&self) {

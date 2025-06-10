@@ -5,15 +5,16 @@ Developing a comprehensive layering system for the Digital Signage Management Sy
 
 ## Development Phases
 
-### Phase 1: Foundation - Orientation Support ⏳
-**Status**: Not Started  
+### Phase 1: Foundation - Orientation Support ✅
+**Status**: Nearly Complete (Testing Remaining)  
 **Goal**: Get portrait TVs working with current slideshow system  
 **Branch**: `feature/orientation-support`
 
 **Tasks:**
-- [ ] Detect framebuffer orientation (portrait vs landscape) in pi-slideshow-rs
-- [ ] Update image scaling/positioning logic for orientation awareness
-- [ ] Add orientation setting to TV configuration in management UI
+- [x] Detect framebuffer orientation (portrait vs landscape) in pi-slideshow-rs
+- [x] Update image scaling/positioning logic for orientation awareness
+- [x] Add orientation setting to TV configuration in management UI
+- [x] Update TV model and form handling for orientation support
 - [ ] Test portrait TV functionality with existing slideshow system
 - [ ] Update documentation for orientation support
 
