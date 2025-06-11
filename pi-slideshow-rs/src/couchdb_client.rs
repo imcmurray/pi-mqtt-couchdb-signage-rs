@@ -121,8 +121,12 @@ impl CouchDbClient {
     pub async fn get_images_for_tv(&self, tv_id: &str) -> Result<Vec<ImageInfo>, Box<dyn std::error::Error + Send + Sync>> {
         println!("Fetching images for TV: {}", tv_id);
         
-        // Get all documents and filter for images assigned to this TV
-        let all_docs = self.db.get_all::<serde_json::Value>().await
+        // Get all documents and filter for images assigned to this TV with timeout
+        let all_docs = tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            self.db.get_all::<serde_json::Value>()
+        ).await
+            .map_err(|_| "CouchDB get_all query timeout after 30 seconds")?
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
         
         let mut images_for_tv = Vec::new();
@@ -132,15 +136,52 @@ impl CouchDbClient {
             if let Ok(image_doc) = serde_json::from_value::<CouchImage>(doc) {
                 // Check if this is an image document and if this TV is in the assigned_tvs list
                 if image_doc.doc_type == "image" && image_doc.assigned_tvs.contains(&tv_id.to_string()) {
-                    // Determine file extension from metadata format, fallback to original name, then default to png
-                    let extension = if !image_doc.metadata.format.is_empty() {
-                        format!(".{}", image_doc.metadata.format.to_lowercase())
+                    // Determine file extension from attachment content_type, fallback to metadata format, then original name
+                    let extension = if let Some(attachments) = &image_doc.attachments {
+                        if let Some((_name, attachment)) = attachments.iter().next() {
+                            // Use content_type to determine extension
+                            match attachment.content_type.as_str() {
+                                "image/jpeg" => ".jpg".to_string(),
+                                "image/jpg" => ".jpg".to_string(),
+                                "image/png" => ".png".to_string(),
+                                "image/gif" => ".gif".to_string(),
+                                "image/webp" => ".webp".to_string(),
+                                _ => {
+                                    // Fallback to metadata format if content_type is unknown
+                                    if !image_doc.metadata.format.is_empty() {
+                                        format!(".{}", image_doc.metadata.format.to_lowercase())
+                                    } else {
+                                        std::path::Path::new(&image_doc.original_name)
+                                            .extension()
+                                            .and_then(|ext| ext.to_str())
+                                            .map(|ext| format!(".{}", ext))
+                                            .unwrap_or_else(|| ".png".to_string())
+                                    }
+                                }
+                            }
+                        } else {
+                            // No attachments, fallback to metadata
+                            if !image_doc.metadata.format.is_empty() {
+                                format!(".{}", image_doc.metadata.format.to_lowercase())
+                            } else {
+                                std::path::Path::new(&image_doc.original_name)
+                                    .extension()
+                                    .and_then(|ext| ext.to_str())
+                                    .map(|ext| format!(".{}", ext))
+                                    .unwrap_or_else(|| ".png".to_string())
+                            }
+                        }
                     } else {
-                        std::path::Path::new(&image_doc.original_name)
-                            .extension()
-                            .and_then(|ext| ext.to_str())
-                            .map(|ext| format!(".{}", ext))
-                            .unwrap_or_else(|| ".png".to_string())
+                        // No attachments, fallback to metadata format, then original name
+                        if !image_doc.metadata.format.is_empty() {
+                            format!(".{}", image_doc.metadata.format.to_lowercase())
+                        } else {
+                            std::path::Path::new(&image_doc.original_name)
+                                .extension()
+                                .and_then(|ext| ext.to_str())
+                                .map(|ext| format!(".{}", ext))
+                                .unwrap_or_else(|| ".png".to_string())
+                        }
                     };
                     
                     let image_info = ImageInfo {
@@ -166,8 +207,12 @@ impl CouchDbClient {
     pub async fn download_image_attachment(&self, image_id: &str, local_path: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         println!("Downloading image attachment {} to {}", image_id, local_path);
         
-        // First get the image document to find attachment info
-        let doc_value: serde_json::Value = self.db.get(image_id).await
+        // First get the image document to find attachment info with timeout
+        let doc_value: serde_json::Value = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            self.db.get(image_id)
+        ).await
+            .map_err(|_| format!("Timeout getting image document {} after 10 seconds", image_id))?
             .map_err(|e| format!("Failed to get image document {}: {}", image_id, e))?;
         
         let image_doc: CouchImage = serde_json::from_value(doc_value)
@@ -215,16 +260,19 @@ impl CouchDbClient {
     pub async fn update_tv_status(&self, tv_id: &str, status: &str, current_image: Option<&str>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         println!("Updating TV {} status to {} in CouchDB", tv_id, status);
         
-        // Try to get existing TV document
-        let tv_doc_result = self.db.get::<serde_json::Value>(tv_id).await;
+        // Try to get existing TV document with timeout
+        let tv_doc_result = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            self.db.get::<serde_json::Value>(tv_id)
+        ).await;
         
         let mut tv_doc = match tv_doc_result {
-            Ok(doc) => {
+            Ok(Ok(doc)) => {
                 // Parse existing document
                 serde_json::from_value::<CouchTv>(doc)
                     .map_err(|e| format!("Failed to parse existing TV document {}: {}", tv_id, e))?
             }
-            Err(_) => {
+            Ok(Err(_)) | Err(_) => {
                 // Create new TV document if it doesn't exist
                 println!("TV document {} not found, creating new one", tv_id);
                 CouchTv {
@@ -253,8 +301,12 @@ impl CouchDbClient {
             tv_doc.current_image = Some(image.to_string());
         }
         
-        // Save the document back to CouchDB
-        self.db.save(&mut tv_doc).await
+        // Save the document back to CouchDB with timeout
+        tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            self.db.save(&mut tv_doc)
+        ).await
+            .map_err(|_| format!("Timeout saving TV document {} after 10 seconds", tv_id))?
             .map_err(|e| format!("Failed to save TV document {}: {}", tv_id, e))?;
         
         println!("Successfully updated TV {} status to {}", tv_id, status);
@@ -264,9 +316,12 @@ impl CouchDbClient {
     pub async fn get_tv_config(&self, tv_id: &str) -> Result<Option<TvConfig>, Box<dyn std::error::Error + Send + Sync>> {
         println!("Getting TV config for {} from CouchDB", tv_id);
         
-        // Try to get TV document from CouchDB
-        match self.db.get::<serde_json::Value>(tv_id).await {
-            Ok(doc_value) => {
+        // Try to get TV document from CouchDB with timeout
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            self.db.get::<serde_json::Value>(tv_id)
+        ).await {
+            Ok(Ok(doc_value)) => {
                 // Parse the TV document
                 match serde_json::from_value::<CouchTv>(doc_value) {
                     Ok(tv_doc) => {
@@ -285,9 +340,18 @@ impl CouchDbClient {
                     }
                 }
             }
-            Err(e) => {
+            Ok(Err(e)) => {
                 println!("TV document {} not found in CouchDB: {}, using default config", tv_id, e);
                 // Return default config if document doesn't exist
+                Ok(Some(TvConfig {
+                    transition_effect: "fade".to_string(),
+                    display_duration: 5000,
+                    orientation: "landscape".to_string(),
+                }))
+            }
+            Err(_) => {
+                println!("TV document {} query timeout, using default config", tv_id);
+                // Return default config on timeout
                 Ok(Some(TvConfig {
                     transition_effect: "fade".to_string(),
                     display_duration: 5000,

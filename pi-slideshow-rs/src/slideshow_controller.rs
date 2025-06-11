@@ -105,6 +105,12 @@ impl SlideshowController {
         }
         drop(config);
         
+        // Register with management system
+        if let Err(e) = self.register_with_management_system().await {
+            eprintln!("Warning: Failed to register with management system: {}", e);
+            println!("Continuing without registration - TV may not appear in management UI");
+        }
+        
         // Load initial images from directory
         self.scan_local_images().await?;
         
@@ -191,47 +197,47 @@ impl SlideshowController {
         if let Some(ref couchdb_client) = *self.couchdb_client.read().await {
             let couchdb_images = couchdb_client.get_images_for_tv(&tv_id).await?;
             
-            if !couchdb_images.is_empty() {
-                println!("Received {} images from CouchDB for {}", couchdb_images.len(), tv_id);
-            }
-
-            // Download and update local images
+            // Always clear local images when CouchDB is available - we only show what's assigned
             let mut local_images = self.images.write().await;
             local_images.clear();
+            
+            if !couchdb_images.is_empty() {
+                println!("Received {} images from CouchDB for {}", couchdb_images.len(), tv_id);
 
-            for image_info in couchdb_images {
-                // Get extension from image info
-                let original_ext = image_info.extension
-                    .as_deref()
-                    .and_then(|ext| if ext.starts_with('.') { Some(&ext[1..]) } else { Some(ext) })
-                    .unwrap_or("png");
-                
-                // Use image ID with original extension as local filename
-                let local_filename = format!("{}.{}", image_info.id, original_ext);
-                let local_path = Path::new(&config.image_dir).join(&local_filename);
-                
-                // Download image attachment from CouchDB if it doesn't exist locally
-                if !local_path.exists() {
-                    if let Err(e) = couchdb_client.download_image_attachment(&image_info.id, &local_path.to_string_lossy()).await {
-                        eprintln!("Failed to download image attachment {}: {}", image_info.id, e);
-                        continue;
+                for image_info in couchdb_images {
+                    // Get extension from image info
+                    let original_ext = image_info.extension
+                        .as_deref()
+                        .and_then(|ext| if ext.starts_with('.') { Some(&ext[1..]) } else { Some(ext) })
+                        .unwrap_or("png");
+                    
+                    // Use image ID with original extension as local filename
+                    let local_filename = format!("{}.{}", image_info.id, original_ext);
+                    let local_path = Path::new(&config.image_dir).join(&local_filename);
+                    
+                    // Download image attachment from CouchDB if it doesn't exist locally
+                    if !local_path.exists() {
+                        if let Err(e) = couchdb_client.download_image_attachment(&image_info.id, &local_path.to_string_lossy()).await {
+                            eprintln!("Failed to download image attachment {}: {}", image_info.id, e);
+                            continue;
+                        }
                     }
+
+                    let updated_info = ImageInfo {
+                        id: image_info.id,
+                        path: local_path.to_string_lossy().to_string(),
+                        order: image_info.order,
+                        url: None, // Not needed for CouchDB attachments
+                        extension: image_info.extension,
+                    };
+                    
+                    local_images.push(updated_info);
                 }
 
-                let updated_info = ImageInfo {
-                    id: image_info.id,
-                    path: local_path.to_string_lossy().to_string(),
-                    order: image_info.order,
-                    url: None, // Not needed for CouchDB attachments
-                    extension: image_info.extension,
-                };
-                
-                local_images.push(updated_info);
-            }
-
-            local_images.sort_by(|a, b| a.order.cmp(&b.order));
-            if !local_images.is_empty() {
+                local_images.sort_by(|a, b| a.order.cmp(&b.order));
                 println!("Updated to {} images from CouchDB", local_images.len());
+            } else {
+                println!("No images assigned to {} in CouchDB", tv_id);
             }
             
             Ok(())
@@ -315,9 +321,7 @@ impl SlideshowController {
         let config = self.config.read().await;
         let mut images = self.images.write().await;
         
-        if !new_images.is_empty() {
-            println!("Updating images: received {} new images", new_images.len());
-        }
+        println!("Updating images: received {} new images (previous count: {})", new_images.len(), images.len());
 
         // Download new images from CouchDB
         if let Some(ref couchdb_client) = *self.couchdb_client.read().await {
@@ -388,11 +392,19 @@ impl SlideshowController {
         let mut config = self.config.write().await;
         
         if let Some(duration) = new_config.display_duration {
+            println!("Updating display duration from {}ms to {}ms", config.display_duration.as_millis(), duration);
             config.display_duration = Duration::from_millis(duration);
         }
         
         if let Some(transition) = new_config.transition_duration {
+            println!("Updating transition duration from {}ms to {}ms", config.transition_duration.as_millis(), transition);
             config.transition_duration = Duration::from_millis(transition);
+        }
+        
+        if let Some(orientation) = new_config.orientation {
+            println!("🔄 ORIENTATION UPDATE: Updating orientation from {} to {}", config.orientation, orientation);
+            config.orientation = orientation.clone();
+            println!("🔄 ORIENTATION UPDATED: New orientation set to {}", orientation);
         }
     }
 
@@ -498,6 +510,24 @@ impl SlideshowController {
         loop {
             interval.tick().await;
             
+            // Periodically sync config from CouchDB
+            if let Some(ref couchdb_client) = *self.couchdb_client.read().await {
+                let config = self.config.read().await;
+                let tv_id = format!("tv_{}", config.tv_id);
+                drop(config);
+                
+                if let Ok(Some(tv_config)) = couchdb_client.get_tv_config(&tv_id).await {
+                    let mut config = self.config.write().await;
+                    let old_orientation = config.orientation.clone();
+                    config.display_duration = Duration::from_millis(tv_config.display_duration);
+                    config.orientation = tv_config.orientation.clone();
+                    
+                    if old_orientation != tv_config.orientation {
+                        println!("🔄 COUCHDB CONFIG SYNC: Orientation changed from {} to {}", old_orientation, tv_config.orientation);
+                    }
+                }
+            }
+            
             // Periodically sync with CouchDB
             if let Err(e) = self.fetch_images_from_couchdb().await {
                 eprintln!("Failed to sync with CouchDB: {}", e);
@@ -506,5 +536,133 @@ impl SlideshowController {
             // Send status update
             self.send_status_update().await;
         }
+    }
+
+    async fn register_with_management_system(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let config = self.config.read().await;
+        
+        // Check if TV already exists in CouchDB to preserve orientation
+        let existing_orientation = if let Some(ref couchdb_client) = *self.couchdb_client.read().await {
+            let tv_id = format!("tv_{}", config.tv_id);
+            if let Ok(Some(tv_config)) = couchdb_client.get_tv_config(&tv_id).await {
+                println!("Found existing TV config, preserving orientation: {}", tv_config.orientation);
+                tv_config.orientation
+            } else {
+                println!("No existing TV config found, using default orientation: {}", config.orientation);
+                config.orientation.clone()
+            }
+        } else {
+            println!("No CouchDB client available, using current orientation: {}", config.orientation);
+            config.orientation.clone()
+        };
+        
+        // Extract management server URL from CouchDB URL (assume same host, different port)
+        let management_url = if config.couchdb_url.contains("localhost") || config.couchdb_url.contains("127.0.0.1") {
+            "http://localhost:3000".to_string()
+        } else {
+            // Extract hostname from CouchDB URL and use port 3000
+            let url = url::Url::parse(&config.couchdb_url)?;
+            if let Some(host) = url.host_str() {
+                format!("http://{}:3000", host)
+            } else {
+                return Err("Could not extract hostname from CouchDB URL".into());
+            }
+        };
+        
+        // Get hostname with timeout
+        let hostname = tokio::time::timeout(
+            Duration::from_secs(2),
+            tokio::task::spawn_blocking(|| {
+                std::process::Command::new("hostname")
+                    .output()
+                    .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+                    .unwrap_or_else(|_| "unknown-pi".to_string())
+            })
+        ).await.unwrap_or_else(|_| Ok("timeout-pi".to_string()))?;
+        
+        // Get local IP address with timeout
+        let local_ip = tokio::time::timeout(
+            Duration::from_secs(3),
+            tokio::task::spawn_blocking(|| Self::get_local_ip())
+        ).await.unwrap_or_else(|_| Ok(None))?.unwrap_or_else(|| "127.0.0.1".to_string());
+        
+        // Prepare registration data with preserved orientation
+        let registration_data = serde_json::json!({
+            "tv_id": format!("tv_{}", config.tv_id),
+            "hostname": hostname,
+            "ip_address": local_ip,
+            "platform": "raspberry-pi",
+            "version": env!("CARGO_PKG_VERSION"),
+            "orientation": existing_orientation
+        });
+        
+        // Send registration request
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .build()?;
+            
+        let registration_url = format!("{}/api/tvs/register", management_url);
+        println!("Registering TV with management system at {}", registration_url);
+        
+        let response = client
+            .post(&registration_url)
+            .json(&registration_data)
+            .send()
+            .await?;
+            
+        if response.status().is_success() {
+            let result: serde_json::Value = response.json().await?;
+            let is_new = result["isNew"].as_bool().unwrap_or(false);
+            if is_new {
+                println!("Successfully registered as new TV: {}", config.tv_id);
+            } else {
+                println!("Successfully re-registered existing TV: {} (preserved orientation: {})", config.tv_id, existing_orientation);
+            }
+        } else {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(format!("Registration failed with status {}: {}", status, error_text).into());
+        }
+        
+        Ok(())
+    }
+
+    fn get_local_ip() -> Option<String> {
+        use std::net::TcpStream;
+        use std::time::Duration;
+        
+        // Try to connect to a remote address to determine local IP with timeout
+        match TcpStream::connect_timeout(
+            &"8.8.8.8:80".parse().unwrap(),
+            Duration::from_secs(2)
+        ) {
+            Ok(stream) => {
+                if let Ok(local_addr) = stream.local_addr() {
+                    return Some(local_addr.ip().to_string());
+                }
+            }
+            Err(_) => {
+                // Connection failed, continue to fallback
+            }
+        }
+        
+        // Fallback: try to get IP from network interfaces with timeout
+        use std::process::Command;
+        match std::thread::spawn(|| {
+            Command::new("hostname").arg("-I").output()
+        }).join() {
+            Ok(Ok(output)) => {
+                if let Ok(ip_str) = String::from_utf8(output.stdout) {
+                    if let Some(ip) = ip_str.split_whitespace().next() {
+                        return Some(ip.to_string());
+                    }
+                }
+            }
+            _ => {
+                // Command failed or thread panicked
+            }
+        }
+        
+        None
     }
 }

@@ -70,6 +70,7 @@ pub struct SlideshowConfig {
     pub transition_effect: Option<String>,
     pub display_duration: Option<u64>,
     pub transition_duration: Option<u64>,
+    pub orientation: Option<String>,
 }
 
 #[derive(Clone)]
@@ -175,7 +176,21 @@ impl MqttClient {
                 SlideshowCommand::UpdateImages { images }
             },
             "update_config" => {
-                let config: SlideshowConfig = serde_json::from_value(mqtt_command.payload.clone())?;
+                // The payload contains the full TV config object from the management system
+                // We need to map it to our SlideshowConfig structure
+                let config = SlideshowConfig {
+                    transition_effect: mqtt_command.payload.get("transition_effect")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    display_duration: mqtt_command.payload.get("display_duration")
+                        .and_then(|v| v.as_u64()),
+                    transition_duration: mqtt_command.payload.get("transition_duration")
+                        .and_then(|v| v.as_u64()),
+                    orientation: mqtt_command.payload.get("orientation")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                };
+                println!("🔄 MQTT CONFIG UPDATE received: {:?}", config);
                 SlideshowCommand::UpdateConfig { config }
             },
             _ => {
@@ -349,12 +364,12 @@ pub async fn generate_tv_id() -> String {
         if let Ok(hostname_str) = String::from_utf8(hostname.stdout) {
             let clean_hostname = hostname_str.trim().replace(' ', "_");
             if !clean_hostname.is_empty() && clean_hostname != "localhost" {
-                return format!("tv_{}", clean_hostname);
+                return clean_hostname;
             }
         }
     }
 
     // Fallback to UUID
-    format!("tv_{}", Uuid::new_v4().to_string()[..8].to_string())
+    Uuid::new_v4().to_string()[..8].to_string()
 }
 

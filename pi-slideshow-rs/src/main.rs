@@ -4,7 +4,7 @@ use memmap2::MmapMut;
 use notify::{
     Event, EventKind, RecommendedWatcher, RecursiveMode, Result as NotifyResult, Watcher,
 };
-use signal_hook::{consts::SIGINT, iterator::Signals};
+use signal_hook::{consts::{SIGINT, SIGTERM}, iterator::Signals};
 use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Result as IoResult, Seek, SeekFrom, Write};
 use std::os::unix::io::AsRawFd;
@@ -465,12 +465,17 @@ impl ImageManager {
         }
 
         self.images.sort();
-        println!("Found {} PNG images", self.images.len());
+        println!("Found {} images (PNG/JPG/JPEG)", self.images.len());
         Ok(())
     }
 
     fn load_and_scale_image(&self, path: &Path, width: u32, height: u32) -> Result<RgbaImage, ImageError> {
-        let img = image::open(path)?;
+        println!("Loading image: {}", path.display());
+        let img = image::open(path).map_err(|e| {
+            eprintln!("Failed to load image {}: {}", path.display(), e);
+            e
+        })?;
+        println!("Successfully loaded image format: {:?}", img.color());
         let mut original_img = img.to_rgba8();
         
         // Determine if we need to rotate for portrait display
@@ -1023,9 +1028,13 @@ fn setup_filesystem_watcher(tx: Sender<SlideshowEvent>, watch_dir: &Path) -> Not
 
 fn setup_signal_handler(tx: Sender<SlideshowEvent>) -> std::thread::JoinHandle<()> {
     thread::spawn(move || {
-        let mut signals = Signals::new(&[SIGINT]).unwrap();
-        for _sig in signals.forever() {
-            println!("\nReceived SIGINT, shutting down...");
+        let mut signals = Signals::new(&[SIGINT, SIGTERM]).unwrap();
+        for sig in signals.forever() {
+            match sig {
+                SIGINT => println!("\nReceived SIGINT, shutting down..."),
+                SIGTERM => println!("\nReceived SIGTERM, shutting down..."),
+                _ => println!("\nReceived signal {}, shutting down...", sig),
+            }
             let _ = tx.send(SlideshowEvent::Shutdown);
             break;
         }
@@ -1220,9 +1229,13 @@ fn display_exit_joke(fb: &mut Framebuffer) -> IoResult<()> {
     
     // Set up a second signal handler for immediate exit
     let _handle = thread::spawn(move || {
-        let mut signals = Signals::new(&[SIGINT]).unwrap();
-        for _sig in signals.forever() {
-            println!("Second SIGINT received, exiting immediately");
+        let mut signals = Signals::new(&[SIGINT, SIGTERM]).unwrap();
+        for sig in signals.forever() {
+            match sig {
+                SIGINT => println!("Second SIGINT received, exiting immediately"),
+                SIGTERM => println!("Second SIGTERM received, exiting immediately"),
+                _ => println!("Second signal {} received, exiting immediately", sig),
+            }
             interrupted_clone.store(true, Ordering::Relaxed);
             std::process::exit(0); // Force immediate exit
         }
@@ -1367,9 +1380,9 @@ async fn run_standalone_mode(args: Args) -> IoResult<()> {
 }
 
 async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoResult<()> {
-    // Get orientation from controller (which may be updated from CouchDB)
+    // Get initial orientation from controller (which may be updated from CouchDB)
     let orientation_str = controller.get_orientation().await;
-    let orientation = Orientation::from(orientation_str.as_str());
+    let mut current_orientation = Orientation::from(orientation_str.as_str());
     
     // IMPORTANT: The framebuffer hardware is likely still in landscape mode (1920x1080)
     // We need to use the actual framebuffer dimensions, not the logical orientation
@@ -1386,6 +1399,7 @@ async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoRe
     let mut last_image_change = Instant::now();
     let mut running = true;
     let mut has_displayed_placeholder = false;
+    let mut last_image_count = controller.get_image_count().await;
     
     // Initial display check - show placeholder immediately if no images
     if controller.get_image_count().await == 0 {
@@ -1394,7 +1408,7 @@ async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoRe
         let mut placeholder = create_info_placeholder(&tv_id, &local_ip, fb.width, fb.height);
         
         // If we're in portrait mode, rotate the placeholder too
-        if matches!(orientation, Orientation::Portrait) {
+        if matches!(current_orientation, Orientation::Portrait) {
             placeholder = image::imageops::rotate90(&placeholder);
         }
         
@@ -1404,6 +1418,25 @@ async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoRe
     }
     
     while running {
+        // Check if orientation has changed (due to MQTT config update)
+        let orientation_str = controller.get_orientation().await;
+        let new_orientation = Orientation::from(orientation_str.as_str());
+        if std::mem::discriminant(&current_orientation) != std::mem::discriminant(&new_orientation) {
+            println!("🔄 DISPLAY ORIENTATION CHANGE: {} -> {:?}, forcing immediate redraw", current_orientation as u8, new_orientation);
+            current_orientation = new_orientation;
+            // Force a redraw by resetting the last image change time
+            last_image_change = Instant::now() - Duration::from_secs(10);
+            has_displayed_placeholder = false; // Force placeholder redraw if needed
+        }
+        
+        // Check if image count has changed (due to CouchDB sync, etc)
+        let current_image_count = controller.get_image_count().await;
+        if current_image_count != last_image_count {
+            println!("Image count changed from {} to {}, resetting placeholder flag", last_image_count, current_image_count);
+            has_displayed_placeholder = false;
+            last_image_count = current_image_count;
+        }
+        
         // Check if we should advance automatically based on controller state
         if controller.should_advance_automatically(last_image_change).await {
             controller.advance_to_next_image().await;
@@ -1416,7 +1449,7 @@ async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoRe
             if controller.is_playing().await {
                 // Load and display the current image
                 // Always load for the actual framebuffer dimensions (landscape)
-                match load_and_scale_image_for_framebuffer(&current_image_path, fb.width, fb.height, &orientation) {
+                match load_and_scale_image_for_framebuffer(&current_image_path, fb.width, fb.height, &current_orientation) {
                     Ok(image) => {
                         if let Err(e) = fb.display_image(&image) {
                             eprintln!("Failed to display image: {}", e);
@@ -1428,14 +1461,15 @@ async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoRe
                 }
             }
         } else if controller.get_image_count().await == 0 {
-            // No images available, show a placeholder with TV ID and IP (only if not already displayed)
+            // No images available, show a placeholder with TV ID and IP
+            // Always show placeholder when transitioning from images to no images
             if !has_displayed_placeholder {
                 let tv_id = controller.get_tv_id().await;
                 let local_ip = get_local_ip().unwrap_or_else(|| "Unknown IP".to_string());
                 let mut placeholder = create_info_placeholder(&tv_id, &local_ip, fb.width, fb.height);
                 
                 // If we're in portrait mode, rotate the placeholder too
-                if matches!(orientation, Orientation::Portrait) {
+                if matches!(current_orientation, Orientation::Portrait) {
                     placeholder = image::imageops::rotate90(&placeholder);
                 }
                 
@@ -1445,7 +1479,11 @@ async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoRe
             }
         } else {
             // Reset placeholder flag when images become available
-            has_displayed_placeholder = false;
+            // This ensures placeholder will be shown again if images are later removed
+            if has_displayed_placeholder {
+                has_displayed_placeholder = false;
+                println!("Images now available, clearing placeholder flag");
+            }
         }
         
         // Handle filesystem events
@@ -1560,7 +1598,12 @@ fn create_info_placeholder(tv_id: &str, ip_address: &str, width: u32, height: u3
 }
 
 fn load_and_scale_image_for_framebuffer(path: &PathBuf, fb_width: u32, fb_height: u32, orientation: &Orientation) -> Result<RgbaImage, ImageError> {
-    let img = image::open(path)?;
+    println!("Loading image for framebuffer: {}", path.display());
+    let img = image::open(path).map_err(|e| {
+        eprintln!("Failed to load image {}: {}", path.display(), e);
+        e
+    })?;
+    println!("Successfully loaded image format: {:?}", img.color());
     let mut original_img = img.to_rgba8();
     
     // Processing image for display
@@ -1635,7 +1678,12 @@ fn scale_image_to_fit(original_img: &RgbaImage, target_width: u32, target_height
 }
 
 fn load_and_scale_image_with_orientation(path: &PathBuf, width: u32, height: u32, orientation: &Orientation) -> Result<RgbaImage, ImageError> {
-    let img = image::open(path)?;
+    println!("Loading image with orientation: {}", path.display());
+    let img = image::open(path).map_err(|e| {
+        eprintln!("Failed to load image {}: {}", path.display(), e);
+        e
+    })?;
+    println!("Successfully loaded image format: {:?}", img.color());
     let mut original_img = img.to_rgba8();
     
     // Processing image for display orientation
@@ -1728,7 +1776,7 @@ fn run_original_slideshow(config: Config) -> IoResult<()> {
     image_manager.scan_images(&config.image_dir)?;
 
     if image_manager.images.is_empty() {
-        println!("No PNG images found in directory: {}", config.image_dir.display());
+        println!("No images (PNG/JPG/JPEG) found in directory: {}", config.image_dir.display());
         return Ok(());
     }
 

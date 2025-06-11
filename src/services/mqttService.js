@@ -132,6 +132,25 @@ class MQTTService {
       const tv = await TV.findById(`tv_${tvId}`);
       if (tv) {
         await tv.updateHeartbeat();
+      } else {
+        // Auto-create TV from heartbeat if it doesn't exist
+        console.log(`Auto-creating TV ${tvId} from heartbeat`);
+        const newTv = new TV({
+          _id: `tv_${tvId}`,
+          name: payload.tv_id || tvId,
+          location: 'Auto-discovered via MQTT',
+          ip_address: 'Unknown',
+          status: 'online',
+          last_heartbeat: new Date().toISOString(),
+          config: {
+            transition_effect: 'fade',
+            display_duration: 5000,
+            resolution: '1920x1080',
+            orientation: 'landscape'
+          }
+        });
+        await newTv.save();
+        console.log(`TV ${tvId} auto-created and registered`);
       }
     } catch (error) {
       console.error(`Error updating TV ${tvId} heartbeat:`, error);
@@ -205,6 +224,7 @@ class MQTTService {
   }
 
   async updateConfig(tvId, config) {
+    console.log(`🔄 SENDING CONFIG UPDATE to TV ${tvId}:`, config);
     return this.sendCommand(tvId, 'update_config', config);
   }
 

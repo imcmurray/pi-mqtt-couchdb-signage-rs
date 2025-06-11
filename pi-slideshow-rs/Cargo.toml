@@ -7,7 +7,7 @@ build = "build.rs"
 [dependencies]
 fastrand = "2.0"
 libc = "0.2"
-image = "0.24"
+image = { version = "0.24", features = ["png", "jpeg"] }
 signal-hook = "0.3"
 notify = "6.0"
 memmap2 = "0.9"
