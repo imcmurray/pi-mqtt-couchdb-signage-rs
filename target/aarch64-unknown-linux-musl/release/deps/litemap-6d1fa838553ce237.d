@@ -1,0 +1,11 @@
+/home/ianm/Development/idea1/target/aarch64-unknown-linux-musl/release/deps/liblitemap-6d1fa838553ce237.rmeta: /home/ianm/.cargo/registry/src/index.crates.io-6f17d22bba15001f/litemap-0.8.0/src/lib.rs /home/ianm/.cargo/registry/src/index.crates.io-6f17d22bba15001f/litemap-0.8.0/src/map.rs /home/ianm/.cargo/registry/src/index.crates.io-6f17d22bba15001f/litemap-0.8.0/src/store/mod.rs /home/ianm/.cargo/registry/src/index.crates.io-6f17d22bba15001f/litemap-0.8.0/src/store/slice_impl.rs /home/ianm/.cargo/registry/src/index.crates.io-6f17d22bba15001f/litemap-0.8.0/src/store/vec_impl.rs
+
+/home/ianm/Development/idea1/target/aarch64-unknown-linux-musl/release/deps/liblitemap-6d1fa838553ce237.rlib: /home/ianm/.cargo/registry/src/index.crates.io-6f17d22bba15001f/litemap-0.8.0/src/lib.rs /home/ianm/.cargo/registry/src/index.crates.io-6f17d22bba15001f/litemap-0.8.0/src/map.rs /home/ianm/.cargo/registry/src/index.crates.io-6f17d22bba15001f/litemap-0.8.0/src/store/mod.rs /home/ianm/.cargo/registry/src/index.crates.io-6f17d22bba15001f/litemap-0.8.0/src/store/slice_impl.rs /home/ianm/.cargo/registry/src/index.crates.io-6f17d22bba15001f/litemap-0.8.0/src/store/vec_impl.rs
+
+/home/ianm/Development/idea1/target/aarch64-unknown-linux-musl/release/deps/litemap-6d1fa838553ce237.d: /home/ianm/.cargo/registry/src/index.crates.io-6f17d22bba15001f/litemap-0.8.0/src/lib.rs /home/ianm/.cargo/registry/src/index.crates.io-6f17d22bba15001f/litemap-0.8.0/src/map.rs /home/ianm/.cargo/registry/src/index.crates.io-6f17d22bba15001f/litemap-0.8.0/src/store/mod.rs /home/ianm/.cargo/registry/src/index.crates.io-6f17d22bba15001f/litemap-0.8.0/src/store/slice_impl.rs /home/ianm/.cargo/registry/src/index.crates.io-6f17d22bba15001f/litemap-0.8.0/src/store/vec_impl.rs
+
+/home/ianm/.cargo/registry/src/index.crates.io-6f17d22bba15001f/litemap-0.8.0/src/lib.rs:
+/home/ianm/.cargo/registry/src/index.crates.io-6f17d22bba15001f/litemap-0.8.0/src/map.rs:
+/home/ianm/.cargo/registry/src/index.crates.io-6f17d22bba15001f/litemap-0.8.0/src/store/mod.rs:
+/home/ianm/.cargo/registry/src/index.crates.io-6f17d22bba15001f/litemap-0.8.0/src/store/slice_impl.rs:
+/home/ianm/.cargo/registry/src/index.crates.io-6f17d22bba15001f/litemap-0.8.0/src/store/vec_impl.rs:

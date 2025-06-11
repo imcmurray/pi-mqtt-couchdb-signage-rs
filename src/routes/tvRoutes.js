@@ -13,7 +13,7 @@ const tvSchema = Joi.object({
     transition_effect: Joi.string().valid('fade', 'slide', 'wipe', 'dissolve').default('fade'),
     display_duration: Joi.number().min(1000).max(60000).default(5000),
     resolution: Joi.string().default('1920x1080'),
-    orientation: Joi.string().valid('landscape', 'portrait').default('landscape')
+    orientation: Joi.string().valid('landscape', 'portrait', 'inverted_landscape', 'inverted_portrait').default('landscape')
   }).default({})
 });
 
@@ -21,7 +21,7 @@ const configUpdateSchema = Joi.object({
   transition_effect: Joi.string().valid('fade', 'slide', 'wipe', 'dissolve'),
   display_duration: Joi.number().min(1000).max(60000),
   resolution: Joi.string(),
-  orientation: Joi.string().valid('landscape', 'portrait')
+  orientation: Joi.string().valid('landscape', 'portrait', 'inverted_landscape', 'inverted_portrait')
 });
 
 // GET /api/tvs - Get all TVs
@@ -76,7 +76,7 @@ router.post('/register', async (req, res) => {
       ip_address: Joi.string().ip().required(),
       platform: Joi.string().default('raspberry-pi'),
       version: Joi.string().default('unknown'),
-      orientation: Joi.string().valid('landscape', 'portrait').default('landscape')
+      orientation: Joi.string().valid('landscape', 'portrait', 'inverted_landscape', 'inverted_portrait').default('landscape')
     });
 
     const { error, value } = registrationSchema.validate(req.body);
@@ -84,7 +84,7 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ error: error.details[0].message });
     }
 
-    const { tv_id, hostname, ip_address, platform, version, orientation } = value;
+    const { tv_id, hostname, ip_address, orientation } = value;
     
     // Check if TV already exists
     const existingTv = await TV.findById(tv_id);
@@ -110,7 +110,7 @@ router.post('/register', async (req, res) => {
     // Create new TV registration
     const tv = new TV({
       _id: tv_id,
-      name: hostname,
+      name: `Display at ${ip_address}`,
       location: `Auto-registered from ${ip_address}`,
       ip_address,
       status: 'online',

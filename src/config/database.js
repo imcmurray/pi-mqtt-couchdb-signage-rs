@@ -101,7 +101,7 @@ async function createDesignDocuments() {
         by_tv_and_time: {
           map: function(doc) {
             if (doc.type === 'schedule') {
-              emit([doc.tv_id, doc.scheduled_time], doc);
+              emit([doc.assigned_tv_id, doc.scheduled_time], doc);
             }
           }.toString()
         },

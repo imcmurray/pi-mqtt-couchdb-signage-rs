@@ -22,6 +22,7 @@ pub struct ControllerConfig {
     pub couchdb_password: Option<String>,
     pub tv_id: String,
     pub orientation: String,
+    pub transition_effect: String,
 }
 
 pub struct SlideshowController {
@@ -131,8 +132,9 @@ impl SlideshowController {
                 let mut config = self.config.write().await;
                 config.display_duration = Duration::from_millis(tv_config.display_duration);
                 config.orientation = tv_config.orientation.clone();
-                println!("Applied CouchDB config: {}ms display, {} orientation", 
-                         tv_config.display_duration, tv_config.orientation);
+                config.transition_effect = tv_config.transition_effect.clone();
+                println!("Applied CouchDB config: {}ms display, {} orientation, {} transition", 
+                         tv_config.display_duration, tv_config.orientation, tv_config.transition_effect);
             }
         }
         
@@ -406,6 +408,12 @@ impl SlideshowController {
             config.orientation = orientation.clone();
             println!("🔄 ORIENTATION UPDATED: New orientation set to {}", orientation);
         }
+        
+        if let Some(transition_effect) = new_config.transition_effect {
+            println!("🔄 TRANSITION UPDATE: Updating transition effect from {} to {}", config.transition_effect, transition_effect);
+            config.transition_effect = transition_effect.clone();
+            println!("🔄 TRANSITION UPDATED: New transition effect set to {}", transition_effect);
+        }
     }
 
     async fn send_status_update(&self) {
@@ -504,6 +512,14 @@ impl SlideshowController {
         self.config.read().await.orientation.clone()
     }
 
+    pub async fn get_transition_effect(&self) -> String {
+        self.config.read().await.transition_effect.clone()
+    }
+
+    pub async fn get_transition_duration(&self) -> Duration {
+        self.config.read().await.transition_duration
+    }
+
     pub async fn run_periodic_tasks(&self) {
         let mut interval = tokio::time::interval(Duration::from_secs(300)); // 5 minutes
         
@@ -519,11 +535,16 @@ impl SlideshowController {
                 if let Ok(Some(tv_config)) = couchdb_client.get_tv_config(&tv_id).await {
                     let mut config = self.config.write().await;
                     let old_orientation = config.orientation.clone();
+                    let old_transition = config.transition_effect.clone();
                     config.display_duration = Duration::from_millis(tv_config.display_duration);
                     config.orientation = tv_config.orientation.clone();
+                    config.transition_effect = tv_config.transition_effect.clone();
                     
                     if old_orientation != tv_config.orientation {
                         println!("🔄 COUCHDB CONFIG SYNC: Orientation changed from {} to {}", old_orientation, tv_config.orientation);
+                    }
+                    if old_transition != tv_config.transition_effect {
+                        println!("🔄 COUCHDB CONFIG SYNC: Transition effect changed from {} to {}", old_transition, tv_config.transition_effect);
                     }
                 }
             }

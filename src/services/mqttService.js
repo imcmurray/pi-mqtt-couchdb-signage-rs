@@ -127,7 +127,7 @@ class MQTTService {
     }
   }
 
-  async handleHeartbeat(tvId, payload) {
+  async handleHeartbeat(tvId, _payload) {
     try {
       const tv = await TV.findById(`tv_${tvId}`);
       if (tv) {
@@ -137,7 +137,7 @@ class MQTTService {
         console.log(`Auto-creating TV ${tvId} from heartbeat`);
         const newTv = new TV({
           _id: `tv_${tvId}`,
-          name: payload.tv_id || tvId,
+          name: `Auto-discovered Display (${tvId})`,
           location: 'Auto-discovered via MQTT',
           ip_address: 'Unknown',
           status: 'online',
@@ -282,7 +282,7 @@ class MQTTService {
               console.log(`Updated TV ${tvData._id} status to offline`);
               
               // Notify WebSocket subscribers about status change
-              this.notifySubscribers(`signage/tv/${tvData.tv_id}/status`, {
+              this.notifySubscribers(`signage/tv/${tvData._id.replace('tv_', '')}/status`, {
                 status: 'offline',
                 timestamp: new Date().toISOString(),
                 reason: 'heartbeat_timeout'

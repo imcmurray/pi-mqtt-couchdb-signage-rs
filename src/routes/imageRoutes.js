@@ -1,6 +1,5 @@
 const express = require('express');
 const router = express.Router();
-const path = require('path');
 const sharp = require('sharp');
 const Image = require('../models/image');
 const TV = require('../models/tv');

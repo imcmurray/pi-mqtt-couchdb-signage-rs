@@ -1,0 +1,11 @@
+/home/ianm/Development/idea1/target/aarch64-unknown-linux-musl/release/deps/libcrc32fast-eb8b88245aa735fb.rmeta: /home/ianm/.cargo/registry/src/index.crates.io-6f17d22bba15001f/crc32fast-1.4.2/src/lib.rs /home/ianm/.cargo/registry/src/index.crates.io-6f17d22bba15001f/crc32fast-1.4.2/src/baseline.rs /home/ianm/.cargo/registry/src/index.crates.io-6f17d22bba15001f/crc32fast-1.4.2/src/combine.rs /home/ianm/.cargo/registry/src/index.crates.io-6f17d22bba15001f/crc32fast-1.4.2/src/specialized/mod.rs /home/ianm/.cargo/registry/src/index.crates.io-6f17d22bba15001f/crc32fast-1.4.2/src/table.rs
+
+/home/ianm/Development/idea1/target/aarch64-unknown-linux-musl/release/deps/libcrc32fast-eb8b88245aa735fb.rlib: /home/ianm/.cargo/registry/src/index.crates.io-6f17d22bba15001f/crc32fast-1.4.2/src/lib.rs /home/ianm/.cargo/registry/src/index.crates.io-6f17d22bba15001f/crc32fast-1.4.2/src/baseline.rs /home/ianm/.cargo/registry/src/index.crates.io-6f17d22bba15001f/crc32fast-1.4.2/src/combine.rs /home/ianm/.cargo/registry/src/index.crates.io-6f17d22bba15001f/crc32fast-1.4.2/src/specialized/mod.rs /home/ianm/.cargo/registry/src/index.crates.io-6f17d22bba15001f/crc32fast-1.4.2/src/table.rs
+
+/home/ianm/Development/idea1/target/aarch64-unknown-linux-musl/release/deps/crc32fast-eb8b88245aa735fb.d: /home/ianm/.cargo/registry/src/index.crates.io-6f17d22bba15001f/crc32fast-1.4.2/src/lib.rs /home/ianm/.cargo/registry/src/index.crates.io-6f17d22bba15001f/crc32fast-1.4.2/src/baseline.rs /home/ianm/.cargo/registry/src/index.crates.io-6f17d22bba15001f/crc32fast-1.4.2/src/combine.rs /home/ianm/.cargo/registry/src/index.crates.io-6f17d22bba15001f/crc32fast-1.4.2/src/specialized/mod.rs /home/ianm/.cargo/registry/src/index.crates.io-6f17d22bba15001f/crc32fast-1.4.2/src/table.rs
+
+/home/ianm/.cargo/registry/src/index.crates.io-6f17d22bba15001f/crc32fast-1.4.2/src/lib.rs:
+/home/ianm/.cargo/registry/src/index.crates.io-6f17d22bba15001f/crc32fast-1.4.2/src/baseline.rs:
+/home/ianm/.cargo/registry/src/index.crates.io-6f17d22bba15001f/crc32fast-1.4.2/src/combine.rs:
+/home/ianm/.cargo/registry/src/index.crates.io-6f17d22bba15001f/crc32fast-1.4.2/src/specialized/mod.rs:
+/home/ianm/.cargo/registry/src/index.crates.io-6f17d22bba15001f/crc32fast-1.4.2/src/table.rs:
