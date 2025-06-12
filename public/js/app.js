@@ -335,6 +335,10 @@ class DigitalSignageApp {
                             <span class="detail-value">${tv._id.replace('tv_', '')}</span>
                         </div>
                         <div class="tv-detail-item">
+                            <span class="detail-label">Orientation:</span>
+                            <span class="detail-value">${this.formatOrientation(tv.config?.orientation || 'landscape')}</span>
+                        </div>
+                        <div class="tv-detail-item">
                             <span class="detail-label">Status:</span>
                             <span class="detail-value">
                                 <span class="status-dot ${statusClass}"></span>
@@ -486,6 +490,7 @@ class DigitalSignageApp {
             document.getElementById('tv-ip').value = tv.ip_address;
             document.getElementById('tv-transition').value = tv.config?.transition_effect || 'fade';
             document.getElementById('tv-duration').value = tv.config?.display_duration || 5000;
+            document.getElementById('tv-orientation').value = tv.config?.orientation || 'landscape';
             form.dataset.tvId = tv._id;
         } else {
             title.textContent = 'Add TV';
@@ -502,13 +507,18 @@ class DigitalSignageApp {
         const form = e.target;
         const isEdit = !!form.dataset.tvId;
         
+        const orientation = document.getElementById('tv-orientation').value;
+        const resolution = orientation === 'portrait' ? '1080x1920' : '1920x1080';
+        
         const tvData = {
             name: document.getElementById('tv-name').value,
             location: document.getElementById('tv-location').value,
             ip_address: document.getElementById('tv-ip').value,
             config: {
                 transition_effect: document.getElementById('tv-transition').value,
-                display_duration: parseInt(document.getElementById('tv-duration').value)
+                display_duration: parseInt(document.getElementById('tv-duration').value),
+                orientation: orientation,
+                resolution: resolution
             }
         };
 
@@ -840,6 +850,16 @@ class DigitalSignageApp {
         return `${Math.round(value * 10) / 10}${unit}`;
     }
 
+    formatOrientation(orientation) {
+        const orientationMap = {
+            'landscape': 'Landscape',
+            'portrait': 'Portrait (90°)',
+            'inverted_landscape': 'Inverted Landscape (180°)',
+            'inverted_portrait': 'Inverted Portrait (270°)'
+        };
+        return orientationMap[orientation] || orientation;
+    }
+
     updateTvStatus(topic, payload) {
         // Update TV status in real-time based on MQTT messages
         const tvId = this.extractTvIdFromTopic(topic);
@@ -1135,26 +1155,43 @@ class DigitalSignageApp {
     // Version Management
     async loadVersionInfo() {
         try {
-            // Get server version information for the modal
+            // Get server version information for the modal and header
             const response = await fetch('/api/version');
             if (response.ok) {
                 this.serverVersion = await response.json();
+                // Use the management UI version from server response
+                this.updateVersionDisplay(this.serverVersion.management_ui_version || 'unknown');
             } else {
-                this.serverVersion = { commit_hash: 'unknown', branch: 'unknown', build_time: 'unknown' };
+                this.serverVersion = { 
+                    commit_hash: 'unknown', 
+                    branch: 'unknown', 
+                    build_time: 'unknown',
+                    management_ui_version: 'unknown',
+                    version: 'unknown',
+                    is_dirty: false
+                };
+                this.updateVersionDisplay('0.2.0');
             }
         } catch (error) {
             console.error('Error loading server version info:', error);
-            this.serverVersion = { commit_hash: 'unknown', branch: 'unknown', build_time: 'unknown' };
+            this.serverVersion = { 
+                commit_hash: 'unknown', 
+                branch: 'unknown', 
+                build_time: 'unknown',
+                management_ui_version: 'unknown',
+                version: 'unknown',
+                is_dirty: false
+            };
+            this.updateVersionDisplay('0.2.0');
         }
-        
-        // Always show the management UI version from package.json
-        this.updateVersionDisplay('0.1.0');
     }
 
     updateVersionDisplay(version) {
         const versionDisplay = document.getElementById('version-display');
-        versionDisplay.textContent = `v${version}`;
-        versionDisplay.className = 'version-short';
+        if (versionDisplay) {
+            versionDisplay.textContent = `v${version}`;
+            versionDisplay.className = 'version-short';
+        }
     }
 
     showVersionModal() {
@@ -1170,7 +1207,7 @@ class DigitalSignageApp {
                             <h4>Management UI</h4>
                             <div class="version-details">
                                 <div class="version-item">
-                                    <strong>Version:</strong> 1.0.0
+                                    <strong>Version:</strong> ${this.serverVersion?.management_ui_version || 'unknown'}
                                 </div>
                                 <div class="version-item">
                                     <strong>Package:</strong> digital-signage-management
@@ -1180,6 +1217,9 @@ class DigitalSignageApp {
                         <div class="version-section">
                             <h4>Management Server</h4>
                             <div class="version-details">
+                                <div class="version-item">
+                                    <strong>Version:</strong> ${this.serverVersion?.version || 'unknown'}
+                                </div>
                                 <div class="version-item">
                                     <strong>Commit:</strong> ${this.serverVersion?.commit_hash || 'unknown'}
                                 </div>

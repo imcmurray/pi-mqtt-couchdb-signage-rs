@@ -1326,6 +1326,42 @@ body.dark-theme {
     }
 }
 
+/* Dark theme version modal styles */
+.dark-theme .version-section h4 {
+    color: #e0e0e0;
+    border-bottom-color: #4a5568;
+}
+
+.dark-theme .version-details {
+    background: #1a202c;
+    border-left-color: #3182ce;
+    color: #e2e8f0;
+}
+
+.dark-theme .version-item {
+    color: #e2e8f0;
+}
+
+.dark-theme .version-item.error {
+    color: #fc8181;
+}
+
+.dark-theme .tv-version-item {
+    background: #2d3748;
+    border-color: #4a5568;
+    color: #e2e8f0;
+}
+
+.dark-theme .version-status.success {
+    background: #22543d;
+    color: #9ae6b4;
+}
+
+.dark-theme .version-status.error {
+    background: #742a2a;
+    color: #feb2b2;
+}
+
 /* Dark theme MQTT styles */
 .dark-theme .mqtt-panel {
     background: #2c3e50;

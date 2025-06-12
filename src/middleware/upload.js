@@ -1,6 +1,4 @@
 const multer = require('multer');
-const path = require('path');
-const { v4: uuidv4 } = require('uuid');
 
 // Use memory storage instead of disk storage for CouchDB attachments
 const storage = multer.memoryStorage();

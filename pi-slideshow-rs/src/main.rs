@@ -4,15 +4,47 @@ use memmap2::MmapMut;
 use notify::{
     Event, EventKind, RecommendedWatcher, RecursiveMode, Result as NotifyResult, Watcher,
 };
-use signal_hook::{consts::SIGINT, iterator::Signals};
+use signal_hook::{consts::{SIGINT, SIGTERM}, iterator::Signals};
 use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Result as IoResult, Seek, SeekFrom, Write};
 use std::os::unix::io::AsRawFd;
+use std::os::unix::fs::{FileTypeExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, mpsc as async_mpsc};
+
+#[derive(Debug, Clone, PartialEq)]
+enum Orientation {
+    Landscape,           // 0 degrees - standard orientation
+    Portrait,            // 90 degrees clockwise
+    InvertedLandscape,   // 180 degrees
+    InvertedPortrait,    // 270 degrees clockwise
+}
+
+impl From<&str> for Orientation {
+    fn from(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "portrait" => Orientation::Portrait,
+            "inverted_landscape" | "inverted-landscape" => Orientation::InvertedLandscape,
+            "inverted_portrait" | "inverted-portrait" => Orientation::InvertedPortrait,
+            _ => Orientation::Landscape,
+        }
+    }
+}
+
+impl Orientation {
+    // Rotate an image based on the orientation
+    fn rotate_image(&self, img: &RgbaImage) -> RgbaImage {
+        match self {
+            Orientation::Landscape => img.clone(),
+            Orientation::Portrait => image::imageops::rotate90(img),
+            Orientation::InvertedLandscape => image::imageops::rotate180(img),
+            Orientation::InvertedPortrait => image::imageops::rotate270(img),
+        }
+    }
+}
 
 mod mqtt_client;
 mod slideshow_controller;
@@ -22,9 +54,10 @@ mod couchdb_client;
 use mqtt_client::{MqttClient, SlideshowCommand, TvStatus};
 use slideshow_controller::{ControllerConfig, SlideshowController};
 
-const FRAMEBUFFER_WIDTH: u32 = 1920;
-const FRAMEBUFFER_HEIGHT: u32 = 1080;
-const MAX_FRAMEBUFFER_SIZE: usize = 1920 * 1080 * 4;
+// Default landscape dimensions
+const DEFAULT_LANDSCAPE_WIDTH: u32 = 1920;
+const DEFAULT_LANDSCAPE_HEIGHT: u32 = 1080;
+const MAX_FRAMEBUFFER_SIZE: usize = 1920 * 1920 * 4; // Support up to 1920x1920
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -72,6 +105,10 @@ struct Args {
     /// HTTP server port for local control
     #[arg(long, default_value_t = 8080)]
     http_port: u16,
+
+    /// Display orientation (landscape or portrait)
+    #[arg(long, default_value = "landscape")]
+    orientation: String,
 }
 
 struct Config {
@@ -79,6 +116,7 @@ struct Config {
     display_duration: Duration,
     transition_duration: Duration,
     framebuffer_path: PathBuf,
+    orientation: Orientation,
 }
 
 impl From<Args> for Config {
@@ -88,6 +126,7 @@ impl From<Args> for Config {
             display_duration: Duration::from_secs(args.delay),
             transition_duration: Duration::from_millis(args.transition),
             framebuffer_path: args.framebuffer,
+            orientation: Orientation::from(args.orientation.as_str()),
         }
     }
 }
@@ -143,6 +182,33 @@ impl TransitionType {
         transitions[fastrand::usize(..transitions.len())].clone()
     }
 
+    fn from_string(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "fade" => Some(Self::Fade),
+            "dissolve" => Some(Self::Dissolve),
+            "slide_left" => Some(Self::SlideLeft),
+            "slide_right" => Some(Self::SlideRight),
+            "slide_up" => Some(Self::SlideUp),
+            "slide_down" => Some(Self::SlideDown),
+            "wipe_left" => Some(Self::WipeLeft),
+            "wipe_right" => Some(Self::WipeRight),
+            "wipe_up" => Some(Self::WipeUp),
+            "wipe_down" => Some(Self::WipeDown),
+            "morph" => Some(Self::Morph),
+            "bounce" => Some(Self::Bounce),
+            "elastic" => Some(Self::Elastic),
+            "ease_in" => Some(Self::EaseIn),
+            "ease_out" => Some(Self::EaseOut),
+            "ease_in_out" => Some(Self::EaseInOut),
+            "accelerated" => Some(Self::Accelerated),
+            "circular_wipe" => Some(Self::CircularWipe),
+            "diagonal_wipe" => Some(Self::DiagonalWipe),
+            "pixelate" => Some(Self::Pixelate),
+            "random" => Some(Self::get_random()),
+            _ => None,
+        }
+    }
+
     fn name(&self) -> &'static str {
         match self {
             Self::Fade => "FADE",
@@ -186,6 +252,13 @@ struct Framebuffer {
 
 impl Framebuffer {
     fn new(width: u32, height: u32, framebuffer_path: &Path) -> IoResult<Self> {
+        println!("🔧 Initializing framebuffer with dimensions: {}x{}", width, height);
+        
+        // Validate that we're using the correct physical display dimensions
+        if width != DEFAULT_LANDSCAPE_WIDTH || height != DEFAULT_LANDSCAPE_HEIGHT {
+            println!("⚠️  WARNING: Framebuffer dimensions {}x{} don't match expected physical display dimensions {}x{}", 
+                     width, height, DEFAULT_LANDSCAPE_WIDTH, DEFAULT_LANDSCAPE_HEIGHT);
+        }
         match OpenOptions::new()
             .read(true)
             .write(true)
@@ -259,6 +332,15 @@ impl Framebuffer {
     }
 
     fn display_buffer(&mut self, buffer: &[u8]) -> IoResult<()> {
+        let expected_size = (self.width * self.height * 4) as usize;
+        println!("📺 Displaying buffer: {} bytes (expected: {} bytes for {}x{})", 
+                 buffer.len(), expected_size, self.width, self.height);
+        
+        if buffer.len() != expected_size {
+            println!("⚠️  WARNING: Buffer size {} doesn't match expected size {} for framebuffer dimensions", 
+                     buffer.len(), expected_size);
+        }
+        
         if buffer.len() > self.max_buffer_size {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
@@ -280,17 +362,35 @@ impl Framebuffer {
             mmap[..copy_len].copy_from_slice(&buffer[..copy_len]);
             mmap.flush()?;
         } else if let Some(ref mut file) = self.file {
-            // Fallback to direct file writes in smaller chunks
+            // Fallback to direct file writes - reset to beginning and write entire buffer
             file.seek(SeekFrom::Start(0))?;
-
-            const CHUNK_SIZE: usize = 65536; // 64KB chunks
+            
+            // Writing buffer to framebuffer device
+            
+            // For framebuffer devices, we should write the full buffer at once for proper synchronization
+            // but break it into reasonable chunks to avoid system limits
+            const CHUNK_SIZE: usize = 4096; // 4KB chunks for better compatibility
+            let mut bytes_written = 0;
+            
             for chunk in buffer.chunks(CHUNK_SIZE) {
-                file.write_all(chunk)?;
+                match file.write_all(chunk) {
+                    Ok(()) => {
+                        bytes_written += chunk.len();
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to write chunk to framebuffer at offset {}: {}", bytes_written, e);
+                        return Err(e);
+                    }
+                }
             }
-            file.sync_data()?; // Use sync_data instead of sync_all for better performance
+            
+            // Ensure data is written to the device
+            file.flush()?;
+            // Successfully wrote framebuffer data
         } else if let Some(ref mut fallback) = self.fallback_file {
             fallback.write_all(buffer)?;
             fallback.flush()?;
+            println!("Wrote {} bytes to fallback file", buffer.len());
         }
         Ok(())
     }
@@ -301,6 +401,17 @@ impl Framebuffer {
     }
 
     fn image_to_bgra_buffer(&self, image: &RgbaImage) -> Vec<u8> {
+        println!("🔄 Converting {}x{} image to BGRA buffer for {}x{} framebuffer", 
+                 image.width(), image.height(), self.width, self.height);
+        
+        // If image dimensions don't match framebuffer exactly, this could cause garbled display
+        if image.width() != self.width || image.height() != self.height {
+            println!("❌ ERROR: Image dimensions {}x{} don't match framebuffer {}x{} - this WILL cause garbled display!", 
+                     image.width(), image.height(), self.width, self.height);
+            println!("🔧 Fix: All images must be exactly {}x{} before being passed to this function", 
+                     self.width, self.height);
+        }
+        
         let expected_size = (self.width * self.height * 4) as usize;
         let max_pixels = self.max_buffer_size / 4;
         let actual_pixels = (self.width * self.height) as usize;
@@ -318,6 +429,8 @@ impl Framebuffer {
 
         let mut pixels_written = 0;
 
+        // Important: Make sure we're writing in the correct order for the framebuffer
+        // The framebuffer expects data in scanline order (left-to-right, top-to-bottom)
         for y in 0..self.height {
             for x in 0..self.width {
                 if pixels_written >= safe_pixels {
@@ -330,7 +443,7 @@ impl Framebuffer {
                     Rgba([0, 0, 0, 255])
                 };
 
-                // Convert RGBA to BGRA
+                // Convert RGBA to BGRA (keeping alpha channel)
                 buffer.push(pixel[2]); // B
                 buffer.push(pixel[1]); // G
                 buffer.push(pixel[0]); // R
@@ -344,6 +457,7 @@ impl Framebuffer {
             }
         }
 
+        // Generated framebuffer buffer
         buffer
     }
 
@@ -354,11 +468,21 @@ impl Framebuffer {
         // Basic file size check
         if let Ok(metadata) = file.metadata() {
             println!("Framebuffer device size: {} bytes", metadata.len());
+            println!("Framebuffer device type: {:?}", metadata.file_type());
+            println!("Framebuffer device permissions: {:o}", metadata.permissions().mode());
+        } else {
+            println!("Failed to get framebuffer metadata");
         }
 
-        // For a more complete implementation, you could add ioctl calls here
-        // to get FBIOGET_VSCREENINFO and FBIOGET_FSCREENINFO
-        // But those require unsafe code and proper struct definitions
+        // Check if the file is a character device (framebuffers are char devices)
+        if let Ok(metadata) = file.metadata() {
+            if metadata.file_type().is_char_device() {
+                println!("Framebuffer is a character device (correct)");
+            } else {
+                println!("WARNING: Framebuffer is NOT a character device");
+            }
+        }
+
         println!("Framebuffer device fd: {}", fd);
     }
 }
@@ -392,19 +516,11 @@ impl ImageManager {
         }
 
         self.images.sort();
-        println!("Found {} PNG images", self.images.len());
+        println!("Found {} images (PNG/JPG/JPEG)", self.images.len());
         Ok(())
     }
 
-    fn load_and_scale_image(&self, path: &Path) -> Result<RgbaImage, ImageError> {
-        let img = image::open(path)?;
-        let img = img.resize_exact(
-            FRAMEBUFFER_WIDTH,
-            FRAMEBUFFER_HEIGHT,
-            image::imageops::FilterType::Lanczos3,
-        );
-        Ok(img.to_rgba8())
-    }
+    // Removed - using load_and_scale_image_with_orientation instead
 
     fn apply_easing(t: f32, easing_type: &TransitionType) -> f32 {
         match easing_type {
@@ -793,9 +909,9 @@ impl ImageManager {
         to_idx: usize,
         fb: &mut Framebuffer,
         transition_duration: Duration,
+        transition_type: TransitionType,
+        orientation: &Orientation,
     ) -> IoResult<()> {
-        // Choose random transition type
-        let transition_type = TransitionType::get_random();
         let transition_name = transition_type.name();
 
         println!(
@@ -805,12 +921,10 @@ impl ImageManager {
             self.images[to_idx].display()
         );
 
-        // Load source images
-        let from_img = self
-            .load_and_scale_image(&self.images[from_idx])
+        // Load source images with orientation using fixed framebuffer dimensions
+        let from_img = load_and_scale_image_with_orientation(&self.images[from_idx], DEFAULT_LANDSCAPE_WIDTH, DEFAULT_LANDSCAPE_HEIGHT, orientation)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        let to_img = self
-            .load_and_scale_image(&self.images[to_idx])
+        let to_img = load_and_scale_image_with_orientation(&self.images[to_idx], DEFAULT_LANDSCAPE_WIDTH, DEFAULT_LANDSCAPE_HEIGHT, orientation)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
 
         let frame_count = (transition_duration.as_millis() / 33) as usize; // ~30 FPS
@@ -905,9 +1019,13 @@ fn setup_filesystem_watcher(tx: Sender<SlideshowEvent>, watch_dir: &Path) -> Not
 
 fn setup_signal_handler(tx: Sender<SlideshowEvent>) -> std::thread::JoinHandle<()> {
     thread::spawn(move || {
-        let mut signals = Signals::new(&[SIGINT]).unwrap();
-        for _sig in signals.forever() {
-            println!("\nReceived SIGINT, shutting down...");
+        let mut signals = Signals::new(&[SIGINT, SIGTERM]).unwrap();
+        for sig in signals.forever() {
+            match sig {
+                SIGINT => println!("\nReceived SIGINT, shutting down..."),
+                SIGTERM => println!("\nReceived SIGTERM, shutting down..."),
+                _ => println!("\nReceived signal {}, shutting down...", sig),
+            }
             let _ = tx.send(SlideshowEvent::Shutdown);
             break;
         }
@@ -1057,7 +1175,7 @@ fn display_exit_joke(fb: &mut Framebuffer) -> IoResult<()> {
     println!("\n🎭 Parting wisdom: {}", joke);
 
     // Create a black background image
-    let mut exit_image = RgbaImage::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT);
+    let mut exit_image = RgbaImage::new(fb.width, fb.height);
 
     // Fill with black background
     for pixel in exit_image.pixels_mut() {
@@ -1067,7 +1185,7 @@ fn display_exit_joke(fb: &mut Framebuffer) -> IoResult<()> {
     // Text rendering settings
     let char_size = 8; // Size multiplier for characters
     let line_height = 5 * char_size + char_size; // 5 rows per char + spacing
-    let max_chars_per_line = (FRAMEBUFFER_WIDTH / (7 * char_size + char_size)) as usize; // Account for char width + spacing
+    let max_chars_per_line = (fb.width / (7 * char_size + char_size)) as usize; // Account for char width + spacing
 
     // Wrap the joke text
     let lines = wrap_text(joke, max_chars_per_line);
@@ -1076,7 +1194,7 @@ fn display_exit_joke(fb: &mut Framebuffer) -> IoResult<()> {
     let total_text_height = lines.len() as u32 * line_height;
 
     // Center the text vertically
-    let start_y = (FRAMEBUFFER_HEIGHT - total_text_height) / 2;
+    let start_y = (fb.height - total_text_height) / 2;
 
     // Draw each line of text
     let bright_color = Rgba([255, 255, 0, 255]); // Bright yellow
@@ -1084,7 +1202,7 @@ fn display_exit_joke(fb: &mut Framebuffer) -> IoResult<()> {
     for (line_idx, line) in lines.iter().enumerate() {
         // Center each line horizontally
         let text_width = line.len() as u32 * (7 * char_size + char_size);
-        let start_x = (FRAMEBUFFER_WIDTH - text_width) / 2;
+        let start_x = (fb.width - text_width) / 2;
         let y = start_y + (line_idx as u32 * line_height);
 
         draw_text(&mut exit_image, line, start_x, y, char_size, bright_color);
@@ -1102,9 +1220,13 @@ fn display_exit_joke(fb: &mut Framebuffer) -> IoResult<()> {
     
     // Set up a second signal handler for immediate exit
     let _handle = thread::spawn(move || {
-        let mut signals = Signals::new(&[SIGINT]).unwrap();
-        for _sig in signals.forever() {
-            println!("Second SIGINT received, exiting immediately");
+        let mut signals = Signals::new(&[SIGINT, SIGTERM]).unwrap();
+        for sig in signals.forever() {
+            match sig {
+                SIGINT => println!("Second SIGINT received, exiting immediately"),
+                SIGTERM => println!("Second SIGTERM received, exiting immediately"),
+                _ => println!("Second signal {} received, exiting immediately", sig),
+            }
             interrupted_clone.store(true, Ordering::Relaxed);
             std::process::exit(0); // Force immediate exit
         }
@@ -1162,6 +1284,8 @@ async fn run_with_mqtt_control(args: Args, tv_id: String) -> IoResult<()> {
         couchdb_username: args.couchdb_username.clone(),
         couchdb_password: args.couchdb_password.clone(),
         tv_id: tv_id.clone(),
+        orientation: args.orientation.clone(),
+        transition_effect: "fade".to_string(), // Default transition effect
     };
     
     // Initialize slideshow controller
@@ -1241,14 +1365,21 @@ async fn run_standalone_mode(args: Args) -> IoResult<()> {
         display_duration: Duration::from_secs(args.delay),
         transition_duration: Duration::from_millis(args.transition),
         framebuffer_path: args.framebuffer,
+        orientation: Orientation::from(args.orientation.as_str()),
     };
     
     run_original_slideshow(config)
 }
 
 async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoResult<()> {
-    let mut fb = Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT, &args.framebuffer)?;
-    let image_manager = ImageManager::new();
+    // Get initial orientation from controller (which may be updated from CouchDB)
+    let orientation_str = controller.get_orientation().await;
+    let mut current_orientation = Orientation::from(orientation_str.as_str());
+    
+    // Always use physical display dimensions (1920x1080) regardless of orientation
+    // Orientation is handled through image processing, not framebuffer resizing
+    let mut fb = Framebuffer::new(DEFAULT_LANDSCAPE_WIDTH, DEFAULT_LANDSCAPE_HEIGHT, &args.framebuffer)?;
+    let mut image_manager = ImageManager::new();
     
     // Setup event handling for filesystem and signals
     let (tx, rx): (Sender<SlideshowEvent>, Receiver<SlideshowEvent>) = mpsc::channel();
@@ -1259,53 +1390,134 @@ async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoRe
     let mut last_image_change = Instant::now();
     let mut running = true;
     let mut has_displayed_placeholder = false;
+    let mut last_image_count = controller.get_image_count().await;
+    let mut last_displayed_image_path: Option<PathBuf> = None;
     
     // Initial display check - show placeholder immediately if no images
     if controller.get_image_count().await == 0 {
         let tv_id = controller.get_tv_id().await;
         let local_ip = get_local_ip().unwrap_or_else(|| "Unknown IP".to_string());
-        let placeholder = create_info_placeholder(&tv_id, &local_ip);
+        let placeholder = create_info_placeholder_with_orientation(&tv_id, &local_ip, DEFAULT_LANDSCAPE_WIDTH, DEFAULT_LANDSCAPE_HEIGHT, &current_orientation);
+        
         let _ = fb.display_image(&placeholder);
         has_displayed_placeholder = true;
         println!("Displayed 'No images available' placeholder on startup");
     }
     
     while running {
+        // Check if orientation has changed (due to MQTT config update)
+        let orientation_str = controller.get_orientation().await;
+        let new_orientation = Orientation::from(orientation_str.as_str());
+        if std::mem::discriminant(&current_orientation) != std::mem::discriminant(&new_orientation) {
+            println!("🔄 DISPLAY ORIENTATION CHANGE: {:?} -> {:?}, forcing immediate redraw", current_orientation, new_orientation);
+            current_orientation = new_orientation;
+            
+            // Framebuffer dimensions remain constant at 1920x1080
+            // Orientation is handled purely through image processing
+            println!("🔄 ORIENTATION UPDATED: Framebuffer remains at {}x{}, orientation handled via image processing", DEFAULT_LANDSCAPE_WIDTH, DEFAULT_LANDSCAPE_HEIGHT);
+            
+            // Force a redraw by resetting the last image change time
+            last_image_change = Instant::now() - Duration::from_secs(10);
+            has_displayed_placeholder = false; // Force placeholder redraw if needed
+            last_displayed_image_path = None; // Force image reload with new orientation
+        }
+        
+        // Check if image count has changed (due to CouchDB sync, etc)
+        let current_image_count = controller.get_image_count().await;
+        if current_image_count != last_image_count {
+            println!("Image count changed from {} to {}, resetting placeholder flag", last_image_count, current_image_count);
+            has_displayed_placeholder = false;
+            last_image_count = current_image_count;
+        }
+        
         // Check if we should advance automatically based on controller state
-        if controller.should_advance_automatically(last_image_change).await {
+        let should_advance = controller.should_advance_automatically(last_image_change).await;
+        let _elapsed = last_image_change.elapsed();
+        let _is_playing = controller.is_playing().await;
+        
+        if should_advance {
             controller.advance_to_next_image().await;
             last_image_change = Instant::now();
             controller.publish_current_image_to_mqtt().await;
         }
         
-        // Get current image from controller
-        if let Some(current_image_path) = controller.get_current_image_path().await {
+        // Handle image transitions when controller advances
+        if should_advance && controller.get_image_count().await > 0 {
+            // Get current and previous image indices for transition
+            let current_index = *controller.current_index.read().await;
+            let previous_index = if current_index == 0 {
+                controller.get_image_count().await - 1
+            } else {
+                current_index - 1
+            };
+            
+            // Update image manager with controller's images
+            let controller_images = controller.get_image_list().await;
+            image_manager.images = controller_images.iter().map(|img| PathBuf::from(&img.path)).collect();
+            image_manager.current_index = current_index;
+            
+            // Get transition effect from controller
+            let transition_effect_str = controller.get_transition_effect().await;
+            let transition_type = TransitionType::from_string(&transition_effect_str)
+                .unwrap_or(TransitionType::get_random());
+            
+            // Play transition if we have enough images
+            if image_manager.images.len() > 1 {
+                if let Err(e) = image_manager.play_transition(
+                    previous_index, 
+                    current_index, 
+                    &mut fb, 
+                    controller.get_transition_duration().await,
+                    transition_type,
+                    &current_orientation
+                ) {
+                    println!("Failed to play transition: {}", e);
+                }
+                last_displayed_image_path = controller.get_current_image_path().await;
+            }
+        } else if let Some(current_image_path) = controller.get_current_image_path().await {
             if controller.is_playing().await {
-                // Load and display the current image
-                match image_manager.load_and_scale_image(&current_image_path) {
-                    Ok(image) => {
-                        if let Err(e) = fb.display_image(&image) {
-                            eprintln!("Failed to display image: {}", e);
+                // Only load and display if image has changed (for initial display)
+                let needs_reload = match &last_displayed_image_path {
+                    Some(last_path) => last_path != &current_image_path,
+                    None => true,
+                };
+                
+                if needs_reload {
+                    // Load and display the current image
+                    match load_and_scale_image_with_orientation(&current_image_path, DEFAULT_LANDSCAPE_WIDTH, DEFAULT_LANDSCAPE_HEIGHT, &current_orientation) {
+                        Ok(image) => {
+                            if let Err(e) = fb.display_image(&image) {
+                                eprintln!("Failed to display image: {}", e);
+                            } else {
+                                last_displayed_image_path = Some(current_image_path.clone());
+                            }
                         }
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to load image {}: {}", current_image_path.display(), e);
+                        Err(e) => {
+                            eprintln!("Failed to load image {}: {}", current_image_path.display(), e);
+                        }
                     }
                 }
             }
         } else if controller.get_image_count().await == 0 {
-            // No images available, show a placeholder with TV ID and IP (only if not already displayed)
+            // No images available, show a placeholder with TV ID and IP
+            // Always show placeholder when transitioning from images to no images
             if !has_displayed_placeholder {
                 let tv_id = controller.get_tv_id().await;
                 let local_ip = get_local_ip().unwrap_or_else(|| "Unknown IP".to_string());
-                let placeholder = create_info_placeholder(&tv_id, &local_ip);
+                let placeholder = create_info_placeholder_with_orientation(&tv_id, &local_ip, DEFAULT_LANDSCAPE_WIDTH, DEFAULT_LANDSCAPE_HEIGHT, &current_orientation);
+                
                 let _ = fb.display_image(&placeholder);
                 has_displayed_placeholder = true;
                 println!("Displayed 'No images available' placeholder");
             }
         } else {
             // Reset placeholder flag when images become available
-            has_displayed_placeholder = false;
+            // This ensures placeholder will be shown again if images are later removed
+            if has_displayed_placeholder {
+                has_displayed_placeholder = false;
+                println!("Images now available, clearing placeholder flag");
+            }
         }
         
         // Handle filesystem events
@@ -1334,8 +1546,8 @@ async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoRe
     Ok(())
 }
 
-fn _create_placeholder_image(message: &str) -> RgbaImage {
-    let mut image = RgbaImage::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT);
+fn _create_placeholder_image(message: &str, width: u32, height: u32) -> RgbaImage {
+    let mut image = RgbaImage::new(width, height);
     
     // Fill with black background
     for pixel in image.pixels_mut() {
@@ -1345,16 +1557,24 @@ fn _create_placeholder_image(message: &str) -> RgbaImage {
     // Add text
     let char_size = 8;
     let text_width = message.len() as u32 * (7 * char_size + char_size);
-    let start_x = (FRAMEBUFFER_WIDTH - text_width) / 2;
-    let start_y = (FRAMEBUFFER_HEIGHT - 5 * char_size) / 2;
+    let start_x = (width - text_width) / 2;
+    let start_y = (height - 5 * char_size) / 2;
     
     draw_text(&mut image, message, start_x, start_y, char_size, Rgba([255, 255, 255, 255]));
     
     image
 }
 
-fn create_info_placeholder(tv_id: &str, ip_address: &str) -> RgbaImage {
-    let mut image = RgbaImage::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT);
+fn create_info_placeholder_with_orientation(tv_id: &str, ip_address: &str, width: u32, height: u32, orientation: &Orientation) -> RgbaImage {
+    // Create placeholder image
+    let placeholder = create_info_placeholder(tv_id, ip_address, width, height);
+    
+    // Apply rotation based on orientation
+    orientation.rotate_image(&placeholder)
+}
+
+fn create_info_placeholder(tv_id: &str, ip_address: &str, width: u32, height: u32) -> RgbaImage {
+    let mut image = RgbaImage::new(width, height);
     
     // Fill with dark blue background
     for pixel in image.pixels_mut() {
@@ -1363,8 +1583,8 @@ fn create_info_placeholder(tv_id: &str, ip_address: &str) -> RgbaImage {
     
     let char_size = 8;
     let line_height = char_size * 7; // Slightly tighter spacing
-    let center_x = FRAMEBUFFER_WIDTH / 2;
-    let center_y = FRAMEBUFFER_HEIGHT / 2;
+    let center_x = width / 2;
+    let center_y = height / 2;
     
     // Title - establish maximum width
     let title = "NO IMAGES AVAILABLE";
@@ -1419,6 +1639,67 @@ fn create_info_placeholder(tv_id: &str, ip_address: &str) -> RgbaImage {
     image
 }
 
+// Removed - no longer needed with unified rotation approach
+
+fn load_and_scale_image_with_orientation(path: &PathBuf, width: u32, height: u32, orientation: &Orientation) -> Result<RgbaImage, ImageError> {
+    let img = image::open(path).map_err(|e| {
+        eprintln!("Failed to load image {}: {}", path.display(), e);
+        e
+    })?;
+    let original_img = img.to_rgba8();
+    
+    // Apply rotation based on orientation
+    let rotated_img = orientation.rotate_image(&original_img);
+    
+    // Scale and center the rotated image for the framebuffer dimensions
+    Ok(scale_and_center_image(&rotated_img, width, height))
+}
+
+// Removed - no longer needed with unified rotation approach
+
+fn scale_and_center_image(original_img: &RgbaImage, target_width: u32, target_height: u32) -> RgbaImage {
+    // Calculate scaling factor to fit within target dimensions while preserving aspect ratio
+    let original_width = original_img.width() as f32;
+    let original_height = original_img.height() as f32;
+    let target_width_f = target_width as f32;
+    let target_height_f = target_height as f32;
+    
+    let scale_x = target_width_f / original_width;
+    let scale_y = target_height_f / original_height;
+    let scale = scale_x.min(scale_y); // Use smaller scale to fit within bounds
+    
+    let scaled_width = (original_width * scale) as u32;
+    let scaled_height = (original_height * scale) as u32;
+    
+    // Scale the image while preserving aspect ratio
+    let scaled_img = image::imageops::resize(
+        original_img,
+        scaled_width,
+        scaled_height,
+        image::imageops::FilterType::Lanczos3,
+    );
+    
+    // Create a black background image at target resolution
+    let mut result = RgbaImage::new(target_width, target_height);
+    for pixel in result.pixels_mut() {
+        *pixel = Rgba([0, 0, 0, 255]); // Black background
+    }
+    
+    // Center the scaled image on the black background
+    let x_offset = (target_width - scaled_width) / 2;
+    let y_offset = (target_height - scaled_height) / 2;
+    
+    // Copy the scaled image to the center of the result
+    for y in 0..scaled_height {
+        for x in 0..scaled_width {
+            let pixel = *scaled_img.get_pixel(x, y);
+            result.put_pixel(x + x_offset, y + y_offset, pixel);
+        }
+    }
+    
+    result
+}
+
 fn get_local_ip() -> Option<String> {
     use std::net::TcpStream;
     
@@ -1444,14 +1725,15 @@ fn get_local_ip() -> Option<String> {
 
 fn run_original_slideshow(config: Config) -> IoResult<()> {
 
-    let mut fb = Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT, &config.framebuffer_path)?;
+    // Always use physical display dimensions (1920x1080) regardless of orientation
+    let mut fb = Framebuffer::new(DEFAULT_LANDSCAPE_WIDTH, DEFAULT_LANDSCAPE_HEIGHT, &config.framebuffer_path)?;
     let mut image_manager = ImageManager::new();
 
     // Initial image scan
     image_manager.scan_images(&config.image_dir)?;
 
     if image_manager.images.is_empty() {
-        println!("No PNG images found in directory: {}", config.image_dir.display());
+        println!("No images (PNG/JPG/JPEG) found in directory: {}", config.image_dir.display());
         return Ok(());
     }
 
@@ -1475,9 +1757,8 @@ fn run_original_slideshow(config: Config) -> IoResult<()> {
 
         println!("Displaying: {}", current_image_path.display());
 
-        // Load and display current image
-        let current_image = image_manager
-            .load_and_scale_image(&current_image_path)
+        // Load and display current image using fixed framebuffer dimensions
+        let current_image = load_and_scale_image_with_orientation(&current_image_path, DEFAULT_LANDSCAPE_WIDTH, DEFAULT_LANDSCAPE_HEIGHT, &config.orientation)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
 
         println!(
@@ -1543,7 +1824,8 @@ fn run_original_slideshow(config: Config) -> IoResult<()> {
         // No need to wait - transitions are generated in real-time
 
         // Play transition from the current image to next
-        if let Err(e) = image_manager.play_transition(actual_current_idx, next_idx, &mut fb, config.transition_duration) {
+        let transition_type = TransitionType::get_random(); // Use random in standalone mode
+        if let Err(e) = image_manager.play_transition(actual_current_idx, next_idx, &mut fb, config.transition_duration, transition_type, &config.orientation) {
             println!("Failed to play transition: {}", e);
         }
 

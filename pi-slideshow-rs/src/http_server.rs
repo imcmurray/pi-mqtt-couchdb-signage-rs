@@ -221,6 +221,7 @@ async fn handle_config_request(
         display_duration: req.display_duration,
         transition_duration: req.transition_duration,
         transition_effect: req.transition_effect,
+        orientation: None,
     };
 
     let command = SlideshowCommand::UpdateConfig { config };
