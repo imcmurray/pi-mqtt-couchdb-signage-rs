@@ -1,7 +1,7 @@
 {
-  "version": "0.2.0",
-  "commit_hash": "1240fc235ca878cbb00c8452351f866d986af672",
-  "commit_short": "1240fc2",
+  "version": "v0.1.0-4-g0d7cd04",
+  "commit_hash": "0d7cd04e2cffca2c4386a03b59265f3c24d4439b",
+  "commit_short": "0d7cd04",
   "branch": "feature/orientation-support",
-  "build_time": "2025-06-11T23:55:05.980Z"
+  "build_time": "2025-06-11T23:56:57.012Z"
 }

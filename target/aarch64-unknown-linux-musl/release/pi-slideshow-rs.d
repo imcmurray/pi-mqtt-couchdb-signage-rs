@@ -1,1 +1,0 @@
-/home/ianm/Development/idea1/target/aarch64-unknown-linux-musl/release/pi-slideshow-rs: /home/ianm/Development/idea1/src/couchdb_client.rs /home/ianm/Development/idea1/src/http_server.rs /home/ianm/Development/idea1/src/main.rs /home/ianm/Development/idea1/src/mqtt_client.rs /home/ianm/Development/idea1/src/slideshow_controller.rs

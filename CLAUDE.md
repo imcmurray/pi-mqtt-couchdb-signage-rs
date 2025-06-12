@@ -143,3 +143,6 @@ Each TV operates with hybrid connectivity for optimal performance:
 
 ## Development Best Practices
 - Don't duplicate code and create duplicate functions that do the same thing with a different name.
+
+## Development Guidelines
+- Only build @pi-slideshow-rs/ in @pi-slideshow-rs/ directory
