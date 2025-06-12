@@ -34,8 +34,8 @@ Developing a comprehensive layering system for the Digital Signage Management Sy
 
 ---
 
-### Phase 2: Basic Layer Infrastructure ⏳
-**Status**: Not Started  
+### Phase 2: Basic Layer Infrastructure 🚧
+**Status**: In Progress  
 **Goal**: Add simple layer compositing to existing system  
 **Branch**: `feature/basic-layering`
 
@@ -178,8 +178,8 @@ Built-in presets:
 **Overall Progress**: 20% (1/5 phases complete)
 
 **Phase Completion Log:**
-- Phase 1: COMPLETED ✅
-- Phase 2: Not started
+- Phase 1: COMPLETED ✅ (v0.2.0 released)
+- Phase 2: IN PROGRESS 🚧
 - Phase 3: Not started
 - Phase 4: Not started
 - Phase 5: Not started
