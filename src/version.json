@@ -1,7 +1,7 @@
 {
-  "version": "v0.1.0-4-g0d7cd04",
-  "commit_hash": "0d7cd04e2cffca2c4386a03b59265f3c24d4439b",
-  "commit_short": "0d7cd04",
-  "branch": "feature/orientation-support",
-  "build_time": "2025-06-11T23:56:57.012Z"
+  "version": "v0.2.0-1-gf05e7b1",
+  "commit_hash": "f05e7b1eb7d5c9407d3923d92dac71eebdce2406",
+  "commit_short": "f05e7b1",
+  "branch": "feature/basic-layering",
+  "build_time": "2025-06-12T06:20:44.233Z"
 }

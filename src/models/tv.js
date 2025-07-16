@@ -1,11 +1,10 @@
-const { getDatabase } = require('../config/database');
-const { v4: uuidv4 } = require('uuid');
+const BaseModel = require('./BaseModel');
 
-class TV {
+class TV extends BaseModel {
   constructor(data) {
-    this._id = data._id || `tv_${uuidv4()}`;
-    this._rev = data._rev; // Include _rev for CouchDB updates
-    this.type = 'tv';
+    super(data, 'tv');
+    
+    // TV-specific fields
     this.name = data.name;
     this.location = data.location;
     this.ip_address = data.ip_address;
@@ -16,90 +15,112 @@ class TV {
       transition_effect: data.config?.transition_effect || 'fade',
       display_duration: data.config?.display_duration || 5000,
       resolution: data.config?.resolution || '1920x1080',
-      orientation: data.config?.orientation || 'landscape'
+      orientation: data.config?.orientation || 'landscape',
+      // Layer configuration for Phase 2
+      layers: data.config?.layers || {
+        slideshow: {
+          enabled: true,
+          position: { x: 0, y: 0, width: 1920, height: 1080 },
+          priority: 1,
+          opacity: 1.0
+        }
+      },
+      layer_settings: data.config?.layer_settings || {
+        max_layers: 10,
+        compositing_timeout_ms: 5000,
+        cache_composites: true
+      }
     };
-    this.created_at = data.created_at || new Date().toISOString();
-    this.updated_at = new Date().toISOString();
   }
 
   static async findAll() {
-    const db = getDatabase();
-    try {
-      const result = await db.view('tvs', 'all');
-      return result.rows.map(row => row.value);
-    } catch (error) {
-      console.error('Error finding all TVs:', error);
-      throw error;
-    }
+    return BaseModel.findAll('tvs', TV);
   }
 
   static async findById(id) {
-    const db = getDatabase();
-    try {
-      const doc = await db.get(id);
-      return doc.type === 'tv' ? new TV(doc) : null;
-    } catch (error) {
-      if (error.statusCode === 404) {
-        return null;
-      }
-      throw error;
-    }
+    return BaseModel.findById(id, 'tv', TV);
   }
 
   static async findByStatus(status) {
-    const db = getDatabase();
-    try {
-      const result = await db.view('tvs', 'by_status', { key: status });
-      return result.rows.map(row => row.value);
-    } catch (error) {
-      console.error('Error finding TVs by status:', error);
-      throw error;
-    }
+    return BaseModel.findByView('tvs', 'by_status', status, TV);
   }
 
   async save() {
-    const db = getDatabase();
-    try {
-      this.updated_at = new Date().toISOString();
-      const result = await db.insert(this);
-      this._rev = result.rev;
-      return this;
-    } catch (error) {
-      console.error('Error saving TV:', error);
-      throw error;
-    }
+    // Validate required fields before saving
+    this.validateRequired(['name', 'location', 'ip_address']);
+    return super.save();
   }
 
-  async update(updates) {
-    const db = getDatabase();
-    try {
-      const existing = await db.get(this._id);
-      const updated = { ...existing, ...updates, updated_at: new Date().toISOString() };
-      const result = await db.insert(updated);
-      return { ...updated, _rev: result.rev };
-    } catch (error) {
-      console.error('Error updating TV:', error);
-      throw error;
-    }
-  }
+  // update() method is inherited from BaseModel
 
-  async delete() {
-    const db = getDatabase();
-    try {
-      const existing = await db.get(this._id);
-      await db.destroy(existing._id, existing._rev);
-      return true;
-    } catch (error) {
-      console.error('Error deleting TV:', error);
-      throw error;
-    }
-  }
+  // delete() method is inherited from BaseModel
 
+  /**
+   * Update TV heartbeat and set status to online
+   * @returns {Promise<Object>} Updated TV document
+   */
   async updateHeartbeat() {
     return this.update({ 
       last_heartbeat: new Date().toISOString(),
       status: 'online'
     });
+  }
+
+  /**
+   * Get TVs that haven't sent heartbeat within timeout period
+   * @param {number} timeoutMs - Timeout in milliseconds
+   * @returns {Promise<Array>} Array of offline TVs
+   */
+  static async findOffline(timeoutMs = 60000) {
+    const allTvs = await this.findAll();
+    const now = new Date();
+    
+    return allTvs.filter(tv => {
+      if (tv.status !== 'online' || !tv.last_heartbeat) {
+        return false;
+      }
+      const lastHeartbeat = new Date(tv.last_heartbeat);
+      return (now - lastHeartbeat) > timeoutMs;
+    });
+  }
+
+  /**
+   * Get summary statistics for all TVs
+   * @returns {Promise<Object>} Statistics object
+   */
+  static async getStats() {
+    const allTvs = await this.findAll();
+    
+    return {
+      total: allTvs.length,
+      online: allTvs.filter(tv => tv.status === 'online').length,
+      offline: allTvs.filter(tv => tv.status === 'offline').length,
+      byLocation: allTvs.reduce((acc, tv) => {
+        acc[tv.location] = (acc[tv.location] || 0) + 1;
+        return acc;
+      }, {})
+    };
+  }
+
+  /**
+   * Check if TV supports layer system
+   * @returns {boolean} True if TV has layer configuration
+   */
+  hasLayerSupport() {
+    return !!(this.config?.layers && this.config?.layer_settings);
+  }
+
+  /**
+   * Get active layers for this TV
+   * @returns {Array} Array of enabled layers
+   */
+  getActiveLayers() {
+    if (!this.config?.layers) return [];
+    
+    return Object.entries(this.config.layers)
+      .filter(([_, layer]) => layer.enabled)
+      .map(([id, layer]) => ({ id, ...layer }))
+      .sort((a, b) => a.priority - b.priority);
   }
 }
 

@@ -1,27 +1,88 @@
 version: '3.8'
 
 services:
-  digital-signage-management:
-    build: .
-    container_name: digital-signage-management
+  couchdb:
+    image: couchdb:3.3
+    container_name: signage-couchdb-prod
+    environment:
+      - COUCHDB_USER=${COUCHDB_ADMIN_USER:-admin}
+      - COUCHDB_PASSWORD=${COUCHDB_ADMIN_PASSWORD:-secure-password}
+    ports:
+      - "5984:5984"
+    volumes:
+      - couchdb_prod_data:/opt/couchdb/data
+    networks:
+      - signage-prod-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5984/_up"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    container_name: signage-mosquitto-prod
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - mosquitto_prod_config:/mosquitto/config
+      - mosquitto_prod_data:/mosquitto/data
+      - mosquitto_prod_log:/mosquitto/log
+    networks:
+      - signage-prod-network
+    restart: unless-stopped
+    command: mosquitto -c /mosquitto-no-auth.conf
+    healthcheck:
+      test: ["CMD", "mosquitto_pub", "-h", "localhost", "-t", "test", "-m", "test"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  management-server:
+    build:
+      context: .
+      dockerfile: Dockerfile-prod
+    container_name: signage-management-prod
     restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
       - NODE_ENV=production
       - PORT=3000
-      - COUCHDB_URL=http://192.168.1.215:5984
-      - MQTT_BROKER_URL=mqtt://192.168.1.215:1883
+      - COUCHDB_URL=http://couchdb:5984
+      - MQTT_BROKER_URL=mqtt://mosquitto:1883
+      - COUCHDB_USERNAME=${COUCHDB_ADMIN_USER:-admin}
+      - COUCHDB_PASSWORD=${COUCHDB_ADMIN_PASSWORD:-secure-password}
+      - API_KEY=${API_KEY}
+      - TV_TOKEN=${TV_TOKEN}
+      - ADMIN_KEY=${ADMIN_KEY}
+      - SESSION_SECRET=${SESSION_SECRET}
     volumes:
-      - ./uploads:/app/uploads
-      - ./logs:/app/logs
+      - uploads:/app/uploads
+      - logs:/app/logs
     networks:
-      - signage-network
+      - signage-prod-network
+    depends_on:
+      couchdb:
+        condition: service_healthy
+      mosquitto:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 networks:
-  signage-network:
+  signage-prod-network:
     driver: bridge
 
 volumes:
+  couchdb_prod_data:
+  mosquitto_prod_config:
+  mosquitto_prod_data:
+  mosquitto_prod_log:
   uploads:
   logs:

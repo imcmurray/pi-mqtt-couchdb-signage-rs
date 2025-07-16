@@ -2,6 +2,16 @@
 
 **Complete end-to-end digital signage solution** featuring a Node.js management server with CouchDB backend and Rust-based Raspberry Pi TV endpoints. This repository contains both the centralized management infrastructure and the high-performance TV endpoint software - everything needed to deploy a professional digital signage network.
 
+## 🚀 Current Version: v0.2.0
+
+**Latest improvements include:**
+- ✅ **Phase 2 Layer Management System** - Multi-layer compositing with overlay support
+- ✅ **Professional Security Architecture** - Rate limiting, authentication, input validation
+- ✅ **MVC Pattern Implementation** - Clean separation with controllers, models, and routes
+- ✅ **BaseModel Architecture** - Reduced code duplication with inheritance
+- ✅ **Centralized Configuration** - Environment-based configuration management
+- ✅ **Production-Ready Docker Setup** - Complete containerized infrastructure
+
 ## 📦 What's Included
 
 - **🖥️ Management Server** (`/`) - Node.js/Express backend with web interface
@@ -156,6 +166,83 @@ Our implementation perfectly adheres to the dual-protocol architecture design. H
 
 This architecture demonstrates **optimal protocol selection** where each technology is used for its strengths, creating a robust, scalable, and maintainable digital signage system.
 
+## 🎨 Phase 2: Advanced Layer Management System
+
+### 🆕 Multi-Layer Compositing
+
+The v0.2.0 release introduces a sophisticated layer management system that allows for complex display compositions:
+
+**Layer Types:**
+- **Slideshow Layer**: Primary image rotation (always present)
+- **Static Overlay**: Fixed overlays like logos or watermarks
+- **Dynamic Text**: Real-time text overlays for announcements
+- **Emergency Layer**: High-priority emergency notifications
+
+**Layer Features:**
+- **Alpha Blending**: Smooth transparency and opacity control
+- **Priority System**: Layered rendering with configurable z-order
+- **Real-time Updates**: Dynamic layer management via MQTT
+- **Position Control**: Precise pixel-level positioning
+- **Caching System**: Optimized composite image caching
+
+### 🔧 Layer Management API
+
+```bash
+# Get current layer configuration
+GET /api/tvs/tv123/layers
+
+# Update complete layer setup
+PUT /api/tvs/tv123/layers
+{
+  "layers": {
+    "slideshow": { "enabled": true, "priority": 1, "opacity": 1.0 },
+    "logo": { "enabled": true, "priority": 10, "opacity": 0.8, "position": {...} }
+  }
+}
+
+# Add/update specific layer
+POST /api/tvs/tv123/layers/emergency
+{
+  "enabled": true,
+  "priority": 99,
+  "opacity": 0.9,
+  "position": { "x": 0, "y": 0, "width": 1920, "height": 200 }
+}
+
+# Toggle layer visibility
+POST /api/tvs/tv123/layers/logo/visibility
+{ "visible": false }
+```
+
+### 🖼️ Rust Layer Compositing
+
+The TV endpoint implements high-performance layer compositing in Rust:
+
+```rust
+// Layer compositing with alpha blending
+pub async fn render_composite(&self) -> Result<RgbaImage, String> {
+    let layers = self.get_sorted_layers().await;
+    let mut composite = RgbaImage::new(self.width, self.height);
+    
+    for layer in layers {
+        if layer.enabled {
+            let layer_image = self.get_layer_image(&layer).await?;
+            self.blend_layer(&mut composite, &layer_image, layer.opacity);
+        }
+    }
+    
+    Ok(composite)
+}
+```
+
+### 🎯 Use Cases for Layer System
+
+1. **Corporate Branding**: Permanent logo overlays
+2. **Emergency Notifications**: High-priority alert overlays
+3. **Dynamic Information**: Real-time data overlays (weather, news, etc.)
+4. **Court System**: Hearing schedules over background content
+5. **Retail**: Product promotions over ambient content
+
 ## ✨ Features
 
 ### 🎛️ Management Server
@@ -167,6 +254,10 @@ This architecture demonstrates **optimal protocol selection** where each technol
 - **CouchDB Backend**: Document-based storage with replication support
 - **MQTT Integration**: Real-time bidirectional communication
 - **WebSocket Updates**: Live dashboard updates
+- **🆕 Layer Management System**: Multi-layer compositing with overlay support
+- **🆕 Advanced Security**: Rate limiting, API authentication, input validation
+- **🆕 MVC Architecture**: Clean separation with controllers and models
+- **🆕 Centralized Configuration**: Environment-based settings management
 
 ### 📺 TV Endpoints (Raspberry Pi)
 - **Direct Framebuffer Rendering**: No X11 required, hardware-accelerated
@@ -176,6 +267,9 @@ This architecture demonstrates **optimal protocol selection** where each technol
 - **Dynamic Image Loading**: Automatic sync from management server
 - **Health Monitoring**: Heartbeat and status reporting
 - **Graceful Error Handling**: Automatic reconnection and recovery
+- **🆕 Layer Compositing System**: Multi-layer rendering with alpha blending
+- **🆕 Real-time Layer Updates**: Dynamic overlay management via MQTT
+- **🆕 Advanced Caching**: Optimized image and composite caching
 
 ## 🚀 Getting Started
 
@@ -188,6 +282,13 @@ Choose your preferred setup method:
 git clone <repository-url>
 cd digital-signage-management
 
+# Configure environment (choose one)
+cp .env.example .env          # Production setup
+cp .env.dev.example .env      # Development setup
+
+# Edit .env with your specific settings
+# Important: Set secure passwords and API keys for production
+
 # Start all services with Docker
 docker-compose up -d
 
@@ -198,7 +299,7 @@ docker-compose ps
 docker-compose logs -f management-server
 ```
 
-This starts CouchDB, MQTT broker, and the management server automatically.
+This starts CouchDB, MQTT broker, and the management server automatically with proper networking and health checks.
 
 ### 🛠️ Option B: Manual Setup (Development)
 
@@ -232,7 +333,7 @@ cd digital-signage-management
 npm install
 
 # Setup environment
-cp .env.example .env
+cp .env.dev.example .env
 # Edit .env with your CouchDB and MQTT settings
 
 # Initialize database
@@ -332,21 +433,28 @@ curl http://localhost:8080/api/health  # Health check
 
 ### Management Server Configuration
 
+**Development (.env):**
 ```env
-# CouchDB Configuration
+# Copy from .env.dev.example
+NODE_ENV=development
+PORT=3000
 COUCHDB_URL=http://localhost:5984
 COUCHDB_USERNAME=admin
 COUCHDB_PASSWORD=admin
-COUCHDB_DATABASE=digital_signage
-
-# MQTT Configuration
 MQTT_BROKER_URL=mqtt://localhost:1883
-MQTT_USERNAME=
-MQTT_PASSWORD=
+LOG_LEVEL=debug
+```
 
-# Server Configuration
+**Production (.env):**
+```env
+# Copy from .env.example and customize
+NODE_ENV=production
 PORT=3000
-NODE_ENV=development
+COUCHDB_URL=http://couchdb:5984
+API_KEY=your-secure-api-key
+TV_TOKEN=your-secure-tv-token
+ADMIN_KEY=your-secure-admin-key
+SESSION_SECRET=your-secure-session-secret
 ```
 
 ### TV Endpoint Configuration
@@ -376,6 +484,14 @@ POST   /api/tvs                     # Create new TV
 PUT    /api/tvs/:id                 # Update TV
 DELETE /api/tvs/:id                 # Delete TV
 POST   /api/tvs/:id/control/:action # Control TV (play/pause/next)
+PUT    /api/tvs/:id/config          # Update TV configuration
+
+# Layer Management (Phase 2)
+GET    /api/tvs/:id/layers          # Get layer configuration
+PUT    /api/tvs/:id/layers          # Update layer configuration
+POST   /api/tvs/:id/layers/:layerId # Add/update specific layer
+DELETE /api/tvs/:id/layers/:layerId # Remove layer
+POST   /api/tvs/:id/layers/:layerId/visibility # Toggle layer visibility
 
 # Image Management
 GET    /api/images                 # List all images
@@ -420,23 +536,51 @@ signage/tv/{tv_id}/error           # Error reporting
 ```
 digital-signage-management/
 ├── package.json                   # Node.js dependencies
-├── docker-compose.yml             # Docker services configuration
-├── Dockerfile                     # Management server container
-├── .env.example                   # Environment template
+├── docker-compose.yml             # Docker services configuration (production)
+├── docker-compose.yml-dev         # Development Docker configuration
+├── docker-compose.yml-prod        # Production Docker configuration
+├── Dockerfile                     # Production container
+├── Dockerfile-dev                 # Development container
+├── Dockerfile-prod                # Production-optimized container
+├── .env.example                   # Production environment template
+├── .env.dev.example              # Development environment template
 ├── src/
 │   ├── server.js                  # Main server application
-│   ├── config/database.js         # CouchDB configuration
-│   ├── models/                    # Data models (TV, Image)
+│   ├── config/
+│   │   ├── database.js           # CouchDB configuration
+│   │   └── index.js              # 🆕 Centralized configuration system
+│   ├── models/
+│   │   ├── BaseModel.js          # 🆕 Base model with common CRUD operations
+│   │   ├── tv.js                 # TV model (extends BaseModel)
+│   │   └── image.js              # Image model (extends BaseModel)
+│   ├── controllers/              # 🆕 MVC controllers
+│   │   ├── tvController.js       # TV business logic
+│   │   ├── imageController.js    # Image business logic
+│   │   └── dashboardController.js # Dashboard business logic
 │   ├── routes/                    # API routes
-│   ├── services/mqttService.js    # MQTT integration
-│   └── middleware/upload.js       # File upload handling
+│   │   ├── tvRoutes.js           # TV endpoints
+│   │   ├── imageRoutes.js        # Image endpoints
+│   │   └── dashboardRoutes.js    # Dashboard endpoints
+│   ├── middleware/               # 🆕 Middleware layer
+│   │   ├── errorHandler.js       # Centralized error handling
+│   │   ├── security.js           # Rate limiting and authentication
+│   │   ├── validation.js         # Joi schema validation
+│   │   └── upload.js             # File upload handling
+│   ├── services/
+│   │   └── mqttService.js        # MQTT integration with layer support
+│   └── utils/                    # Utility functions
 ├── public/                        # Web interface assets
 ├── tests/                         # Test suites
 ├── pi-slideshow-rs/               # Rust TV endpoint
-│   ├── src/main.rs                # Main slideshow application
-│   ├── src/mqtt_client.rs         # MQTT integration
-│   ├── src/slideshow_controller.rs # Control logic
-│   └── src/http_server.rs         # HTTP API server
+│   ├── src/
+│   │   ├── main.rs               # Main slideshow application
+│   │   ├── mqtt_client.rs        # MQTT integration
+│   │   ├── slideshow_controller.rs # Control logic
+│   │   ├── http_server.rs        # HTTP API server
+│   │   ├── layer_manager.rs      # 🆕 Layer compositing system
+│   │   └── couchdb_client.rs     # CouchDB integration
+│   ├── install.sh                # Automated Pi installation
+│   └── signage.service           # SystemD service configuration
 └── README.md                      # This file
 ```
 
@@ -452,12 +596,15 @@ cd digital-signage-management
 # Install dependencies
 npm install
 
-# Start development environment
-docker-compose -f docker-compose.dev.yml up -d  # Infrastructure only
-npm run dev                                      # Development server with hot reload
+# Setup development environment
+cp .env.dev.example .env
 
-# Or start everything with Docker
-docker-compose up -d
+# Start development environment
+docker-compose -f docker-compose.yml-dev up -d  # Full dev infrastructure
+
+# Or run management server locally with containerized services
+docker-compose -f docker-compose.yml-dev up -d couchdb-dev mosquitto-dev
+npm run dev                                      # Development server with hot reload
 ```
 
 #### 2. Running Tests
@@ -500,14 +647,14 @@ cd digital-signage-management
 
 # Configure environment
 cp .env.example .env
-# Edit .env with production settings
+# Edit .env with production settings - IMPORTANT: Set secure passwords!
 
 # Deploy with Docker
-docker-compose -f docker-compose.prod.yml up -d
+docker-compose -f docker-compose.yml-prod up -d
 
 # Monitor deployment
-docker-compose logs -f
-docker-compose ps
+docker-compose -f docker-compose.yml-prod logs -f
+docker-compose -f docker-compose.yml-prod ps
 ```
 
 #### Method 2: Manual Production Setup
@@ -612,49 +759,46 @@ LOG_FILE=/var/log/signage/app.log
 
 ### 🐳 Docker Configuration
 
-Create `docker-compose.yml`:
+The project includes three optimized Docker Compose configurations:
+
+**Production (`docker-compose.yml-prod`):**
+- Production-optimized containers with health checks
+- Secure environment variable management
+- Proper service dependencies and networking
+- Persistent data volumes
+
+**Development (`docker-compose.yml-dev`):**
+- Development containers with hot reload
+- Debug-friendly logging and error reporting
+- Local code mounting for rapid development
+- Separate dev networking and volumes
+
+**Quick Start (`docker-compose.yml`):**
+- Balanced production setup for general use
+- Complete infrastructure with CouchDB and MQTT
+- Health checks and automatic restart policies
+- Ready-to-use with minimal configuration
 
 ```yaml
-version: '3.8'
-
-services:
-  couchdb:
-    image: couchdb:3.3
-    environment:
-      - COUCHDB_USER=admin
-      - COUCHDB_PASSWORD=password
-    ports:
-      - "5984:5984"
-    volumes:
-      - couchdb_data:/opt/couchdb/data
-    restart: unless-stopped
-
-  mosquitto:
-    image: eclipse-mosquitto:2.0
-    ports:
-      - "1883:1883"
-    volumes:
-      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
-    restart: unless-stopped
-
-  management-server:
-    build: .
-    ports:
-      - "3000:3000"
-    environment:
-      - NODE_ENV=production
-      - COUCHDB_URL=http://couchdb:5984
-      - MQTT_BROKER_URL=mqtt://mosquitto:1883
-    depends_on:
-      - couchdb
-      - mosquitto
-    volumes:
-      - uploads:/app/uploads
-    restart: unless-stopped
-
-volumes:
-  couchdb_data:
-  uploads:
+# Example production service configuration
+management-server:
+  build:
+    context: .
+    dockerfile: Dockerfile-prod
+  environment:
+    - NODE_ENV=production
+    - COUCHDB_URL=http://couchdb:5984
+    - MQTT_BROKER_URL=mqtt://mosquitto:1883
+  depends_on:
+    couchdb:
+      condition: service_healthy
+    mosquitto:
+      condition: service_healthy
+  healthcheck:
+    test: ["CMD", "wget", "--spider", "http://localhost:3000/api/health"]
+    interval: 30s
+    timeout: 10s
+    retries: 3
 ```
 
 ### 📊 Development Commands Reference
@@ -668,8 +812,7 @@ npm run test:watch                # Watch mode
 npm run lint                      # Lint code
 npm run lint:fix                  # Fix linting issues
 npm run db:setup                  # Initialize database
-npm run db:migrate                # Run migrations
-npm run db:seed                   # Seed test data
+npm run build                     # Build (no-op for Node.js)
 
 # TV Endpoint
 cd pi-slideshow-rs
@@ -682,7 +825,9 @@ cargo clippy                     # Linting
 cargo fmt                        # Format code
 
 # Docker
-docker-compose up -d              # Start all services
+docker-compose up -d              # Start all services (production)
+docker-compose -f docker-compose.yml-dev up -d  # Development
+docker-compose -f docker-compose.yml-prod up -d # Production
 docker-compose down               # Stop all services
 docker-compose logs -f            # View logs
 docker-compose ps                 # Service status
@@ -724,13 +869,22 @@ mosquitto_sub -h mqtt-broker -t "signage/tv/+/status"
 - **Storage**: Use fast SD cards (Class 10+) for Raspberry Pi
 - **Transitions**: Reduce transition duration for lower-end hardware
 
-## 🔐 Security Considerations
+## 🔐 Security Features
 
+### ✅ Built-in Security (v0.2.0)
+- **Multi-tier Authentication**: API keys, TV tokens, and admin keys
+- **Rate Limiting**: Configurable limits for different endpoint types
+- **Input Validation**: Comprehensive Joi schema validation
+- **File Upload Security**: Type validation and size limits
+- **Error Handling**: Secure error responses without information leakage
+- **CORS Protection**: Configurable cross-origin resource sharing
+
+### 🔧 Additional Security Recommendations
 - **MQTT Authentication**: Configure MQTT broker with user authentication
 - **HTTPS**: Use SSL certificates for production deployments
 - **Firewall**: Restrict TV endpoint network access to management server
-- **File Uploads**: Validate and sanitize uploaded image files
-- **Access Control**: Implement staff authentication for web interface
+- **Environment Variables**: Use secure secrets management
+- **Container Security**: Non-root user containers with minimal privileges
 
 ## 📂 Project Components
 
@@ -749,6 +903,9 @@ mosquitto_sub -h mqtt-broker -t "signage/tv/+/status"
 - **Framebuffer Rendering**: Hardware-accelerated display without X11
 - **SystemD Integration**: Auto-startup service configuration (`signage.service`)
 - **Automated Installer**: One-command deployment script (`install.sh`)
+- **🆕 Layer Manager**: Multi-layer compositing with alpha blending
+- **🆕 Advanced Caching**: Optimized image and composite caching
+- **🆕 Real-time Updates**: Dynamic layer management via MQTT
 
 See [`pi-slideshow-rs/README.md`](pi-slideshow-rs/README.md) for detailed TV endpoint documentation.
 

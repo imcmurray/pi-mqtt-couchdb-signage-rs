@@ -1,11 +1,11 @@
 const { getDatabase } = require('../config/database');
-const { v4: uuidv4 } = require('uuid');
+const BaseModel = require('./BaseModel');
 
-class Image {
+class Image extends BaseModel {
   constructor(data) {
-    this._id = data._id || `image_${uuidv4()}`;
-    this._rev = data._rev; // Include revision for CouchDB updates
-    this.type = 'image';
+    super(data, 'image');
+    
+    // Image-specific fields
     this.original_name = data.original_name;
     this.size = data.size;
     this.mimetype = data.mimetype;
@@ -23,36 +23,23 @@ class Image {
       end_time: data.schedule?.end_time,
       days_of_week: data.schedule?.days_of_week || []
     };
-    this.created_at = data.created_at || new Date().toISOString();
-    this.updated_at = new Date().toISOString();
   }
 
   static async findAll() {
-    const db = getDatabase();
-    try {
-      const result = await db.view('images', 'all');
-      return result.rows
-        .map(row => new Image(row.value))
-        .filter(img => img.status === 'active');
-    } catch (error) {
-      console.error('Error finding all images:', error);
-      throw error;
-    }
+    const images = await BaseModel.findAll('images', Image);
+    // Filter to only return active images
+    return images.filter(img => img.status === 'active');
   }
 
   static async findById(id) {
-    const db = getDatabase();
-    try {
-      const doc = await db.get(id);
-      return doc.type === 'image' ? new Image(doc) : null;
-    } catch (error) {
-      if (error.statusCode === 404) {
-        return null;
-      }
-      throw error;
-    }
+    return BaseModel.findById(id, 'image', Image);
   }
 
+  /**
+   * Find all images assigned to a specific TV
+   * @param {string} tvId - The TV ID
+   * @returns {Promise<Array>} Array of images sorted by order
+   */
   static async findByTvId(tvId) {
     const db = getDatabase();
     try {
@@ -69,27 +56,13 @@ class Image {
   }
 
   static async findByStatus(status) {
-    const db = getDatabase();
-    try {
-      const result = await db.view('images', 'by_status', { key: status });
-      return result.rows.map(row => new Image(row.value));
-    } catch (error) {
-      console.error('Error finding images by status:', error);
-      throw error;
-    }
+    return BaseModel.findByView('images', 'by_status', status, Image);
   }
 
   async save() {
-    const db = getDatabase();
-    try {
-      this.updated_at = new Date().toISOString();
-      const result = await db.insert(this);
-      this._rev = result.rev;
-      return this;
-    } catch (error) {
-      console.error('Error saving image:', error);
-      throw error;
-    }
+    // Validate required fields before saving
+    this.validateRequired(['original_name', 'size', 'mimetype']);
+    return super.save();
   }
 
   async saveWithAttachment(imageBuffer, contentType) {
@@ -136,19 +109,9 @@ class Image {
     return `image${this.getFileExtension()}`;
   }
 
-  async update(updates) {
-    const db = getDatabase();
-    try {
-      const existing = await db.get(this._id);
-      const updated = { ...existing, ...updates, updated_at: new Date().toISOString() };
-      const result = await db.insert(updated);
-      return { ...updated, _rev: result.rev };
-    } catch (error) {
-      console.error('Error updating image:', error);
-      throw error;
-    }
-  }
+  // update() method is inherited from BaseModel
 
+  // Override delete to handle attachments
   async delete() {
     const db = getDatabase();
     try {
@@ -168,11 +131,10 @@ class Image {
         }
       }
       
-      // Delete the document
-      await db.destroy(existing._id, existing._rev);
-      return true;
+      // Call parent delete method
+      return super.delete();
     } catch (error) {
-      console.error('Error deleting image:', error);
+      console.error('Error deleting image with attachments:', error);
       throw error;
     }
   }
@@ -202,6 +164,93 @@ class Image {
       tv_orders[tvId] = startOrder + index;
     });
     return this.update({ assigned_tvs, tv_orders });
+  }
+
+  /**
+   * Get image statistics
+   * @returns {Promise<Object>} Statistics object
+   */
+  static async getStats() {
+    const allImages = await BaseModel.findAll('images', Image);
+    
+    const activeImages = allImages.filter(img => img.status === 'active');
+    const totalSize = activeImages.reduce((sum, img) => sum + (img.size || 0), 0);
+    
+    return {
+      total: allImages.length,
+      active: activeImages.length,
+      inactive: allImages.filter(img => img.status !== 'active').length,
+      totalSizeMB: Math.round(totalSize / 1024 / 1024 * 100) / 100,
+      avgSizeMB: activeImages.length > 0 ? 
+        Math.round(totalSize / activeImages.length / 1024 / 1024 * 100) / 100 : 0,
+      byMimeType: activeImages.reduce((acc, img) => {
+        acc[img.mimetype] = (acc[img.mimetype] || 0) + 1;
+        return acc;
+      }, {})
+    };
+  }
+
+  /**
+   * Check if image is scheduled to display now
+   * @returns {boolean} True if image should be displayed
+   */
+  isScheduledNow() {
+    if (!this.schedule.start_time && !this.schedule.end_time) {
+      return true; // No schedule means always show
+    }
+    
+    const now = new Date();
+    const start = this.schedule.start_time ? new Date(this.schedule.start_time) : null;
+    const end = this.schedule.end_time ? new Date(this.schedule.end_time) : null;
+    
+    if (start && now < start) return false;
+    if (end && now > end) return false;
+    
+    // Check day of week if specified
+    if (this.schedule.days_of_week && this.schedule.days_of_week.length > 0) {
+      const currentDay = now.getDay();
+      return this.schedule.days_of_week.includes(currentDay);
+    }
+    
+    return true;
+  }
+
+  /**
+   * Get a summary of TV assignments
+   * @returns {Object} Assignment summary
+   */
+  getAssignmentSummary() {
+    return {
+      assignedCount: this.assigned_tvs.length,
+      tvIds: this.assigned_tvs,
+      ordersByTv: this.tv_orders,
+      isAssigned: this.assigned_tvs.length > 0
+    };
+  }
+
+  /**
+   * Bulk update order for multiple TVs
+   * @param {Object} orderUpdates - Object mapping TV IDs to new orders
+   * @returns {Promise<Object>} Updated image
+   */
+  async bulkUpdateOrders(orderUpdates) {
+    const tv_orders = { ...this.tv_orders, ...orderUpdates };
+    return this.update({ tv_orders });
+  }
+
+  /**
+   * Check if image has valid attachment
+   * @returns {Promise<boolean>} True if attachment exists
+   */
+  async hasAttachment() {
+    try {
+      const attachmentName = this.getAttachmentName();
+      const db = getDatabase();
+      await db.attachment.get(this._id, attachmentName);
+      return true;
+    } catch (error) {
+      return false;
+    }
   }
 }
 

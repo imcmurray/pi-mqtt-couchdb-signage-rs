@@ -1,44 +1,26 @@
 const nano = require('nano');
-require('dotenv').config();
+const config = require('./index');
 
-// Build CouchDB URL with authentication if provided
-const couchdbUrl = (() => {
-  const baseUrl = process.env.COUCHDB_URL || 'http://192.168.1.215:5984';
-  const username = process.env.COUCHDB_USERNAME;
-  const password = process.env.COUCHDB_PASSWORD;
-  
-  if (username && password) {
-    const url = new URL(baseUrl);
-    url.username = username;
-    url.password = password;
-    return url.toString();
-  }
-  
-  return baseUrl;
-})();
-
-const couchdb = nano(couchdbUrl);
-
-const DB_NAME = process.env.COUCHDB_DATABASE || 'digital_signage';
+const couchdb = nano(config.getDatabaseUrl());
 
 let db;
 
 async function initializeDatabase() {
   try {
     // Check if database exists
-    await couchdb.db.get(DB_NAME);
-    console.log(`Database '${DB_NAME}' already exists`);
+    await couchdb.db.get(config.database.name);
+    console.log(`Database '${config.database.name}' already exists`);
   } catch (error) {
     if (error.statusCode === 404) {
       // Database doesn't exist, create it
-      await couchdb.db.create(DB_NAME);
-      console.log(`Database '${DB_NAME}' created successfully`);
+      await couchdb.db.create(config.database.name);
+      console.log(`Database '${config.database.name}' created successfully`);
     } else {
       throw error;
     }
   }
   
-  db = couchdb.db.use(DB_NAME);
+  db = couchdb.db.use(config.database.name);
   
   // Create design documents for views
   await createDesignDocuments();

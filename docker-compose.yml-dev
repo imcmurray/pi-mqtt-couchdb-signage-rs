@@ -1,30 +1,72 @@
 version: '3.8'
 
 services:
-  digital-signage-management:
-    build: .
-    container_name: digital-signage-management
+  couchdb-dev:
+    image: couchdb:3.3
+    container_name: signage-couchdb-dev
+    environment:
+      - COUCHDB_USER=admin
+      - COUCHDB_PASSWORD=admin
+    ports:
+      - "5984:5984"
+    volumes:
+      - couchdb_dev_data:/opt/couchdb/data
+    networks:
+      - signage-dev-network
+    restart: unless-stopped
+
+  mosquitto-dev:
+    image: eclipse-mosquitto:2.0
+    container_name: signage-mosquitto-dev
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - mosquitto_dev_config:/mosquitto/config
+      - mosquitto_dev_data:/mosquitto/data
+      - mosquitto_dev_log:/mosquitto/log
+    networks:
+      - signage-dev-network
+    restart: unless-stopped
+    command: mosquitto -c /mosquitto-no-auth.conf
+
+  management-server-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile-dev
+    container_name: signage-management-dev
     restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
-      - NODE_ENV=dev
+      - NODE_ENV=development
       - PORT=3000
-      - COUCHDB_URL=http://192.168.1.215:5984
-      - MQTT_BROKER_URL=mqtt://192.168.1.215:1883
+      - COUCHDB_URL=http://couchdb-dev:5984
+      - MQTT_BROKER_URL=mqtt://mosquitto-dev:1883
+      - COUCHDB_USERNAME=admin
+      - COUCHDB_PASSWORD=admin
+      - LOG_LEVEL=debug
+      - ENABLE_DEBUG_ROUTES=true
+      - ENABLE_VERBOSE_ERRORS=true
     volumes:
       - .:/app                 # Mount local code into container
       - /app/node_modules      # Prevent overwriting node_modules
       - ./uploads:/app/uploads
       - ./logs:/app/logs
-    command: npm run dev       # Use dev mode (nodemon)
     networks:
-      - signage-network
+      - signage-dev-network
+    depends_on:
+      - couchdb-dev
+      - mosquitto-dev
 
 networks:
-  signage-network:
+  signage-dev-network:
     driver: bridge
 
 volumes:
+  couchdb_dev_data:
+  mosquitto_dev_config:
+  mosquitto_dev_data:
+  mosquitto_dev_log:
   uploads:
   logs:

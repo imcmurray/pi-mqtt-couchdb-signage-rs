@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, mpsc, RwLock};
 use crate::mqtt_client::{ImageInfo, MqttClient, SlideshowCommand, SlideshowConfig, TvStatus};
 use crate::couchdb_client::CouchDbClient;
+use crate::layer_manager::{LayerManager, LayerConfig, Layer, LayerType, LayerContent};
 
 #[derive(Debug, Clone)]
 pub enum SlideshowState {
@@ -34,6 +35,7 @@ pub struct SlideshowController {
     status_sender: mpsc::Sender<TvStatus>,
     mqtt_client: Arc<RwLock<Option<MqttClient>>>,
     couchdb_client: Arc<RwLock<Option<CouchDbClient>>>,
+    layer_manager: Arc<RwLock<LayerManager>>,
     pub start_time: Instant,
 }
 
@@ -48,6 +50,7 @@ impl Clone for SlideshowController {
             status_sender: self.status_sender.clone(),
             mqtt_client: self.mqtt_client.clone(),
             couchdb_client: self.couchdb_client.clone(),
+            layer_manager: self.layer_manager.clone(),
             start_time: self.start_time,
         }
     }
@@ -59,6 +62,12 @@ impl SlideshowController {
         command_receiver: broadcast::Receiver<SlideshowCommand>,
         status_sender: mpsc::Sender<TvStatus>,
     ) -> Self {
+        // Initialize layer manager with default resolution and orientation
+        let layer_manager = LayerManager::new(
+            1920, 1080, // Default resolution - will be updated from config
+            config.orientation.clone()
+        );
+        
         Self {
             config: Arc::new(RwLock::new(config)),
             state: Arc::new(RwLock::new(SlideshowState::Stopped)),
@@ -68,6 +77,7 @@ impl SlideshowController {
             status_sender,
             mqtt_client: Arc::new(RwLock::new(None)),
             couchdb_client: Arc::new(RwLock::new(None)),
+            layer_manager: Arc::new(RwLock::new(layer_manager)),
             start_time: Instant::now(),
         }
     }
@@ -685,5 +695,68 @@ impl SlideshowController {
         }
         
         None
+    }
+
+    // Layer management methods for Phase 2
+    pub async fn add_layer(&self, layer: Layer) -> Result<(), String> {
+        self.layer_manager.write().await.add_layer(layer).await
+    }
+
+    pub async fn remove_layer(&self, id: &str) -> Result<(), String> {
+        self.layer_manager.write().await.remove_layer(id).await
+    }
+
+    pub async fn update_layer(&self, id: &str, layer: Layer) -> Result<(), String> {
+        self.layer_manager.write().await.update_layer(id, layer).await
+    }
+
+    pub async fn set_layer_visibility(&self, id: &str, visible: bool) -> Result<(), String> {
+        self.layer_manager.write().await.set_layer_visibility(id, visible).await
+    }
+
+    pub async fn set_layer_opacity(&self, id: &str, opacity: f32) -> Result<(), String> {
+        self.layer_manager.write().await.set_layer_opacity(id, opacity).await
+    }
+
+    pub async fn get_layer(&self, id: &str) -> Option<Layer> {
+        self.layer_manager.read().await.get_layer(id).await
+    }
+
+    pub async fn get_all_layers(&self) -> Vec<Layer> {
+        self.layer_manager.read().await.get_all_layers().await
+    }
+
+    pub async fn get_layer_config(&self) -> LayerConfig {
+        self.layer_manager.read().await.get_config().await
+    }
+
+    pub async fn update_layer_config(&self, config: LayerConfig) -> Result<(), String> {
+        self.layer_manager.write().await.update_config(config).await
+    }
+
+    pub async fn render_composite_image(&self) -> Result<image::RgbaImage, String> {
+        self.layer_manager.read().await.render_composite().await
+    }
+
+    pub async fn update_slideshow_layer(&self, image_path: Option<String>) -> Result<(), String> {
+        self.layer_manager.write().await.update_slideshow_content(image_path).await
+    }
+
+    pub async fn add_overlay_layer(&self, id: String, image_path: String, x: u32, y: u32, width: u32, height: u32, opacity: f32) -> Result<(), String> {
+        let overlay_layer = Layer::new(id, LayerType::StaticOverlay)
+            .with_image(image_path)
+            .with_position(x, y, width, height)
+            .with_opacity(opacity)
+            .with_name("Static Overlay".to_string());
+        
+        self.add_layer(overlay_layer).await
+    }
+
+    pub async fn clear_layer_cache(&self) {
+        self.layer_manager.write().await.clear_cache().await;
+    }
+
+    pub async fn get_layer_cache_stats(&self) -> (usize, usize) {
+        self.layer_manager.read().await.get_cache_stats().await
     }
 }

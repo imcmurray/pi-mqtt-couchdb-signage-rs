@@ -5,33 +5,55 @@ const path = require('path');
 const WebSocket = require('ws');
 const http = require('http');
 
+const config = require('./config');
 const { initializeDatabase } = require('./config/database');
 const mqttService = require('./services/mqttService');
+const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
+const { 
+  generalLimiter, 
+  speedLimiter, 
+  securityHeaders, 
+  corsOptions, 
+  requestSizeLimit 
+} = require('./middleware/security');
 
 // Route imports
 const tvRoutes = require('./routes/tvRoutes');
 const imageRoutes = require('./routes/imageRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
 
-require('dotenv').config();
-
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-// Middleware
-if (process.env.NODE_ENV === 'production') {
+// Security middleware
+app.use(securityHeaders);
+
+if (config.isProduction()) {
   app.use(helmet());
+  app.use(cors(corsOptions));
 } else {
   app.use(helmet({
     contentSecurityPolicy: false,
-    crossOriginEmbedderPolicy: false // optional for dev if needed
+    crossOriginEmbedderPolicy: false
   }));
+  app.use(cors());
 }
 
-app.use(cors());
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+// Rate limiting
+app.use(generalLimiter);
+app.use(speedLimiter);
+
+// Body parsing with size limits
+app.use(express.json({ limit: requestSizeLimit.json }));
+app.use(express.urlencoded({ 
+  extended: true, 
+  limit: requestSizeLimit.urlencoded 
+}));
+app.use(express.raw({ limit: requestSizeLimit.raw }));
+
+// Trust proxy for accurate IP addresses (important for rate limiting)
+app.set('trust proxy', 1);
 
 // Static files
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
@@ -51,8 +73,15 @@ app.get('/api/health', (req, res) => {
   res.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
+    environment: config.server.environment,
+    version: config.isProduction() ? 'hidden' : process.env.npm_package_version,
     mqtt_connected: mqttService.isConnected,
-    uptime: process.uptime()
+    uptime: process.uptime(),
+    config: {
+      database: config.database.name,
+      mqtt_broker: config.mqtt.brokerUrl.replace(/\/\/.*@/, '//***:***@'), // Hide credentials
+      layer_system_enabled: config.layers.maxLayers > 0
+    }
   });
 });
 
@@ -186,18 +215,8 @@ wss.on('connection', (ws) => {
 });
 
 // Error handling middleware
-app.use((err, req, res, _next) => {
-  console.error('Error:', err);
-  res.status(500).json({
-    error: 'Internal Server Error',
-    message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
-  });
-});
-
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({ error: 'Not Found' });
-});
+app.use(notFoundHandler);
+app.use(errorHandler);
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
@@ -234,11 +253,15 @@ async function startServer() {
     }
 
     // Start HTTP server
-    const PORT = process.env.PORT || 3000;
-    server.listen(PORT, '0.0.0.0', () => {
-      console.log(`Digital Signage Management Server running on port ${PORT}`);
-      console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+    server.listen(config.server.port, config.server.host, () => {
+      console.log(`Digital Signage Management Server running on ${config.server.host}:${config.server.port}`);
+      console.log(`Environment: ${config.server.environment}`);
+      console.log(`Database: ${config.database.name}`);
+      console.log(`MQTT Broker: ${config.mqtt.brokerUrl.replace(/\/\/.*@/, '//***:***@')}`);
       console.log(`WebSocket server running on the same port`);
+      if (config.layers.maxLayers > 0) {
+        console.log(`Layer system enabled (max ${config.layers.maxLayers} layers per TV)`);
+      }
     });
 
   } catch (error) {

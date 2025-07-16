@@ -1,14 +1,14 @@
 const mqtt = require('mqtt');
 const TV = require('../models/tv');
-require('dotenv').config();
+const config = require('../config');
 
 class MQTTService {
   constructor() {
     this.client = null;
     this.isConnected = false;
     this.subscribers = new Map();
-    this.heartbeatTimeout = 90000; // 90 seconds (30s heartbeat + 60s grace)
-    this.offlineCheckInterval = 30000; // Check every 30 seconds
+    this.heartbeatTimeout = config.tvDefaults.heartbeatTimeout;
+    this.offlineCheckInterval = config.tvDefaults.heartbeatInterval;
     this.offlineCheckTimer = null;
   }
 
@@ -16,17 +16,18 @@ class MQTTService {
     const options = {
       keepalive: 60,
       connectTimeout: 30 * 1000,
-      reconnectPeriod: 1000,
+      reconnectPeriod: config.mqtt.reconnectPeriod,
       clean: true,
+      clientId: config.mqtt.clientId
     };
 
-    if (process.env.MQTT_USERNAME && process.env.MQTT_PASSWORD) {
-      options.username = process.env.MQTT_USERNAME;
-      options.password = process.env.MQTT_PASSWORD;
+    if (config.mqtt.username && config.mqtt.password) {
+      options.username = config.mqtt.username;
+      options.password = config.mqtt.password;
     }
 
     return new Promise((resolve, reject) => {
-      this.client = mqtt.connect(process.env.MQTT_BROKER_URL || 'mqtt://192.168.1.215:1883', options);
+      this.client = mqtt.connect(config.mqtt.brokerUrl, options);
 
       this.client.on('connect', () => {
         console.log('Connected to MQTT broker');
@@ -230,6 +231,27 @@ class MQTTService {
 
   async rebootTv(tvId) {
     return this.sendCommand(tvId, 'reboot');
+  }
+
+  // Layer Management Commands (Phase 2)
+  async updateLayerConfig(tvId, layerConfig) {
+    console.log(`🔄 SENDING LAYER CONFIG UPDATE to TV ${tvId}:`, layerConfig);
+    return this.sendCommand(tvId, 'update_layer_config', layerConfig);
+  }
+
+  async updateSpecificLayer(tvId, layerId, layerData) {
+    console.log(`🔄 SENDING LAYER UPDATE to TV ${tvId}, layer ${layerId}:`, layerData);
+    return this.sendCommand(tvId, 'update_layer', { layer_id: layerId, layer_data: layerData });
+  }
+
+  async removeLayer(tvId, layerId) {
+    console.log(`🔄 SENDING LAYER REMOVAL to TV ${tvId}, layer ${layerId}`);
+    return this.sendCommand(tvId, 'remove_layer', { layer_id: layerId });
+  }
+
+  async setLayerVisibility(tvId, layerId, visible) {
+    console.log(`🔄 SENDING LAYER VISIBILITY UPDATE to TV ${tvId}, layer ${layerId}: ${visible}`);
+    return this.sendCommand(tvId, 'set_layer_visibility', { layer_id: layerId, visible: visible });
   }
 
   // WebSocket notification system

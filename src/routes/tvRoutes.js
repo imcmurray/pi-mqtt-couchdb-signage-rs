@@ -1,265 +1,200 @@
 const express = require('express');
 const router = express.Router();
-const TV = require('../models/tv');
-const mqttService = require('../services/mqttService');
 const Joi = require('joi');
-
-// Validation schemas
-const tvSchema = Joi.object({
-  name: Joi.string().required(),
-  location: Joi.string().required(),
-  ip_address: Joi.string().ip().required(),
-  config: Joi.object({
-    transition_effect: Joi.string().valid('fade', 'slide', 'wipe', 'dissolve').default('fade'),
-    display_duration: Joi.number().min(1000).max(60000).default(5000),
-    resolution: Joi.string().default('1920x1080'),
-    orientation: Joi.string().valid('landscape', 'portrait', 'inverted_landscape', 'inverted_portrait').default('landscape')
-  }).default({})
-});
-
-const configUpdateSchema = Joi.object({
-  transition_effect: Joi.string().valid('fade', 'slide', 'wipe', 'dissolve'),
-  display_duration: Joi.number().min(1000).max(60000),
-  resolution: Joi.string(),
-  orientation: Joi.string().valid('landscape', 'portrait', 'inverted_landscape', 'inverted_portrait')
-});
+const tvController = require('../controllers/tvController');
+const { validate, tvSchemas, paramSchemas, querySchemas, layerSchemas } = require('../middleware/validation');
+const { registrationLimiter, strictLimiter, adminAuth, tvTokenAuth } = require('../middleware/security');
 
 // GET /api/tvs - Get all TVs
-router.get('/', async (req, res) => {
-  try {
-    const tvs = await TV.findAll();
-    res.json(tvs);
-  } catch (error) {
-    console.error('Error fetching TVs:', error);
-    res.status(500).json({ error: 'Failed to fetch TVs' });
+router.get('/', 
+  validate(querySchemas.tvs, 'query'),
+  async (req, res, next) => {
+    try {
+      await tvController.getAllTvs(req, res);
+    } catch (error) {
+      next(error);
+    }
   }
-});
+);
 
 // GET /api/tvs/:id - Get specific TV
-router.get('/:id', async (req, res) => {
-  try {
-    const tv = await TV.findById(req.params.id);
-    if (!tv) {
-      return res.status(404).json({ error: 'TV not found' });
+router.get('/:id', 
+  validate(paramSchemas.id, 'params'),
+  async (req, res, next) => {
+    try {
+      await tvController.getTvById(req, res);
+    } catch (error) {
+      next(error);
     }
-    res.json(tv);
-  } catch (error) {
-    console.error('Error fetching TV:', error);
-    res.status(500).json({ error: 'Failed to fetch TV' });
   }
-});
+);
 
 // POST /api/tvs - Create new TV
-router.post('/', async (req, res) => {
-  try {
-    const { error, value } = tvSchema.validate(req.body);
-    if (error) {
-      return res.status(400).json({ error: error.details[0].message });
+router.post('/', 
+  adminAuth,
+  validate(tvSchemas.create, 'body'),
+  async (req, res, next) => {
+    try {
+      await tvController.createTv(req, res);
+    } catch (error) {
+      next(error);
     }
-
-    const tv = new TV(value);
-    await tv.save();
-    
-    res.status(201).json(tv);
-  } catch (error) {
-    console.error('Error creating TV:', error);
-    res.status(500).json({ error: 'Failed to create TV' });
   }
-});
+);
 
 // POST /api/tvs/register - Register TV endpoint (for auto-registration)
-router.post('/register', async (req, res) => {
-  try {
-    const registrationSchema = Joi.object({
-      tv_id: Joi.string().required(),
-      hostname: Joi.string().required(),
-      ip_address: Joi.string().ip().required(),
-      platform: Joi.string().default('raspberry-pi'),
-      version: Joi.string().default('unknown'),
-      orientation: Joi.string().valid('landscape', 'portrait', 'inverted_landscape', 'inverted_portrait').default('landscape')
-    });
-
-    const { error, value } = registrationSchema.validate(req.body);
-    if (error) {
-      return res.status(400).json({ error: error.details[0].message });
+router.post('/register', 
+  registrationLimiter,
+  tvTokenAuth,
+  validate(tvSchemas.registration, 'body'),
+  async (req, res, next) => {
+    try {
+      await tvController.registerTv(req, res);
+    } catch (error) {
+      next(error);
     }
-
-    const { tv_id, hostname, ip_address, orientation } = value;
-    
-    // Check if TV already exists
-    const existingTv = await TV.findById(tv_id);
-    if (existingTv) {
-      // Update existing TV with current info
-      const updatedTv = await existingTv.update({
-        ip_address,
-        status: 'online',
-        last_heartbeat: new Date().toISOString(),
-        config: {
-          ...existingTv.config,
-          orientation
-        }
-      });
-      console.log(`TV ${tv_id} re-registered from ${ip_address} (${hostname})`);
-      return res.json({ 
-        message: 'TV re-registered successfully', 
-        tv: updatedTv,
-        isNew: false 
-      });
-    }
-
-    // Create new TV registration
-    const tv = new TV({
-      _id: tv_id,
-      name: `Display at ${ip_address}`,
-      location: `Auto-registered from ${ip_address}`,
-      ip_address,
-      status: 'online',
-      last_heartbeat: new Date().toISOString(),
-      config: {
-        orientation,
-        transition_effect: 'fade',
-        display_duration: 5000,
-        resolution: '1920x1080'
-      }
-    });
-
-    await tv.save();
-    console.log(`New TV ${tv_id} registered from ${ip_address} (${hostname})`);
-    
-    res.status(201).json({ 
-      message: 'TV registered successfully', 
-      tv,
-      isNew: true 
-    });
-  } catch (error) {
-    console.error('Error registering TV:', error);
-    res.status(500).json({ error: 'Failed to register TV' });
   }
-});
+);
 
 // PUT /api/tvs/:id - Update TV
-router.put('/:id', async (req, res) => {
-  try {
-    const tv = await TV.findById(req.params.id);
-    if (!tv) {
-      return res.status(404).json({ error: 'TV not found' });
+router.put('/:id', 
+  adminAuth,
+  validate(paramSchemas.id, 'params'),
+  validate(tvSchemas.update, 'body'),
+  async (req, res, next) => {
+    try {
+      await tvController.updateTv(req, res);
+    } catch (error) {
+      next(error);
     }
-
-    const { error, value } = tvSchema.validate(req.body);
-    if (error) {
-      return res.status(400).json({ error: error.details[0].message });
-    }
-
-    const updatedTv = await tv.update(value);
-    
-    // Check if config was updated and send MQTT config update
-    if (value.config) {
-      const tvId = tv._id.replace('tv_', '');
-      await mqttService.updateConfig(tvId, updatedTv.config);
-      console.log(`Configuration updated for TV ${tvId} via general update:`, value.config);
-    }
-    
-    res.json(updatedTv);
-  } catch (error) {
-    console.error('Error updating TV:', error);
-    res.status(500).json({ error: 'Failed to update TV' });
   }
-});
+);
 
 // DELETE /api/tvs/:id - Delete TV
-router.delete('/:id', async (req, res) => {
-  try {
-    const tv = await TV.findById(req.params.id);
-    if (!tv) {
-      return res.status(404).json({ error: 'TV not found' });
+router.delete('/:id', 
+  adminAuth,
+  validate(paramSchemas.id, 'params'),
+  async (req, res, next) => {
+    try {
+      await tvController.deleteTv(req, res);
+    } catch (error) {
+      next(error);
     }
-
-    await tv.delete();
-    res.status(204).send();
-  } catch (error) {
-    console.error('Error deleting TV:', error);
-    res.status(500).json({ error: 'Failed to delete TV' });
   }
-});
+);
 
 // POST /api/tvs/:id/control/:action - Control TV slideshow
-router.post('/:id/control/:action', async (req, res) => {
-  try {
-    const tv = await TV.findById(req.params.id);
-    if (!tv) {
-      return res.status(404).json({ error: 'TV not found' });
+router.post('/:id/control/:action', 
+  strictLimiter,
+  validate(paramSchemas.tvIdAndAction, 'params'),
+  async (req, res, next) => {
+    try {
+      await tvController.controlTv(req, res);
+    } catch (error) {
+      next(error);
     }
-
-    const { action } = req.params;
-    // Use the _id field (without tv_ prefix) for MQTT communication
-    const tvId = tv._id.replace('tv_', '');
-
-    switch (action) {
-      case 'play':
-        await mqttService.playSlideshow(tvId);
-        break;
-      case 'pause':
-        await mqttService.pauseSlideshow(tvId);
-        break;
-      case 'next':
-        await mqttService.nextImage(tvId);
-        break;
-      case 'previous':
-        await mqttService.previousImage(tvId);
-        break;
-      case 'reboot':
-        await mqttService.rebootTv(tvId);
-        break;
-      default:
-        return res.status(400).json({ error: 'Invalid action' });
-    }
-
-    res.json({ message: `Action '${action}' sent to TV ${tvId}` });
-  } catch (error) {
-    console.error('Error controlling TV:', error);
-    res.status(500).json({ error: 'Failed to control TV' });
   }
-});
+);
 
 // PUT /api/tvs/:id/config - Update TV configuration
-router.put('/:id/config', async (req, res) => {
-  try {
-    const tv = await TV.findById(req.params.id);
-    if (!tv) {
-      return res.status(404).json({ error: 'TV not found' });
+router.put('/:id/config', 
+  validate(paramSchemas.id, 'params'),
+  validate(tvSchemas.configUpdate, 'body'),
+  async (req, res, next) => {
+    try {
+      await tvController.updateTvConfig(req, res);
+    } catch (error) {
+      next(error);
     }
-
-    const { error, value } = configUpdateSchema.validate(req.body);
-    if (error) {
-      return res.status(400).json({ error: error.details[0].message });
-    }
-
-    // Update TV config in database
-    const updatedConfig = { ...tv.config, ...value };
-    const updatedTv = await tv.update({ config: updatedConfig });
-
-    // Send config update to TV via MQTT using the _id field (without tv_ prefix)
-    const tvId = tv._id.replace('tv_', '');
-    await mqttService.updateConfig(tvId, updatedConfig);
-
-    console.log(`Configuration updated for TV ${tvId}:`, value);
-
-    res.json(updatedTv);
-  } catch (error) {
-    console.error('Error updating TV config:', error);
-    res.status(500).json({ error: 'Failed to update TV config' });
   }
-});
+);
 
 // GET /api/tvs/status/:status - Get TVs by status
-router.get('/status/:status', async (req, res) => {
-  try {
-    const tvs = await TV.findByStatus(req.params.status);
-    res.json(tvs);
-  } catch (error) {
-    console.error('Error fetching TVs by status:', error);
-    res.status(500).json({ error: 'Failed to fetch TVs by status' });
+router.get('/status/:status', 
+  validate(paramSchemas.status, 'params'),
+  async (req, res, next) => {
+    try {
+      await tvController.getTvsByStatus(req, res);
+    } catch (error) {
+      next(error);
+    }
   }
-});
+);
+
+// Layer management endpoints (Phase 2)
+
+// GET /api/tvs/:id/layers - Get layer configuration
+router.get('/:id/layers', 
+  validate(paramSchemas.id, 'params'),
+  async (req, res, next) => {
+    try {
+      await tvController.getTvLayers(req, res);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// PUT /api/tvs/:id/layers - Update layer configuration
+router.put('/:id/layers', 
+  validate(paramSchemas.id, 'params'),
+  validate(layerSchemas.layerConfig, 'body'),
+  async (req, res, next) => {
+    try {
+      await tvController.updateTvLayers(req, res);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// POST /api/tvs/:id/layers/:layerId - Add or update specific layer
+router.post('/:id/layers/:layerId', 
+  validate(Joi.object({
+    id: paramSchemas.id.extract('id'),
+    layerId: Joi.string().min(1).max(50).required()
+  }), 'params'),
+  validate(layerSchemas.layer, 'body'),
+  async (req, res, next) => {
+    try {
+      await tvController.updateTvLayer(req, res);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// DELETE /api/tvs/:id/layers/:layerId - Remove specific layer
+router.delete('/:id/layers/:layerId', 
+  validate(Joi.object({
+    id: paramSchemas.id.extract('id'),
+    layerId: Joi.string().min(1).max(50).required()
+  }), 'params'),
+  async (req, res, next) => {
+    try {
+      await tvController.deleteTvLayer(req, res);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// POST /api/tvs/:id/layers/:layerId/visibility - Toggle layer visibility
+router.post('/:id/layers/:layerId/visibility', 
+  validate(Joi.object({
+    id: paramSchemas.id.extract('id'),
+    layerId: Joi.string().min(1).max(50).required()
+  }), 'params'),
+  validate(Joi.object({
+    visible: Joi.boolean().required()
+  }), 'body'),
+  async (req, res, next) => {
+    try {
+      await tvController.setTvLayerVisibility(req, res);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
 module.exports = router;

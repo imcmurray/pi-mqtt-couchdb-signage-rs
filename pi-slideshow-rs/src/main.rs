@@ -50,6 +50,7 @@ mod mqtt_client;
 mod slideshow_controller;
 mod http_server;
 mod couchdb_client;
+mod layer_manager;
 
 use mqtt_client::{MqttClient, SlideshowCommand, TvStatus};
 use slideshow_controller::{ControllerConfig, SlideshowController};
