@@ -2,7 +2,7 @@
 
 **Complete end-to-end digital signage solution** featuring a Node.js management server with CouchDB backend and Rust-based Raspberry Pi TV endpoints. This repository contains both the centralized management infrastructure and the high-performance TV endpoint software - everything needed to deploy a professional digital signage network.
 
-## 🚀 Current Version: v0.2.0
+## 🚀 Current Version: v0.3.0
 
 **Latest improvements include:**
 - ✅ **Phase 2 Layer Management System** - Multi-layer compositing with overlay support

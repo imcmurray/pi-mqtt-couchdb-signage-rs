@@ -1154,6 +1154,8 @@ class DigitalSignageApp {
 
     // Version Management
     async loadVersionInfo() {
+        let fallbackToDefault = false;
+        
         try {
             // Get server version information for the modal and header
             const response = await fetch('/api/version');
@@ -1162,18 +1164,14 @@ class DigitalSignageApp {
                 // Use the management UI version from server response
                 this.updateVersionDisplay(this.serverVersion.management_ui_version || 'unknown');
             } else {
-                this.serverVersion = { 
-                    commit_hash: 'unknown', 
-                    branch: 'unknown', 
-                    build_time: 'unknown',
-                    management_ui_version: 'unknown',
-                    version: 'unknown',
-                    is_dirty: false
-                };
-                this.updateVersionDisplay('0.2.0');
+                fallbackToDefault = true;
             }
         } catch (error) {
             console.error('Error loading server version info:', error);
+            fallbackToDefault = true;
+        }
+        
+        if (fallbackToDefault) {
             this.serverVersion = { 
                 commit_hash: 'unknown', 
                 branch: 'unknown', 
@@ -1182,7 +1180,7 @@ class DigitalSignageApp {
                 version: 'unknown',
                 is_dirty: false
             };
-            this.updateVersionDisplay('0.2.0');
+            this.updateVersionDisplay('0.3.0');
         }
     }
 

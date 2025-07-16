@@ -6,7 +6,7 @@ This guide explains how to update versions across all components of the Digital 
 
 **Automated (Recommended):**
 ```bash
-./scripts/update-version.sh 0.2.0
+./scripts/update-version.sh 0.3.0
 ```
 
 **Manual Process:**
@@ -28,33 +28,33 @@ Follow [Semantic Versioning](https://semver.org/):
 ### 1. Update package.json
 ```bash
 # Edit package.json line 3:
-"version": "0.2.0",
+"version": "0.3.0",
 ```
 
 ### 2. Update Rust Component
 ```bash
 # Edit pi-slideshow-rs/Cargo.toml line 3:
-version = "0.2.0"
+version = "0.3.0"
 ```
 
 ### 3. Update UI Version Display
 ```bash
 # Edit public/js/app.js around line 1151:
-this.updateVersionDisplay('0.2.0');
+this.updateVersionDisplay('0.3.0');
 ```
 
 ### 4. Commit and Tag
 ```bash
 git add -A
-git commit -m "Bump version to 0.2.0"
-git tag -a v0.2.0 -m "Release v0.2.0"
+git commit -m "Bump version to 0.3.0"
+git tag -a v0.3.0 -m "Release v0.3.0"
 git push origin main
-git push origin v0.2.0
+git push origin v0.3.0
 ```
 
 ### 5. Create GitHub Release
 ```bash
-gh release create v0.2.0 --title "Release v0.2.0" --notes "Release notes here"
+gh release create v0.3.0 --title "Release v0.3.0" --notes "Release notes here"
 ```
 
 ## Alternative: npm version Command
