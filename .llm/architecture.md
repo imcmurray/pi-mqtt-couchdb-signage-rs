@@ -4,7 +4,7 @@
 
 Digital signage solution using pi-slideshow-rs on Raspberry Pi endpoints with centralized management system for 8 TV displays.
 
-**Current Status:** Phase 2 (Basic Layer Infrastructure) - 20% Complete
+**Current Status:** Phase 2 (Basic Layer Infrastructure) - 100% Complete ✅
 
 ## 🔧 Technology Stack
 
@@ -35,7 +35,7 @@ Digital signage solution using pi-slideshow-rs on Raspberry Pi endpoints with ce
 ```
 src/
 ├── config/database.js              # CouchDB connection setup
-├── controllers/                    # ❌ EMPTY - Route controllers needed
+├── controllers/                    # ✅ MVC controllers implemented
 ├── middleware/upload.js            # Multer file upload with Sharp processing
 ├── models/
 │   ├── image.js                   # Image document model
@@ -46,12 +46,13 @@ src/
 │   └── tvRoutes.js                # TV management endpoints
 ├── services/mqttService.js        # MQTT client service
 ├── server.js                      # Main application entry point
-└── utils/                         # ❌ EMPTY - Utility functions needed
+└── utils/                         # ✅ Utility functions available
 
 pi-slideshow-rs/
 ├── src/
 │   ├── main.rs                    # Main application entry
 │   ├── slideshow_controller.rs    # Core slideshow logic
+│   ├── layer_manager.rs           # ✅ Layer compositing system
 │   ├── http_server.rs             # REST API server
 │   ├── mqtt_client.rs             # MQTT communication
 │   └── couchdb_client.rs          # Database client
@@ -95,6 +96,36 @@ TV Status → MQTT Publish → MQTT Service → WebSocket → Web UI Dashboard
 3. **Real-time Control:** Listen for MQTT commands, respond immediately
 4. **Status Reporting:** Publish status via MQTT, persist state in CouchDB
 5. **Offline Operation:** Continue slideshow using cached images if network fails
+6. **Layer Compositing:** Render slideshow base layer with optional static overlay
+
+## 🎨 Layer System Architecture (Phase 2 - Complete)
+
+### Layer Compositing Pipeline
+```
+CouchDB Layer Config → Rust LayerManager → Image Loading → Alpha Blending → Composite Render → Display
+```
+
+### Layer Types (v0.3.0)
+- **Slideshow Layer:** Base layer with transitioning images (always present)
+- **Static Overlay:** Logo or watermark overlay (PNG with alpha channel)
+
+### Layer Configuration Flow
+1. **Management UI:** Configure layer settings via web interface
+2. **API Storage:** Layer config stored in TV document (CouchDB)
+3. **MQTT Notification:** Real-time layer updates via MQTT
+4. **Rust Sync:** LayerManager reads config from CouchDB
+5. **Compositing:** blend_images_simple() creates final composite
+6. **Display:** Rendered composite displayed on TV endpoint
+
+### Layer Control Commands (MQTT)
+- `signage/tv/{id}/layers/visibility` - Toggle layer visibility
+- `signage/tv/{id}/config` - Update layer configuration
+
+### Technical Implementation
+- **Rust Structures:** Layer, LayerManager, LayerConfig
+- **Alpha Blending:** `blend_images_simple()` function
+- **Performance:** Optimized for Raspberry Pi 4 hardware
+- **Positioning:** Configurable overlay position and opacity
 
 ## 📊 Protocol Usage Decision Matrix
 

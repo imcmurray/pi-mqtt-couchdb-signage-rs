@@ -5,11 +5,11 @@
 ## 🚀 Current Version: v0.3.0
 
 **Latest improvements include:**
-- ✅ **Phase 2 Layer Management System** - Multi-layer compositing with overlay support
-- ✅ **Professional Security Architecture** - Rate limiting, authentication, input validation
+- ✅ **Basic Layer Support** - Simple 2-layer compositing (slideshow + static overlay)
+- ✅ **Orientation Support** - Both portrait and landscape TV configurations
 - ✅ **MVC Pattern Implementation** - Clean separation with controllers, models, and routes
 - ✅ **BaseModel Architecture** - Reduced code duplication with inheritance
-- ✅ **Centralized Configuration** - Environment-based configuration management
+- ✅ **Test Infrastructure** - Jest configuration and basic test setup
 - ✅ **Production-Ready Docker Setup** - Complete containerized infrastructure
 
 ## 📦 What's Included
@@ -166,98 +166,36 @@ Our implementation perfectly adheres to the dual-protocol architecture design. H
 
 This architecture demonstrates **optimal protocol selection** where each technology is used for its strengths, creating a robust, scalable, and maintainable digital signage system.
 
-## 🎨 Phase 2: Advanced Layer Management System
+## 🎨 Phase 2: Basic Layer Support (Completed)
 
-### 🆕 Multi-Layer Compositing
+The v0.3.0 release includes basic 2-layer compositing support:
 
-The v0.2.0 release introduces a sophisticated layer management system that allows for complex display compositions:
+**Current Capabilities:**
+- **Slideshow Layer**: Primary image rotation (base layer)
+- **Static Overlay**: Single logo or watermark overlay
+- **Layer Control**: Show/hide overlay via MQTT commands
+- **Alpha Blending**: Basic transparency support for PNG overlays
 
-**Layer Types:**
-- **Slideshow Layer**: Primary image rotation (always present)
-- **Static Overlay**: Fixed overlays like logos or watermarks
-- **Dynamic Text**: Real-time text overlays for announcements
-- **Emergency Layer**: High-priority emergency notifications
-
-**Layer Features:**
-- **Alpha Blending**: Smooth transparency and opacity control
-- **Priority System**: Layered rendering with configurable z-order
-- **Real-time Updates**: Dynamic layer management via MQTT
-- **Position Control**: Precise pixel-level positioning
-- **Caching System**: Optimized composite image caching
-
-### 🔧 Layer Management API
-
-```bash
-# Get current layer configuration
-GET /api/tvs/tv123/layers
-
-# Update complete layer setup
-PUT /api/tvs/tv123/layers
-{
-  "layers": {
-    "slideshow": { "enabled": true, "priority": 1, "opacity": 1.0 },
-    "logo": { "enabled": true, "priority": 10, "opacity": 0.8, "position": {...} }
-  }
-}
-
-# Add/update specific layer
-POST /api/tvs/tv123/layers/emergency
-{
-  "enabled": true,
-  "priority": 99,
-  "opacity": 0.9,
-  "position": { "x": 0, "y": 0, "width": 1920, "height": 200 }
-}
-
-# Toggle layer visibility
-POST /api/tvs/tv123/layers/logo/visibility
-{ "visible": false }
-```
-
-### 🖼️ Rust Layer Compositing
-
-The TV endpoint implements high-performance layer compositing in Rust:
-
-```rust
-// Layer compositing with alpha blending
-pub async fn render_composite(&self) -> Result<RgbaImage, String> {
-    let layers = self.get_sorted_layers().await;
-    let mut composite = RgbaImage::new(self.width, self.height);
-    
-    for layer in layers {
-        if layer.enabled {
-            let layer_image = self.get_layer_image(&layer).await?;
-            self.blend_layer(&mut composite, &layer_image, layer.opacity);
-        }
-    }
-    
-    Ok(composite)
-}
-```
-
-### 🎯 Use Cases for Layer System
-
-1. **Corporate Branding**: Permanent logo overlays
-2. **Emergency Notifications**: High-priority alert overlays
-3. **Dynamic Information**: Real-time data overlays (weather, news, etc.)
-4. **Court System**: Hearing schedules over background content
-5. **Retail**: Product promotions over ambient content
+**Limitations:**
+- Maximum 2 layers currently supported
+- No dynamic text or emergency overlays yet
+- Position is predefined (top-right corner for logos)
+- Advanced features planned for future phases
 
 ## ✨ Features
 
 ### 🎛️ Management Server
 - **Web-based Admin Interface**: Intuitive UI for staff to manage all TVs
 - **Shared Asset System**: Upload images once, assign to multiple TVs
-- **Real-time Monitoring**: Live status of all 8 TV displays
-- **Dynamic Content**: Support for court schedules and other data sources
+- **Real-time Monitoring**: Live status of all TV displays
 - **Image Management**: Upload, delete, reorder, and shuffle capabilities
 - **CouchDB Backend**: Document-based storage with replication support
 - **MQTT Integration**: Real-time bidirectional communication
 - **WebSocket Updates**: Live dashboard updates
-- **🆕 Layer Management System**: Multi-layer compositing with overlay support
-- **🆕 Advanced Security**: Rate limiting, API authentication, input validation
-- **🆕 MVC Architecture**: Clean separation with controllers and models
-- **🆕 Centralized Configuration**: Environment-based settings management
+- **Basic Layer Support**: Simple logo overlay capability
+- **MVC Architecture**: Clean separation with controllers and models
+- **Input Validation**: Joi schema validation on all endpoints
+- **Test Infrastructure**: Jest setup with basic test coverage
 
 ### 📺 TV Endpoints (Raspberry Pi)
 - **Direct Framebuffer Rendering**: No X11 required, hardware-accelerated
@@ -267,9 +205,9 @@ pub async fn render_composite(&self) -> Result<RgbaImage, String> {
 - **Dynamic Image Loading**: Automatic sync from management server
 - **Health Monitoring**: Heartbeat and status reporting
 - **Graceful Error Handling**: Automatic reconnection and recovery
-- **🆕 Layer Compositing System**: Multi-layer rendering with alpha blending
-- **🆕 Real-time Layer Updates**: Dynamic overlay management via MQTT
-- **🆕 Advanced Caching**: Optimized image and composite caching
+- **Basic Layer Compositing**: 2-layer support with alpha blending
+- **Overlay Control**: Show/hide logo overlays via MQTT
+- **Orientation Support**: Both portrait and landscape displays
 
 ## 🚀 Getting Started
 
@@ -486,11 +424,9 @@ DELETE /api/tvs/:id                 # Delete TV
 POST   /api/tvs/:id/control/:action # Control TV (play/pause/next)
 PUT    /api/tvs/:id/config          # Update TV configuration
 
-# Layer Management (Phase 2)
+# Basic Layer Support
 GET    /api/tvs/:id/layers          # Get layer configuration
-PUT    /api/tvs/:id/layers          # Update layer configuration
-POST   /api/tvs/:id/layers/:layerId # Add/update specific layer
-DELETE /api/tvs/:id/layers/:layerId # Remove layer
+PUT    /api/tvs/:id/layers          # Update layer configuration (limited to 2 layers)
 POST   /api/tvs/:id/layers/:layerId/visibility # Toggle layer visibility
 
 # Image Management
@@ -548,12 +484,12 @@ digital-signage-management/
 │   ├── server.js                  # Main server application
 │   ├── config/
 │   │   ├── database.js           # CouchDB configuration
-│   │   └── index.js              # 🆕 Centralized configuration system
+│   │   └── index.js              # Centralized configuration system
 │   ├── models/
-│   │   ├── BaseModel.js          # 🆕 Base model with common CRUD operations
+│   │   ├── BaseModel.js          # Base model with common CRUD operations
 │   │   ├── tv.js                 # TV model (extends BaseModel)
 │   │   └── image.js              # Image model (extends BaseModel)
-│   ├── controllers/              # 🆕 MVC controllers
+│   ├── controllers/              # MVC controllers
 │   │   ├── tvController.js       # TV business logic
 │   │   ├── imageController.js    # Image business logic
 │   │   └── dashboardController.js # Dashboard business logic
@@ -561,7 +497,7 @@ digital-signage-management/
 │   │   ├── tvRoutes.js           # TV endpoints
 │   │   ├── imageRoutes.js        # Image endpoints
 │   │   └── dashboardRoutes.js    # Dashboard endpoints
-│   ├── middleware/               # 🆕 Middleware layer
+│   ├── middleware/               # Middleware layer
 │   │   ├── errorHandler.js       # Centralized error handling
 │   │   ├── security.js           # Rate limiting and authentication
 │   │   ├── validation.js         # Joi schema validation
@@ -577,11 +513,19 @@ digital-signage-management/
 │   │   ├── mqtt_client.rs        # MQTT integration
 │   │   ├── slideshow_controller.rs # Control logic
 │   │   ├── http_server.rs        # HTTP API server
-│   │   ├── layer_manager.rs      # 🆕 Layer compositing system
+│   │   ├── layer_manager.rs      # Basic 2-layer compositing
 │   │   └── couchdb_client.rs     # CouchDB integration
 │   ├── install.sh                # Automated Pi installation
 │   └── signage.service           # SystemD service configuration
 └── README.md                      # This file
+
+# Experimental features (not in main server):
+# - src/server.multilayer.js         # Experimental multi-layer server
+# - src/models/Layer.js              # Multi-layer data model
+# - src/controllers/layerController.js # Multi-layer API
+# - src/routes/layerRoutes.js        # Multi-layer endpoints
+# - public/multilayer.html           # Multi-layer dashboard
+# - demo-multilayer-system.js        # Multi-layer demo
 ```
 
 ### 🧪 Development Workflow
@@ -611,9 +555,9 @@ npm run dev                                      # Development server with hot r
 
 ```bash
 # Management Server Tests
-npm test                          # Run all tests
-npm run test:watch                # Watch mode for development
-npm run test:coverage             # Generate coverage report
+npm test                          # Run Jest tests (basic coverage only)
+# Note: Test infrastructure exists but coverage is minimal
+# Most controllers and services need test implementation
 
 # TV Endpoint Tests  
 cd pi-slideshow-rs
@@ -626,8 +570,6 @@ cargo test -- --nocapture         # Show console output
 ```bash
 # Management Server
 npm run lint                      # ESLint
-npm run lint:fix                  # Auto-fix issues
-npm run format                    # Prettier formatting
 
 # TV Endpoint
 cd pi-slideshow-rs
@@ -806,13 +748,14 @@ management-server:
 ```bash
 # Management Server
 npm run dev                        # Start development server
-npm run start                      # Start production server
+npm run dev:multilayer            # Start multilayer server (experimental)
+npm start                         # Start production server
+npm run start:multilayer          # Start multilayer production (experimental)
 npm test                          # Run tests
-npm run test:watch                # Watch mode
 npm run lint                      # Lint code
-npm run lint:fix                  # Fix linting issues
 npm run db:setup                  # Initialize database
 npm run build                     # Build (no-op for Node.js)
+npm run demo:multilayer           # Run multilayer demo (experimental)
 
 # TV Endpoint
 cd pi-slideshow-rs

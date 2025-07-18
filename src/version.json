@@ -1,7 +1,7 @@
 {
-  "version": "v0.3.0-0-g2510982",
-  "commit_hash": "2510982b88832a34c223782847f482c2e4934e66",
-  "commit_short": "2510982",
+  "version": "v0.2.0-5-gf16a25b",
+  "commit_hash": "f16a25b3fda7a9898a1302d9b28c527051d83c02",
+  "commit_short": "f16a25b",
   "branch": "feature/basic-layering",
-  "build_time": "2025-07-16T08:24:13.216Z"
+  "build_time": "2025-07-17T00:34:43.751Z"
 }

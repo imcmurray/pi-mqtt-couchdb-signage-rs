@@ -69,6 +69,12 @@ Our system uses a **dual-protocol architecture** optimized for different data ty
 - File upload middleware with Sharp image processing
 - REST API routes for TVs, images, and dashboard
 - Rust-based slideshow controller with HTTP server and MQTT client
+- ✅ **Phase 2: Basic Layer Infrastructure (v0.3.0)**
+  - 2-layer compositing system (slideshow + static overlay)
+  - Layer configuration storage in TV model
+  - API-to-Database-to-Rust pipeline for layer config
+  - Real-time layer control via MQTT commands
+  - Working logo overlay demonstration
 
 ### Project Structure
 ```
@@ -85,12 +91,13 @@ src/
 │   └── tvRoutes.js        # TV management endpoints
 ├── services/mqttService.js # MQTT client service
 ├── server.js              # Main application entry point
-└── utils/                 # Utility functions (to be implemented)
+└── utils/                 # Utility functions
 
 pi-slideshow-rs/
 ├── src/
 │   ├── main.rs                    # Main application entry
 │   ├── slideshow_controller.rs    # Core slideshow logic
+│   ├── layer_manager.rs          # Layer compositing system
 │   ├── http_server.rs            # REST API server
 │   └── mqtt_client.rs            # MQTT communication
 └── images/                       # Sample slideshow images
@@ -101,13 +108,23 @@ public/
 └── js/app.js           # Frontend JavaScript
 ```
 
-## Key Features (Planned)
+## Key Features
+### ✅ Implemented (v0.3.0)
 - Image upload/management per TV
 - Real-time TV status dashboard via WebSocket
+- Basic 2-layer compositing (slideshow + static overlay)
+- Layer configuration via web interface
+- Real-time layer control via MQTT
+- Image resizing and optimization
+
+### 🎯 Planned (Future Phases)
+- Multi-layer support (>2 layers)
+- Zone-based preset templates
+- Dynamic text overlays
+- Emergency message system
 - Court hearing integration
 - Scheduling system
 - Bulk operations across multiple TVs
-- Image resizing and optimization
 
 ## TV Endpoint Structure
 Each TV operates with hybrid connectivity for optimal performance:
@@ -127,9 +144,11 @@ Each TV operates with hybrid connectivity for optimal performance:
 **Operational Flow:**
 1. **Startup**: Connect to both CouchDB and MQTT broker
 2. **Image Sync**: Query CouchDB for assigned images, download as attachments
-3. **Real-time Control**: Listen for MQTT commands, respond immediately  
-4. **Status Reporting**: Publish status via MQTT, persist state in CouchDB
-5. **Offline Operation**: Continue slideshow using cached images if network fails
+3. **Layer Config**: Load layer configuration from CouchDB
+4. **Compositing**: Render slideshow with optional static overlay
+5. **Real-time Control**: Listen for MQTT commands, respond immediately  
+6. **Status Reporting**: Publish status via MQTT, persist state in CouchDB
+7. **Offline Operation**: Continue slideshow using cached images if network fails
 
 ## Dependencies
 - **Express**: Web framework

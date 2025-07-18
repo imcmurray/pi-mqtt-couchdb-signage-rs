@@ -34,17 +34,17 @@ Developing a comprehensive layering system for the Digital Signage Management Sy
 
 ---
 
-### Phase 2: Basic Layer Infrastructure 🚧
-**Status**: In Progress  
+### Phase 2: Basic Layer Infrastructure ✅
+**Status**: COMPLETED  
 **Goal**: Add simple layer compositing to existing system  
 **Branch**: `feature/basic-layering`
 
 **Tasks:**
-- [ ] Extract and generalize existing transition blending code
-- [ ] Create Layer and LayerManager structures
-- [ ] Implement basic 2-layer compositing (background + overlay)
-- [ ] Add layer configuration to TV settings
-- [ ] Test simple logo overlay on slideshow
+- [x] Extract and generalize existing transition blending code
+- [x] Create Layer and LayerManager structures
+- [x] Implement basic 2-layer compositing (background + overlay)
+- [x] Add layer configuration to TV settings
+- [x] Test simple logo overlay on slideshow
 
 **Technical Details:**
 - Reuse existing `blend_images_simple()` infrastructure
@@ -55,10 +55,17 @@ Developing a comprehensive layering system for the Digital Signage Management Sy
 **Deliverable**: Can show static logo overlay on slideshow background
 
 **Definition of Done:**
-- Logo overlays display correctly on both orientations
-- Overlay positioning is configurable
-- Performance impact is minimal
-- Alpha blending works properly
+- [x] Logo overlays display correctly on both orientations
+- [x] Overlay positioning is configurable
+- [x] Performance impact is minimal
+- [x] Alpha blending works properly
+
+**Completion Notes (v0.3.0):**
+- Successfully implemented 2-layer compositing with slideshow base + static overlay
+- API-to-Database-to-Rust pipeline validated working
+- Real-time layer control via MQTT commands operational
+- Working logo overlay demonstration completed
+- Layer configuration stored in TV model and synced to Rust client
 
 ---
 
@@ -174,12 +181,12 @@ Built-in presets:
 
 ## Progress Tracking
 
-**Current Phase**: Phase 2 - Basic Layer Infrastructure  
-**Overall Progress**: 20% (1/5 phases complete)
+**Current Phase**: Phase 3 - Zone System & Presets  
+**Overall Progress**: 40% (2/5 phases complete)
 
 **Phase Completion Log:**
 - Phase 1: COMPLETED ✅ (v0.2.0 released)
-- Phase 2: IN PROGRESS 🚧
+- Phase 2: COMPLETED ✅ (v0.3.0 released)
 - Phase 3: Not started
 - Phase 4: Not started
 - Phase 5: Not started
