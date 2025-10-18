@@ -15,3 +15,12 @@ coverage/
 pi-slideshow-rs/target/
 pi-slideshow-rs/Cargo.lock
 *.raw
+
+# Demo and temp files
+demo-*.js
+demo-*.png
+demo-*.jpg
+temp-*.png
+temp-*.jpg
+temp-*.txt
+create-demo-*
