@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Court Schedule Management - Digital Signage</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .court-container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    .court-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 30px;
+      padding-bottom: 20px;
+      border-bottom: 2px solid #3b82f6;
+    }
+
+    .court-header h1 {
+      margin: 0;
+      color: #1e3a8a;
+    }
+
+    .stats-bar {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin-bottom: 30px;
+    }
+
+    .stat-card {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+
+    .stat-card h3 {
+      margin: 0 0 10px 0;
+      font-size: 14px;
+      opacity: 0.9;
+    }
+
+    .stat-card .value {
+      font-size: 32px;
+      font-weight: bold;
+    }
+
+    .controls-section {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+
+    .control-card {
+      background: white;
+      padding: 25px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    .control-card h2 {
+      margin: 0 0 20px 0;
+      font-size: 18px;
+      color: #1e3a8a;
+      border-bottom: 2px solid #e5e7eb;
+      padding-bottom: 10px;
+    }
+
+    .form-group {
+      margin-bottom: 15px;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: 500;
+      color: #374151;
+    }
+
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+
+    .form-group input:focus,
+    .form-group select:focus,
+    .form-group textarea:focus {
+      outline: none;
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 15px;
+    }
+
+    .btn {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background: #3b82f6;
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: #2563eb;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+    }
+
+    .btn-secondary {
+      background: #6b7280;
+      color: white;
+    }
+
+    .btn-secondary:hover {
+      background: #4b5563;
+    }
+
+    .btn-success {
+      background: #10b981;
+      color: white;
+    }
+
+    .btn-success:hover {
+      background: #059669;
+    }
+
+    .btn-warning {
+      background: #f59e0b;
+      color: white;
+    }
+
+    .btn-warning:hover {
+      background: #d97706;
+    }
+
+    .btn-danger {
+      background: #ef4444;
+      color: white;
+    }
+
+    .btn-danger:hover {
+      background: #dc2626;
+    }
+
+    .btn-sm {
+      padding: 6px 12px;
+      font-size: 12px;
+    }
+
+    .filter-bar {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+
+    .filter-bar button {
+      flex: 1;
+      min-width: 120px;
+    }
+
+    .hearings-section {
+      background: white;
+      padding: 25px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    .hearings-section h2 {
+      margin: 0 0 20px 0;
+      font-size: 18px;
+      color: #1e3a8a;
+      border-bottom: 2px solid #e5e7eb;
+      padding-bottom: 10px;
+    }
+
+    .hearings-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 15px;
+    }
+
+    .hearings-table th,
+    .hearings-table td {
+      padding: 12px;
+      text-align: left;
+      border-bottom: 1px solid #e5e7eb;
+    }
+
+    .hearings-table th {
+      background: #f3f4f6;
+      font-weight: 600;
+      color: #374151;
+      font-size: 13px;
+      text-transform: uppercase;
+    }
+
+    .hearings-table tr:hover {
+      background: #f9fafb;
+    }
+
+    .status-badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .status-scheduled {
+      background: #dbeafe;
+      color: #1e40af;
+    }
+
+    .status-in_progress {
+      background: #d1fae5;
+      color: #065f46;
+    }
+
+    .status-delayed {
+      background: #fed7aa;
+      color: #92400e;
+    }
+
+    .status-completed {
+      background: #e5e7eb;
+      color: #374151;
+    }
+
+    .status-cancelled {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
+    .action-buttons {
+      display: flex;
+      gap: 5px;
+    }
+
+    .csv-import {
+      margin-top: 20px;
+      padding-top: 20px;
+      border-top: 2px solid #e5e7eb;
+    }
+
+    .csv-import input[type="file"] {
+      display: none;
+    }
+
+    .csv-upload-btn {
+      display: inline-block;
+      padding: 10px 20px;
+      background: #8b5cf6;
+      color: white;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+
+    .csv-upload-btn:hover {
+      background: #7c3aed;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(139, 92, 246, 0.4);
+    }
+
+    .preview-panel {
+      background: white;
+      padding: 25px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      margin-top: 20px;
+    }
+
+    .preview-panel h2 {
+      margin: 0 0 20px 0;
+      font-size: 18px;
+      color: #1e3a8a;
+      border-bottom: 2px solid #e5e7eb;
+      padding-bottom: 10px;
+    }
+
+    .layer-preview {
+      position: relative;
+      background: #1f2937;
+      border-radius: 8px;
+      overflow: hidden;
+      margin-top: 15px;
+    }
+
+    .layer-preview-header {
+      background: rgba(30, 58, 138, 0.9);
+      color: white;
+      padding: 15px;
+      font-size: 16px;
+      font-weight: bold;
+      text-align: center;
+    }
+
+    .layer-preview-row {
+      padding: 12px 15px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      font-size: 14px;
+      font-family: monospace;
+    }
+
+    .layer-preview-row.urgent {
+      background: rgba(239, 68, 68, 0.8);
+      color: white;
+    }
+
+    .layer-preview-row.warning {
+      background: rgba(217, 119, 6, 0.8);
+      color: white;
+    }
+
+    .layer-preview-row.normal {
+      background: rgba(30, 58, 138, 0.8);
+      color: white;
+    }
+
+    .layer-preview-row.in-progress {
+      background: rgba(34, 197, 94, 0.8);
+      color: white;
+    }
+
+    .loading {
+      opacity: 0.6;
+      pointer-events: none;
+    }
+
+    .error-message {
+      background: #fee2e2;
+      color: #991b1b;
+      padding: 12px;
+      border-radius: 6px;
+      margin-bottom: 15px;
+      border-left: 4px solid #dc2626;
+    }
+
+    .success-message {
+      background: #d1fae5;
+      color: #065f46;
+      padding: 12px;
+      border-radius: 6px;
+      margin-bottom: 15px;
+      border-left: 4px solid #10b981;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: #6b7280;
+    }
+
+    .empty-state-icon {
+      font-size: 64px;
+      margin-bottom: 20px;
+    }
+
+    .empty-state h3 {
+      margin: 0 0 10px 0;
+      color: #374151;
+    }
+
+    .empty-state p {
+      margin: 0;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="court-container">
+    <div class="court-header">
+      <div>
+        <h1>⚖️ Court Schedule Management</h1>
+        <p style="margin: 5px 0 0 0; color: #6b7280;">Manage court hearings and display schedules</p>
+      </div>
+      <div>
+        <button class="btn btn-success" onclick="courtSchedule.refreshDisplay()">🔄 Refresh All Displays</button>
+        <button class="btn btn-secondary" onclick="window.location.href='/'">← Back to Dashboard</button>
+      </div>
+    </div>
+
+    <div id="messageContainer"></div>
+
+    <div class="stats-bar">
+      <div class="stat-card">
+        <h3>Today's Hearings</h3>
+        <div class="value" id="statToday">-</div>
+      </div>
+      <div class="stat-card">
+        <h3>Upcoming (24h)</h3>
+        <div class="value" id="statUpcoming">-</div>
+      </div>
+      <div class="stat-card">
+        <h3>In Progress</h3>
+        <div class="value" id="statInProgress">-</div>
+      </div>
+      <div class="stat-card">
+        <h3>Completed Today</h3>
+        <div class="value" id="statCompleted">-</div>
+      </div>
+    </div>
+
+    <div class="controls-section">
+      <div class="control-card">
+        <h2>➕ Add New Hearing</h2>
+        <form id="hearingForm">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="caseNumber">Case Number *</label>
+              <input type="text" id="caseNumber" required placeholder="CV-2025-12345">
+            </div>
+            <div class="form-group">
+              <label for="courtRoom">Court Room *</label>
+              <input type="text" id="courtRoom" required placeholder="101">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="scheduledTime">Scheduled Time *</label>
+              <input type="datetime-local" id="scheduledTime" required>
+            </div>
+            <div class="form-group">
+              <label for="hearingType">Hearing Type</label>
+              <select id="hearingType">
+                <option value="trial">Trial</option>
+                <option value="hearing">Hearing</option>
+                <option value="motion">Motion</option>
+                <option value="arraignment">Arraignment</option>
+                <option value="sentencing">Sentencing</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="plaintiff">Plaintiff *</label>
+              <input type="text" id="plaintiff" required placeholder="John Doe">
+            </div>
+            <div class="form-group">
+              <label for="defendant">Defendant *</label>
+              <input type="text" id="defendant" required placeholder="Jane Smith">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="judge">Judge</label>
+            <input type="text" id="judge" placeholder="Hon. Robert Johnson">
+          </div>
+
+          <div class="form-group">
+            <label for="notes">Notes</label>
+            <textarea id="notes" rows="3" placeholder="Additional information about the hearing"></textarea>
+          </div>
+
+          <button type="submit" class="btn btn-primary" style="width: 100%;">Add Hearing</button>
+        </form>
+
+        <div class="csv-import">
+          <h3 style="margin: 0 0 15px 0; font-size: 16px; color: #374151;">📄 Import from CSV</h3>
+          <input type="file" id="csvFile" accept=".csv" onchange="courtSchedule.handleCSVUpload(event)">
+          <label for="csvFile" class="csv-upload-btn">Choose CSV File</label>
+          <p style="margin: 10px 0 0 0; font-size: 12px; color: #6b7280;">
+            CSV format: case_number, court_room, scheduled_time, plaintiff, defendant, judge, hearing_type
+          </p>
+        </div>
+      </div>
+
+      <div class="preview-panel">
+        <h2>📺 Display Preview</h2>
+        <p style="color: #6b7280; margin: 0 0 15px 0; font-size: 14px;">
+          Live preview of how hearings appear on TV displays
+        </p>
+        <div class="layer-preview" id="displayPreview">
+          <div class="layer-preview-header">TODAY'S COURT SCHEDULE</div>
+          <div id="previewContent">
+            <div class="empty-state" style="padding: 40px 20px;">
+              <div class="empty-state-icon">📅</div>
+              <h3>No hearings scheduled</h3>
+              <p>Add hearings to see preview</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="hearings-section">
+      <h2>📋 Hearing Schedule</h2>
+
+      <div class="filter-bar">
+        <button class="btn btn-primary" onclick="courtSchedule.filterHearings('today')">📅 Today</button>
+        <button class="btn btn-secondary" onclick="courtSchedule.filterHearings('upcoming')">⏰ Upcoming 24h</button>
+        <button class="btn btn-secondary" onclick="courtSchedule.filterHearings('all')">📚 All</button>
+        <input type="text" id="roomFilter" placeholder="Filter by room..." style="flex: 1; min-width: 200px;" onkeyup="courtSchedule.applyFilters()">
+      </div>
+
+      <div id="hearingsTableContainer">
+        <table class="hearings-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Case Number</th>
+              <th>Room</th>
+              <th>Parties</th>
+              <th>Judge</th>
+              <th>Type</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="hearingsTableBody">
+            <tr>
+              <td colspan="8">
+                <div class="empty-state">
+                  <div class="empty-state-icon">⚖️</div>
+                  <h3>No hearings found</h3>
+                  <p>Add a hearing or import from CSV to get started</p>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/court-schedule.js"></script>
+  <script>
+    // Initialize on page load
+    document.addEventListener('DOMContentLoaded', () => {
+      courtSchedule.init();
+
+      // Set up form submission
+      document.getElementById('hearingForm').addEventListener('submit', (e) => {
+        e.preventDefault();
+        courtSchedule.addHearing();
+      });
+
+      // Set default time to now
+      const now = new Date();
+      now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+      document.getElementById('scheduledTime').value = now.toISOString().slice(0, 16);
+    });
+  </script>
+</body>
+</html>
