@@ -18,6 +18,7 @@ const tvRoutes = require('./routes/tvRoutes');
 const imageRoutes = require('./routes/imageRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
 const layerRoutes = require('./routes/layerRoutes');
+const courtHearingRoutes = require('./routes/courtHearingRoutes');
 
 const app = express();
 const server = http.createServer(app);
@@ -166,6 +167,7 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/layers', layerRoutes); // New layer management routes
 const alertRoutes = require('./routes/alertRoutes');
 app.use('/api/alerts', alertRoutes); // Emergency alert routes
+app.use('/api/hearings', courtHearingRoutes); // Court hearing management routes
 
 // WebSocket handling for real-time updates
 wss.on('connection', (ws) => {

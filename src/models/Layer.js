@@ -59,6 +59,7 @@ class Layer extends BaseModel {
     // Metadata
     this.tags = data.tags || [];
     this.group = data.group || null;
+    this.metadata = data.metadata || {}; // Additional metadata for external references
   }
 
   generateLayerId() {
@@ -111,6 +112,11 @@ class Layer extends BaseModel {
   static async findByGroup(group) {
     const allLayers = await this.findAll();
     return allLayers.filter(layer => layer.group === group);
+  }
+
+  static async findByTvAndGroup(tvId, group) {
+    const allLayers = await this.findAll();
+    return allLayers.filter(layer => layer.tv_id === tvId && layer.group === group);
   }
 
   async save() {

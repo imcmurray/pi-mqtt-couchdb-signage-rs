@@ -1,6 +1,7 @@
 const Layer = require('../models/Layer');
 const TVMultilayer = require('../models/tv.multilayer');
 const mqttService = require('./multilayer.mqttService');
+const courtDisplayService = require('./courtDisplayService');
 const cron = require('node-cron');
 
 class LayerAutomationService {
@@ -30,27 +31,46 @@ class LayerAutomationService {
   }
 
   setupCronJobs() {
-    // Example: Update court schedule every morning at 8 AM
-    const morningUpdate = cron.schedule('0 8 * * *', async () => {
+    // Refresh court schedule every 5 minutes
+    const courtRefresh = cron.schedule('*/5 * * * *', async () => {
+      console.log('Running scheduled court schedule refresh...');
       await this.updateCourtScheduleLayers();
     }, { scheduled: false });
-    
+
+    courtRefresh.start();
+    this.scheduledTasks.set('court_refresh', courtRefresh);
+
+    // Update court schedule every morning at 8 AM
+    const morningUpdate = cron.schedule('0 8 * * *', async () => {
+      console.log('Running morning court schedule update...');
+      await this.updateCourtScheduleLayers();
+    }, { scheduled: false });
+
     morningUpdate.start();
     this.scheduledTasks.set('morning_update', morningUpdate);
 
-    // Example: Clear emergency alerts every hour
+    // Clean up old court schedules daily at 2 AM
+    const courtCleanup = cron.schedule('0 2 * * *', async () => {
+      console.log('Running court schedule cleanup...');
+      await courtDisplayService.cleanupOldSchedules(24);
+    }, { scheduled: false });
+
+    courtCleanup.start();
+    this.scheduledTasks.set('court_cleanup', courtCleanup);
+
+    // Clear emergency alerts every hour
     const emergencyCleanup = cron.schedule('0 * * * *', async () => {
       await this.cleanupExpiredEmergencyLayers();
     }, { scheduled: false });
-    
+
     emergencyCleanup.start();
     this.scheduledTasks.set('emergency_cleanup', emergencyCleanup);
 
-    // Example: Refresh data every 5 minutes
+    // Refresh data layers every 5 minutes
     const dataRefresh = cron.schedule('*/5 * * * *', async () => {
       await this.refreshDataLayers();
     }, { scheduled: false });
-    
+
     dataRefresh.start();
     this.scheduledTasks.set('data_refresh', dataRefresh);
   }
@@ -66,36 +86,12 @@ class LayerAutomationService {
 
   async updateCourtScheduleLayers() {
     try {
-      // Get all TVs with layer support
-      const tvs = await TVMultilayer.findWithLayerSupport();
-      
-      for (const tv of tvs) {
-        // Get existing court schedule layers
-        const layers = await Layer.findByTv(tv._id);
-        const courtLayers = layers.filter(layer => 
-          layer.name && layer.name.toLowerCase().includes('court')
-        );
-
-        // Simulate fetching new court schedule data
-        const scheduleData = await this.fetchCourtScheduleData();
-        
-        // Update each court layer with new data
-        for (let i = 0; i < Math.min(courtLayers.length, scheduleData.length); i++) {
-          const layer = courtLayers[i];
-          const scheduleItem = scheduleData[i];
-          
-          if (layer.content.text !== scheduleItem.text) {
-            await layer.updateContent({
-              text: scheduleItem.text,
-              backgroundColor: scheduleItem.status === 'delayed' ? 'rgba(255, 165, 0, 0.9)' : 'rgba(0, 0, 0, 0.8)'
-            }, { duration: 500 });
-            
-            console.log(`Updated court layer ${layer.layer_id} with: ${scheduleItem.text}`);
-          }
-        }
-      }
+      const result = await courtDisplayService.refreshScheduleDisplay();
+      console.log(`Court schedule refresh complete: ${result.tvs_updated} TVs, ${result.hearings_displayed} hearings, ${result.layers_created} layers created, ${result.layers_removed} layers removed`);
+      return result;
     } catch (error) {
       console.error('Error updating court schedule layers:', error);
+      return { error: error.message };
     }
   }
 
