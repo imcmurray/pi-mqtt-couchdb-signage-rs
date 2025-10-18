@@ -11,6 +11,7 @@ const config = require('./config/multilayer.config');
 const { initializeMultilayerDatabases } = require('./config/multilayer.database');
 const mqttService = require('./services/multilayer.mqttService');
 const layerAutomationService = require('./services/layerAutomation');
+const batchScheduler = require('./services/batchScheduler');
 const { errorHandler } = require('./middleware/errorHandler');
 
 // Routes
@@ -20,6 +21,7 @@ const dashboardRoutes = require('./routes/dashboardRoutes');
 const layerRoutes = require('./routes/layerRoutes');
 const courtHearingRoutes = require('./routes/courtHearingRoutes');
 const presetRoutes = require('./routes/presetRoutes');
+const bulkRoutes = require('./routes/bulkRoutes');
 
 const app = express();
 const server = http.createServer(app);
@@ -170,6 +172,7 @@ const alertRoutes = require('./routes/alertRoutes');
 app.use('/api/alerts', alertRoutes); // Emergency alert routes
 app.use('/api/hearings', courtHearingRoutes); // Court hearing management routes
 app.use('/api/presets', presetRoutes); // Zone preset templates
+app.use('/api/bulk', bulkRoutes); // Bulk operations for multi-TV management
 
 // WebSocket handling for real-time updates
 wss.on('connection', (ws) => {
@@ -251,7 +254,11 @@ async function gracefulShutdown(signal) {
   // Stop layer automation
   layerAutomationService.stop();
   console.log('Layer automation stopped');
-  
+
+  // Stop batch scheduler
+  batchScheduler.stop();
+  console.log('Batch scheduler stopped');
+
   // Disconnect from MQTT
   await mqttService.disconnect();
   console.log('MQTT disconnected');
@@ -282,7 +289,11 @@ async function startServer() {
     // Start layer automation service
     console.log('Starting layer automation service...');
     layerAutomationService.start();
-    
+
+    // Start batch scheduler
+    console.log('Starting batch scheduler...');
+    batchScheduler.start();
+
     // Start HTTP server
     const port = config.server.port;
     const host = config.server.host;
