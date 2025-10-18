@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-Layer Digital Signage Management</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1d4ed8;
+            --secondary: #64748b;
+            --success: #059669;
+            --warning: #d97706;
+            --danger: #dc2626;
+            --background: #f8fafc;
+            --surface: #ffffff;
+            --border: #e2e8f0;
+            --text: #1e293b;
+            --text-muted: #64748b;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--background);
+            color: var(--text);
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            background: var(--surface);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            border: 1px solid var(--border);
+        }
+
+        .header h1 {
+            color: var(--primary);
+            margin-bottom: 8px;
+            font-size: 28px;
+            font-weight: 600;
+        }
+
+        .header p {
+            color: var(--text-muted);
+            font-size: 16px;
+        }
+
+        .controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+
+        .control-panel {
+            background: var(--surface);
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            border: 1px solid var(--border);
+        }
+
+        .control-panel h3 {
+            margin-bottom: 16px;
+            color: var(--primary);
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 500;
+            color: var(--text);
+        }
+
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.2s;
+        }
+
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
+        .btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: background-color 0.2s;
+            margin-right: 8px;
+            margin-bottom: 8px;
+        }
+
+        .btn:hover {
+            background: var(--primary-dark);
+        }
+
+        .btn-secondary {
+            background: var(--secondary);
+        }
+
+        .btn-success {
+            background: var(--success);
+        }
+
+        .btn-warning {
+            background: var(--warning);
+        }
+
+        .btn-danger {
+            background: var(--danger);
+        }
+
+        .btn-small {
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+
+        .layers-display {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 24px;
+        }
+
+        .layers-list {
+            background: var(--surface);
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            border: 1px solid var(--border);
+            max-height: 600px;
+            overflow-y: auto;
+        }
+
+        .layer-item {
+            background: var(--background);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 12px;
+            transition: all 0.2s;
+        }
+
+        .layer-item:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .layer-item.animating {
+            border-color: var(--warning);
+            background: #fffbeb;
+        }
+
+        .layer-header {
+            display: flex;
+            justify-content: between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .layer-name {
+            font-weight: 600;
+            color: var(--primary);
+            margin-bottom: 4px;
+        }
+
+        .layer-text {
+            color: var(--text);
+            font-size: 14px;
+            margin-bottom: 8px;
+            background: #f1f5f9;
+            padding: 8px;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+
+        .layer-meta {
+            display: flex;
+            gap: 12px;
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+        }
+
+        .layer-controls {
+            display: flex;
+            gap: 4px;
+            flex-wrap: wrap;
+        }
+
+        .preview-canvas {
+            background: var(--surface);
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            border: 1px solid var(--border);
+        }
+
+        .screen-mockup {
+            position: relative;
+            width: 100%;
+            max-width: 600px;
+            aspect-ratio: 16/9;
+            background: #000;
+            border-radius: 8px;
+            border: 2px solid var(--border);
+            overflow: hidden;
+            margin: 0 auto;
+        }
+
+        .layer-preview {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 8px 12px;
+            font-size: 12px;
+            border-radius: 4px;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+
+        .layer-preview:hover {
+            background: rgba(255, 255, 255, 0.9);
+            color: black;
+        }
+
+        .layer-preview.animating {
+            animation: pulse 0.5s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--danger);
+        }
+
+        .status-dot.connected {
+            background: var(--success);
+        }
+
+        .logs {
+            background: var(--surface);
+            border-radius: 12px;
+            padding: 24px;
+            margin-top: 24px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            border: 1px solid var(--border);
+        }
+
+        .log-output {
+            background: #1e293b;
+            color: #e2e8f0;
+            font-family: monospace;
+            font-size: 12px;
+            padding: 16px;
+            border-radius: 8px;
+            height: 200px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+
+        .animation-controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .quick-actions {
+            background: var(--surface);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            border: 1px solid var(--border);
+        }
+
+        .quick-actions h3 {
+            margin-bottom: 16px;
+            color: var(--primary);
+        }
+
+        .position-controls {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .tv-selector {
+            margin-bottom: 16px;
+        }
+
+        .layer-count {
+            font-size: 12px;
+            background: var(--primary);
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            margin-left: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎨 Multi-Layer Digital Signage</h1>
+            <p>Create, manage, and animate individual data row layers with real-time control</p>
+            
+            <div class="status">
+                <div class="status-dot" id="connectionStatus"></div>
+                <span id="connectionText">Connecting...</span>
+                <span class="layer-count" id="layerCount">0 layers</span>
+            </div>
+        </div>
+
+        <div class="quick-actions">
+            <h3>Quick Actions</h3>
+            <div class="tv-selector">
+                <label for="tvSelect">Select TV:</label>
+                <select id="tvSelect">
+                    <option value="">Loading TVs...</option>
+                </select>
+                <button class="btn btn-secondary btn-small" onclick="loadTVs()">Refresh</button>
+            </div>
+            
+            <button class="btn" onclick="createSampleLayers()">Create Sample Layers</button>
+            <button class="btn btn-warning" onclick="hideAllLayers()">Hide All</button>
+            <button class="btn btn-success" onclick="showAllLayers()">Show All</button>
+            <button class="btn btn-danger" onclick="deleteAllLayers()">Delete All</button>
+        </div>
+
+        <div class="controls">
+            <div class="control-panel">
+                <h3>Create Data Row Layer</h3>
+                <form id="layerForm">
+                    <div class="form-group">
+                        <label for="layerName">Layer Name:</label>
+                        <input type="text" id="layerName" placeholder="e.g., Court Schedule Entry">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="layerText">Text Content:</label>
+                        <textarea id="layerText" rows="2" placeholder="e.g., 9:00 AM - Room 101 - Smith vs. Johnson"></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="layerY">Y Position:</label>
+                        <input type="number" id="layerY" value="100" min="0" max="1080">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="layerHeight">Height:</label>
+                        <input type="number" id="layerHeight" value="50" min="20" max="200">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="fontSize">Font Size:</label>
+                        <input type="number" id="fontSize" value="24" min="12" max="48">
+                    </div>
+                    
+                    <button type="button" class="btn" onclick="createLayer()">Create Layer</button>
+                </form>
+            </div>
+
+            <div class="control-panel">
+                <h3>Animation Controls</h3>
+                <p style="margin-bottom: 16px; color: var(--text-muted);">Select a layer first, then choose animation:</p>
+                
+                <div class="animation-controls">
+                    <button class="btn btn-small" onclick="animateSelected('slide_up')">↑ Slide Up</button>
+                    <button class="btn btn-small" onclick="animateSelected('slide_down')">↓ Slide Down</button>
+                    <button class="btn btn-small" onclick="animateSelected('slide_left')">← Slide Left</button>
+                    <button class="btn btn-small" onclick="animateSelected('slide_right')">→ Slide Right</button>
+                    <button class="btn btn-small" onclick="animateSelected('fade_in')">Fade In</button>
+                    <button class="btn btn-small" onclick="animateSelected('fade_out')">Fade Out</button>
+                </div>
+                
+                <div class="form-group">
+                    <label for="animDuration">Duration (ms):</label>
+                    <input type="number" id="animDuration" value="500" min="100" max="3000">
+                </div>
+                
+                <div class="position-controls">
+                    <input type="number" id="moveX" placeholder="X" value="0">
+                    <input type="number" id="moveY" placeholder="Y" value="0">
+                    <button class="btn btn-small" onclick="moveSelected(false)">Move</button>
+                    <button class="btn btn-small" onclick="moveSelected(true)">Animate Move</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="layers-display">
+            <div class="layers-list">
+                <h3>Active Layers <span class="layer-count" id="layerCountText">0</span></h3>
+                <div id="layersList"></div>
+            </div>
+
+            <div class="preview-canvas">
+                <h3>Screen Preview</h3>
+                <div class="screen-mockup" id="screenPreview">
+                    <!-- Layer previews will be inserted here -->
+                </div>
+            </div>
+        </div>
+
+        <div class="logs">
+            <h3>Activity Log</h3>
+            <div class="log-output" id="logOutput"></div>
+        </div>
+    </div>
+
+    <script src="js/multilayer.js"></script>
+</body>
+</html>

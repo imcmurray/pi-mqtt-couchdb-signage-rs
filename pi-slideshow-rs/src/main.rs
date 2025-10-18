@@ -51,6 +51,7 @@ mod slideshow_controller;
 mod http_server;
 mod couchdb_client;
 mod layer_manager;
+mod layer_animation;
 
 use mqtt_client::{MqttClient, SlideshowCommand, TvStatus};
 use slideshow_controller::{ControllerConfig, SlideshowController};
@@ -1474,6 +1475,29 @@ async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoRe
                 ) {
                     println!("Failed to play transition: {}", e);
                 }
+                
+                // After transition, update layers and display composite
+                if let Some(current_image_path) = controller.get_current_image_path().await {
+                    // Update slideshow layer with new image
+                    if let Err(e) = controller.update_slideshow_layer(Some(current_image_path.to_string_lossy().to_string())).await {
+                        eprintln!("Failed to update slideshow layer after transition: {}", e);
+                    }
+                    
+                    // Render and display composite to ensure overlays are visible
+                    match controller.render_composite_image().await {
+                        Ok(composite_image) => {
+                            if let Err(e) = fb.display_image(&composite_image) {
+                                eprintln!("Failed to display composite after transition: {}", e);
+                            } else {
+                                println!("🎨 Updated layers after transition");
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to render composite after transition: {}", e);
+                        }
+                    }
+                }
+                
                 last_displayed_image_path = controller.get_current_image_path().await;
             }
         } else if let Some(current_image_path) = controller.get_current_image_path().await {
@@ -1485,17 +1509,36 @@ async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoRe
                 };
                 
                 if needs_reload {
-                    // Load and display the current image
-                    match load_and_scale_image_with_orientation(&current_image_path, DEFAULT_LANDSCAPE_WIDTH, DEFAULT_LANDSCAPE_HEIGHT, &current_orientation) {
-                        Ok(image) => {
-                            if let Err(e) = fb.display_image(&image) {
-                                eprintln!("Failed to display image: {}", e);
+                    // Update slideshow layer with current image
+                    if let Err(e) = controller.update_slideshow_layer(Some(current_image_path.to_string_lossy().to_string())).await {
+                        eprintln!("Failed to update slideshow layer: {}", e);
+                    }
+                    
+                    // Render composite with all layers
+                    match controller.render_composite_image().await {
+                        Ok(composite_image) => {
+                            if let Err(e) = fb.display_image(&composite_image) {
+                                eprintln!("Failed to display composite image: {}", e);
                             } else {
                                 last_displayed_image_path = Some(current_image_path.clone());
+                                println!("🎨 Displayed composite image with layers");
                             }
                         }
                         Err(e) => {
-                            eprintln!("Failed to load image {}: {}", current_image_path.display(), e);
+                            eprintln!("Failed to render composite: {}, falling back to individual image", e);
+                            // Fallback to original behavior
+                            match load_and_scale_image_with_orientation(&current_image_path, DEFAULT_LANDSCAPE_WIDTH, DEFAULT_LANDSCAPE_HEIGHT, &current_orientation) {
+                                Ok(image) => {
+                                    if let Err(e) = fb.display_image(&image) {
+                                        eprintln!("Failed to display fallback image: {}", e);
+                                    } else {
+                                        last_displayed_image_path = Some(current_image_path.clone());
+                                    }
+                                }
+                                Err(e) => {
+                                    eprintln!("Failed to load fallback image {}: {}", current_image_path.display(), e);
+                                }
+                            }
                         }
                     }
                 }

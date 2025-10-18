@@ -67,10 +67,103 @@ pub struct TvConfig {
     pub display_duration: u64,
     #[serde(default = "default_orientation")]
     pub orientation: String,
+    #[serde(default)]
+    pub layers: std::collections::HashMap<String, CouchLayer>,
+    #[serde(default)]
+    pub layer_settings: CouchLayerSettings,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CouchLayer {
+    pub enabled: bool,
+    #[serde(default)]
+    pub image_path: Option<String>,
+    #[serde(default)]
+    pub position: CouchPosition,
+    #[serde(default = "default_opacity")]
+    pub opacity: f32,
+    #[serde(default = "default_priority")]
+    pub priority: u8,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CouchPosition {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+impl Default for CouchPosition {
+    fn default() -> Self {
+        Self { x: 0, y: 0, width: 0, height: 0 }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CouchLayerSettings {
+    #[serde(default = "default_max_layers")]
+    pub max_layers: u8,
+    #[serde(default = "default_compositing_timeout")]
+    pub compositing_timeout_ms: u32,
+    #[serde(default = "default_cache_composites")]
+    pub cache_composites: bool,
+}
+
+impl Default for CouchLayerSettings {
+    fn default() -> Self {
+        Self {
+            max_layers: default_max_layers(),
+            compositing_timeout_ms: default_compositing_timeout(),
+            cache_composites: default_cache_composites(),
+        }
+    }
 }
 
 fn default_orientation() -> String {
     "landscape".to_string()
+}
+
+fn default_opacity() -> f32 {
+    1.0
+}
+
+fn default_priority() -> u8 {
+    1
+}
+
+fn default_max_layers() -> u8 {
+    10
+}
+
+fn default_compositing_timeout() -> u32 {
+    5000
+}
+
+fn default_cache_composites() -> bool {
+    true
+}
+
+fn create_default_tv_config() -> TvConfig {
+    
+    let mut layers = std::collections::HashMap::new();
+    
+    // Create default slideshow layer
+    layers.insert("slideshow".to_string(), CouchLayer {
+        enabled: true,
+        image_path: None,
+        position: CouchPosition { x: 0, y: 0, width: 1920, height: 1080 },
+        opacity: 1.0,
+        priority: 1,
+    });
+    
+    TvConfig {
+        transition_effect: "fade".to_string(),
+        display_duration: 5000,
+        orientation: "landscape".to_string(),
+        layers,
+        layer_settings: CouchLayerSettings::default(),
+    }
 }
 
 impl TypedCouchDocument for CouchTv {
@@ -284,11 +377,7 @@ impl CouchDbClient {
                     ip_address: "0.0.0.0".to_string(), // Will be updated later
                     status: status.to_string(),
                     last_heartbeat: Some(chrono::Utc::now().to_rfc3339()),
-                    config: TvConfig {
-                        transition_effect: "fade".to_string(),
-                        display_duration: 5000,
-                        orientation: "landscape".to_string(),
-                    },
+                    config: create_default_tv_config(),
                     current_image: current_image.map(|s| s.to_string()),
                 }
             }
@@ -332,36 +421,74 @@ impl CouchDbClient {
                     Err(e) => {
                         eprintln!("Failed to parse TV document {}: {}", tv_id, e);
                         // Return default config if parsing fails
-                        Ok(Some(TvConfig {
-                            transition_effect: "fade".to_string(),
-                            display_duration: 5000,
-                            orientation: "landscape".to_string(),
-                        }))
+                        Ok(Some(create_default_tv_config()))
                     }
                 }
             }
             Ok(Err(e)) => {
                 println!("TV document {} not found in CouchDB: {}, using default config", tv_id, e);
                 // Return default config if document doesn't exist
-                Ok(Some(TvConfig {
-                    transition_effect: "fade".to_string(),
-                    display_duration: 5000,
-                    orientation: "landscape".to_string(),
-                }))
+                Ok(Some(create_default_tv_config()))
             }
             Err(_) => {
                 println!("TV document {} query timeout, using default config", tv_id);
                 // Return default config on timeout
-                Ok(Some(TvConfig {
-                    transition_effect: "fade".to_string(),
-                    display_duration: 5000,
-                    orientation: "landscape".to_string(),
-                }))
+                Ok(Some(create_default_tv_config()))
             }
         }
     }
 
     fn get_server_url(&self) -> &str {
         &self.server_url
+    }
+
+    /// Convert CouchDB TV config to LayerManager config
+    pub fn convert_to_layer_config(&self, tv_config: &TvConfig, width: u32, height: u32) -> crate::layer_manager::LayerConfig {
+        use crate::layer_manager::{LayerConfig, Layer, LayerType, Position, LayerContent};
+        
+        let mut layers = std::collections::HashMap::new();
+        
+        // Convert each CouchDB layer to LayerManager layer
+        for (layer_id, couch_layer) in &tv_config.layers {
+            let layer_type = match layer_id.as_str() {
+                "slideshow" => LayerType::Slideshow,
+                _ => LayerType::StaticOverlay,
+            };
+            
+            let content = if let Some(image_path) = &couch_layer.image_path {
+                LayerContent::ImagePath(image_path.clone())
+            } else {
+                LayerContent::Empty
+            };
+            
+            let layer = Layer {
+                id: layer_id.clone(),
+                layer_type,
+                position: Position {
+                    x: couch_layer.position.x,
+                    y: couch_layer.position.y,
+                    width: couch_layer.position.width,
+                    height: couch_layer.position.height,
+                },
+                target_position: None,
+                opacity: couch_layer.opacity,
+                priority: couch_layer.priority,
+                visible: couch_layer.enabled,
+                content,
+                name: Some(layer_id.clone()),
+                animation_state: None,
+            };
+            
+            layers.insert(layer_id.clone(), layer);
+        }
+        
+        LayerConfig {
+            layers,
+            output_resolution: (width, height),
+            orientation: tv_config.orientation.clone(),
+            max_layers: tv_config.layer_settings.max_layers,
+            compositing_timeout_ms: tv_config.layer_settings.compositing_timeout_ms,
+            cache_composites: tv_config.layer_settings.cache_composites,
+        }
     }
 }

@@ -1,10 +1,9 @@
-use image::{ImageError, Rgba, RgbaImage};
+use image::{Rgba, RgbaImage};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use crate::Orientation;
+use crate::layer_animation::{AnimationState, AnimationType, AnimationValue};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum LayerType {
@@ -12,6 +11,7 @@ pub enum LayerType {
     StaticOverlay, // Fixed logo/image
     DynamicText,   // Date/time (future implementation)
     Emergency,     // High-priority overlays (future implementation)
+    DataRow,       // Individual data row for multi-layer display
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,6 +33,13 @@ pub enum LayerContent {
     ImagePath(String),
     Color(u8, u8, u8, u8),  // RGBA
     Text(String),           // Future implementation
+    DataRow {               // Data row content
+        text: String,
+        background_color: (u8, u8, u8, u8),
+        text_color: (u8, u8, u8, u8),
+        font_size: u32,
+        alignment: String,  // left, center, right
+    },
     Empty,                  // No content
 }
 
@@ -41,29 +48,36 @@ pub struct Layer {
     pub id: String,
     pub layer_type: LayerType,
     pub position: Position,
+    pub target_position: Option<Position>, // For animated moves
     pub opacity: f32,        // 0.0 - 1.0
     pub priority: u8,        // 0-255, higher = on top
     pub visible: bool,
     pub content: LayerContent,
     pub name: Option<String>, // Human-readable name
+    pub animation_state: Option<AnimationState>, // Current animation
 }
 
 impl Layer {
     pub fn new(id: String, layer_type: LayerType) -> Self {
+        let priority = match layer_type {
+            LayerType::Slideshow => 1,
+            LayerType::StaticOverlay => 10,
+            LayerType::DynamicText => 20,
+            LayerType::DataRow => 15,
+            LayerType::Emergency => 200,
+        };
+        
         Self {
             id,
             layer_type,
             position: Position::default(),
+            target_position: None,
             opacity: 1.0,
-            priority: match layer_type {
-                LayerType::Slideshow => 1,
-                LayerType::StaticOverlay => 10,
-                LayerType::DynamicText => 20,
-                LayerType::Emergency => 200,
-            },
+            priority,
             visible: true,
             content: LayerContent::Empty,
             name: None,
+            animation_state: None,
         }
     }
 
@@ -100,6 +114,102 @@ impl Layer {
     pub fn with_name(mut self, name: String) -> Self {
         self.name = Some(name);
         self
+    }
+    
+    pub fn with_data_row(mut self, text: String, bg_color: (u8, u8, u8, u8), text_color: (u8, u8, u8, u8), font_size: u32, alignment: String) -> Self {
+        self.content = LayerContent::DataRow {
+            text,
+            background_color: bg_color,
+            text_color,
+            font_size,
+            alignment,
+        };
+        self
+    }
+    
+    // Animation methods
+    pub fn start_slide_up(&mut self, distance: f32, duration_ms: u64) {
+        let y = self.position.y as f32;
+        self.animation_state = Some(AnimationState::slide_up(y, distance, duration_ms));
+    }
+    
+    pub fn start_slide_down(&mut self, distance: f32, duration_ms: u64) {
+        let y = self.position.y as f32;
+        self.animation_state = Some(AnimationState::slide_down(y, distance, duration_ms));
+    }
+    
+    pub fn start_slide_left(&mut self, distance: f32, duration_ms: u64) {
+        let x = self.position.x as f32;
+        self.animation_state = Some(AnimationState::slide_left(x, distance, duration_ms));
+    }
+    
+    pub fn start_slide_right(&mut self, distance: f32, duration_ms: u64) {
+        let x = self.position.x as f32;
+        self.animation_state = Some(AnimationState::slide_right(x, distance, duration_ms));
+    }
+    
+    pub fn start_fade_in(&mut self, duration_ms: u64) {
+        self.animation_state = Some(AnimationState::fade_in(duration_ms));
+        self.visible = true;
+    }
+    
+    pub fn start_fade_out(&mut self, duration_ms: u64) {
+        self.animation_state = Some(AnimationState::fade_out(duration_ms));
+    }
+    
+    pub fn start_move_to(&mut self, to_x: u32, to_y: u32, duration_ms: u64) {
+        let from_x = self.position.x as f32;
+        let from_y = self.position.y as f32;
+        self.target_position = Some(Position {
+            x: to_x,
+            y: to_y,
+            width: self.position.width,
+            height: self.position.height,
+        });
+        self.animation_state = Some(AnimationState::move_to(from_x, from_y, to_x as f32, to_y as f32, duration_ms));
+    }
+    
+    pub fn update_animation(&mut self) -> bool {
+        if let Some(ref mut anim) = self.animation_state {
+            if anim.update() {
+                // Animation still in progress, update position/opacity based on animation
+                match anim.get_current_value() {
+                    AnimationValue::Position { x, y } => {
+                        match anim.animation_type {
+                            AnimationType::SlideUp | AnimationType::SlideDown => {
+                                self.position.y = y as u32;
+                            }
+                            AnimationType::SlideLeft | AnimationType::SlideRight => {
+                                self.position.x = x as u32;
+                            }
+                            AnimationType::Move => {
+                                self.position.x = x as u32;
+                                self.position.y = y as u32;
+                            }
+                            _ => {}
+                        }
+                    }
+                    AnimationValue::Opacity(o) => {
+                        self.opacity = o;
+                        if anim.animation_type == AnimationType::FadeOut && o <= 0.01 {
+                            self.visible = false;
+                        }
+                    }
+                    _ => {}
+                }
+                true
+            } else {
+                // Animation completed
+                if let Some(target) = &self.target_position {
+                    self.position = target.clone();
+                    self.target_position = None;
+                }
+                self.animation_state = None;
+                false
+            }
+        } else {
+            false
+        }
     }
 }
 
@@ -271,6 +381,9 @@ impl LayerManager {
     }
 
     pub async fn render_composite(&self) -> Result<RgbaImage, String> {
+        // Update animations first
+        self.update_all_animations().await;
+        
         // Check if we can use cached composite
         let is_dirty = *self.composite_dirty.read().await;
         if !is_dirty {
@@ -325,6 +438,9 @@ impl LayerManager {
             LayerContent::Text(_text) => {
                 // Future implementation for text rendering
                 Ok(())
+            }
+            LayerContent::DataRow { text, background_color, text_color, font_size, alignment } => {
+                self.render_data_row_layer(layer, text, *background_color, *text_color, *font_size, alignment, composite).await
             }
             LayerContent::Empty => Ok(()),
         }
@@ -482,5 +598,99 @@ impl LayerManager {
             .map(|img| (img.width() * img.height() * 4) as usize)
             .sum();
         (cached_items, memory_usage)
+    }
+    
+    async fn update_all_animations(&self) {
+        let mut config = self.config.write().await;
+        let mut any_animation_active = false;
+        
+        for layer in config.layers.values_mut() {
+            if layer.update_animation() {
+                any_animation_active = true;
+            }
+        }
+        
+        // Mark composite as dirty if any animation is active
+        if any_animation_active {
+            *self.composite_dirty.write().await = true;
+        }
+    }
+    
+    async fn render_data_row_layer(&self, layer: &Layer, text: &str, bg_color: (u8, u8, u8, u8), text_color: (u8, u8, u8, u8), _font_size: u32, _alignment: &str, composite: &mut RgbaImage) -> Result<(), String> {
+        // First render background
+        let bg_rgba = Rgba([bg_color.0, bg_color.1, bg_color.2, bg_color.3]);
+        
+        for y in layer.position.y..(layer.position.y + layer.position.height) {
+            for x in layer.position.x..(layer.position.x + layer.position.width) {
+                if x < composite.width() && y < composite.height() {
+                    let final_alpha = (bg_color.3 as f32 * layer.opacity) as u8;
+                    let pixel_color = Rgba([bg_color.0, bg_color.1, bg_color.2, final_alpha]);
+                    
+                    if let Some(existing_pixel) = composite.get_pixel_mut_checked(x, y) {
+                        *existing_pixel = self.blend_pixels(*existing_pixel, pixel_color);
+                    }
+                }
+            }
+        }
+        
+        // TODO: Implement text rendering using a font library
+        // For now, we'll just render a colored bar
+        // In a full implementation, we'd use a library like rusttype or fontdue
+        // to render the text with the specified font size and alignment
+        
+        Ok(())
+    }
+    
+    // Animation control methods
+    pub async fn start_layer_animation(&self, layer_id: &str, animation_type: AnimationType, duration_ms: u64, distance: Option<f32>) -> Result<(), String> {
+        let mut config = self.config.write().await;
+        
+        if let Some(layer) = config.layers.get_mut(layer_id) {
+            match animation_type {
+                AnimationType::SlideUp => layer.start_slide_up(distance.unwrap_or(100.0), duration_ms),
+                AnimationType::SlideDown => layer.start_slide_down(distance.unwrap_or(100.0), duration_ms),
+                AnimationType::SlideLeft => layer.start_slide_left(distance.unwrap_or(100.0), duration_ms),
+                AnimationType::SlideRight => layer.start_slide_right(distance.unwrap_or(100.0), duration_ms),
+                AnimationType::FadeIn => layer.start_fade_in(duration_ms),
+                AnimationType::FadeOut => layer.start_fade_out(duration_ms),
+                _ => return Err("Unsupported animation type".to_string()),
+            }
+            *self.composite_dirty.write().await = true;
+            Ok(())
+        } else {
+            Err(format!("Layer '{}' not found", layer_id))
+        }
+    }
+    
+    pub async fn move_layer_to(&self, layer_id: &str, x: u32, y: u32, animate: bool, duration_ms: u64) -> Result<(), String> {
+        let mut config = self.config.write().await;
+        
+        if let Some(layer) = config.layers.get_mut(layer_id) {
+            if animate {
+                layer.start_move_to(x, y, duration_ms);
+            } else {
+                layer.position.x = x;
+                layer.position.y = y;
+            }
+            *self.composite_dirty.write().await = true;
+            Ok(())
+        } else {
+            Err(format!("Layer '{}' not found", layer_id))
+        }
+    }
+    
+    pub async fn add_data_row_layer(&self, id: String, text: String, y_position: u32, height: u32) -> Result<(), String> {
+        let layer = Layer::new(id.clone(), LayerType::DataRow)
+            .with_position(0, y_position, 1920, height)
+            .with_data_row(
+                text,
+                (0, 0, 0, 200),      // Semi-transparent black background
+                (255, 255, 255, 255), // White text
+                24,                   // Font size
+                "left".to_string()    // Alignment
+            )
+            .with_priority(15);
+            
+        self.add_layer(layer).await
     }
 }

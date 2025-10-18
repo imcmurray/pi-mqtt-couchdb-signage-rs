@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, mpsc, RwLock};
 use crate::mqtt_client::{ImageInfo, MqttClient, SlideshowCommand, SlideshowConfig, TvStatus};
 use crate::couchdb_client::CouchDbClient;
-use crate::layer_manager::{LayerManager, LayerConfig, Layer, LayerType, LayerContent};
+use crate::layer_manager::{LayerManager, LayerConfig, Layer, LayerType};
 
 #[derive(Debug, Clone)]
 pub enum SlideshowState {
@@ -145,6 +145,16 @@ impl SlideshowController {
                 config.transition_effect = tv_config.transition_effect.clone();
                 println!("Applied CouchDB config: {}ms display, {} orientation, {} transition", 
                          tv_config.display_duration, tv_config.orientation, tv_config.transition_effect);
+                
+                // Sync layer configuration to LayerManager
+                let layer_config = couchdb_client.convert_to_layer_config(&tv_config, 1920, 1080);
+                drop(config); // Release the lock before awaiting
+                
+                if let Err(e) = self.layer_manager.write().await.update_config(layer_config).await {
+                    eprintln!("Failed to update layer config from CouchDB: {}", e);
+                } else {
+                    println!("✅ Synced layer configuration from CouchDB");
+                }
             }
         }
         
@@ -555,6 +565,16 @@ impl SlideshowController {
                     }
                     if old_transition != tv_config.transition_effect {
                         println!("🔄 COUCHDB CONFIG SYNC: Transition effect changed from {} to {}", old_transition, tv_config.transition_effect);
+                    }
+                    
+                    // Sync layer configuration to LayerManager
+                    let layer_config = couchdb_client.convert_to_layer_config(&tv_config, 1920, 1080);
+                    drop(config); // Release the lock before awaiting
+                    
+                    if let Err(e) = self.layer_manager.write().await.update_config(layer_config).await {
+                        eprintln!("Failed to update layer config during periodic sync: {}", e);
+                    } else {
+                        println!("🔄 Synced layer configuration during periodic update");
                     }
                 }
             }

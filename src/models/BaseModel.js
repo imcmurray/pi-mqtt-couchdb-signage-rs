@@ -1,4 +1,12 @@
-const { getDatabase } = require('../config/database');
+// Try to use multilayer database first, fallback to single database
+let getDatabase;
+try {
+  const multilayerDb = require('../config/multilayer.database');
+  getDatabase = (dbName = 'tvs') => multilayerDb.getDatabase(dbName);
+} catch (error) {
+  const singleDb = require('../config/database');
+  getDatabase = () => singleDb.getDatabase();
+}
 const { v4: uuidv4 } = require('uuid');
 
 /**
