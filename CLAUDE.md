@@ -64,10 +64,10 @@ Our system uses a **dual-protocol architecture** optimized for different data ty
 ## Current Implementation Status
 ### Completed Components
 - Basic Express server structure with middleware
-- CouchDB database configuration and models (TV, Image)
+- CouchDB database configuration and models (TV, Image, CourtHearing)
 - MQTT service integration
 - File upload middleware with Sharp image processing
-- REST API routes for TVs, images, and dashboard
+- REST API routes for TVs, images, dashboard, and court hearings
 - Rust-based slideshow controller with HTTP server and MQTT client
 - ✅ **Phase 2: Basic Layer Infrastructure (v0.3.0)**
   - 2-layer compositing system (slideshow + static overlay)
@@ -75,56 +75,86 @@ Our system uses a **dual-protocol architecture** optimized for different data ty
   - API-to-Database-to-Rust pipeline for layer config
   - Real-time layer control via MQTT commands
   - Working logo overlay demonstration
+- ✅ **Phase 4: Court Hearing Integration**
+  - Full court hearing CRUD operations with CourtHearing model
+  - Automated layer generation from hearing data
+  - Time-based color coding (red/orange/blue/green/gray)
+  - Status workflow management (scheduled → in progress → completed)
+  - CSV bulk import capability
+  - Automated refresh every 5 minutes via cron jobs
+  - Web-based admin interface for hearing management
+  - Real-time MQTT updates to TV displays
+  - Multi-TV support with auto-stacking layout
 
 ### Project Structure
 ```
 src/
-├── config/database.js      # CouchDB connection setup
-├── controllers/            # Route controllers (to be implemented)
-├── middleware/upload.js    # Multer file upload with Sharp processing
+├── config/
+│   ├── database.js           # CouchDB connection setup
+│   └── multilayer.config.js  # Multi-layer configuration
+├── controllers/
+│   ├── courtHearingController.js  # Court hearing management
+│   ├── dashboardController.js     # Dashboard logic
+│   ├── imageController.js         # Image operations
+│   └── tvController.js            # TV operations
+├── middleware/upload.js      # Multer file upload with Sharp processing
 ├── models/
-│   ├── image.js           # Image document model
-│   └── tv.js              # TV document model
+│   ├── BaseModel.js         # Base model with common CRUD
+│   ├── CourtHearing.js      # Court hearing model
+│   ├── image.js             # Image document model
+│   └── tv.js                # TV document model
 ├── routes/
-│   ├── dashboardRoutes.js # Dashboard API endpoints
-│   ├── imageRoutes.js     # Image management endpoints
-│   └── tvRoutes.js        # TV management endpoints
-├── services/mqttService.js # MQTT client service
-├── server.js              # Main application entry point
-└── utils/                 # Utility functions
+│   ├── courtHearingRoutes.js  # Court hearing API endpoints
+│   ├── dashboardRoutes.js     # Dashboard API endpoints
+│   ├── imageRoutes.js         # Image management endpoints
+│   └── tvRoutes.js            # TV management endpoints
+├── services/
+│   ├── courtDisplayService.js  # Layer generation from hearings
+│   ├── layerAutomation.js      # Cron jobs for automated updates
+│   └── mqttService.js          # MQTT client service
+├── server.js                 # Main application entry point
+└── utils/                    # Utility functions
 
 pi-slideshow-rs/
 ├── src/
 │   ├── main.rs                    # Main application entry
 │   ├── slideshow_controller.rs    # Core slideshow logic
-│   ├── layer_manager.rs          # Layer compositing system
-│   ├── http_server.rs            # REST API server
-│   └── mqtt_client.rs            # MQTT communication
-└── images/                       # Sample slideshow images
+│   ├── layer_manager.rs           # Layer compositing system
+│   ├── http_server.rs             # REST API server
+│   └── mqtt_client.rs             # MQTT communication
+└── images/                        # Sample slideshow images
 
 public/
-├── index.html            # Admin panel frontend
-├── css/style.css        # Frontend styling
-└── js/app.js           # Frontend JavaScript
+├── index.html             # Admin panel frontend
+├── court-schedule.html    # Court hearing management UI
+├── css/style.css         # Frontend styling
+└── js/
+    ├── app.js            # Main frontend JavaScript
+    └── court-schedule.js # Court hearing UI logic
 ```
 
 ## Key Features
-### ✅ Implemented (v0.3.0)
+### ✅ Implemented (v0.3.0+)
 - Image upload/management per TV
 - Real-time TV status dashboard via WebSocket
 - Basic 2-layer compositing (slideshow + static overlay)
 - Layer configuration via web interface
 - Real-time layer control via MQTT
 - Image resizing and optimization
+- **Court hearing integration** with automated display updates
+- CSV import for bulk hearing creation
+- Status workflow management (scheduled/delayed/in-progress/completed/cancelled)
+- Automated cron jobs for display refresh and cleanup
+- Time-based color coding for hearing urgency
 
 ### 🎯 Planned (Future Phases)
 - Multi-layer support (>2 layers)
 - Zone-based preset templates
-- Dynamic text overlays
 - Emergency message system
-- Court hearing integration
-- Scheduling system
+- Advanced scheduling system
 - Bulk operations across multiple TVs
+- Location-based filtering for hearings
+- Judge photo integration
 
 ## TV Endpoint Structure
 Each TV operates with hybrid connectivity for optimal performance:
@@ -159,6 +189,7 @@ Each TV operates with hybrid connectivity for optimal performance:
 - **ws**: WebSocket support
 - **joi**: Input validation
 - **helmet**: Security headers
+- **node-cron**: Scheduled task automation
 
 ## Development Best Practices
 - Don't duplicate code and create duplicate functions that do the same thing with a different name.

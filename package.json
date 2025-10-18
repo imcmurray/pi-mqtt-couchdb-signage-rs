@@ -1,7 +1,7 @@
 {
   "name": "digital-signage-management",
-  "version": "0.2.0",
-  "description": "Digital signage management system with CouchDB and MQTT",
+  "version": "0.4.0",
+  "description": "Digital signage management system with CouchDB, MQTT, and court hearing integration",
   "main": "src/server.js",
   "scripts": {
     "dev": "nodemon src/server.js",

@@ -2,22 +2,26 @@
 
 **Complete end-to-end digital signage solution** featuring a Node.js management server with CouchDB backend and Rust-based Raspberry Pi TV endpoints. This repository contains both the centralized management infrastructure and the high-performance TV endpoint software - everything needed to deploy a professional digital signage network.
 
-## 🚀 Current Version: v0.3.0
+## 🚀 Current Version: v0.4.0
 
 **Latest improvements include:**
+- ✅ **Court Hearing Integration** - Automated court schedule displays with real-time updates
+- ✅ **Time-Based Color Coding** - Visual urgency indicators (red/orange/blue/green/gray)
+- ✅ **CSV Import** - Bulk import hearings from court management systems
+- ✅ **Automated Refresh** - Cron jobs update displays every 5 minutes
+- ✅ **Status Workflow** - Complete hearing lifecycle management
 - ✅ **Basic Layer Support** - Simple 2-layer compositing (slideshow + static overlay)
-- ✅ **Orientation Support** - Both portrait and landscape TV configurations
 - ✅ **MVC Pattern Implementation** - Clean separation with controllers, models, and routes
 - ✅ **BaseModel Architecture** - Reduced code duplication with inheritance
-- ✅ **Test Infrastructure** - Jest configuration and basic test setup
-- ✅ **Production-Ready Docker Setup** - Complete containerized infrastructure
 
 ## 📦 What's Included
 
 - **🖥️ Management Server** (`/`) - Node.js/Express backend with web interface
-- **📺 TV Endpoint Software** (`pi-slideshow-rs/`) - Rust application for Raspberry Pi displays  
+- **📺 TV Endpoint Software** (`pi-slideshow-rs/`) - Rust application for Raspberry Pi displays
+- **🏛️ Court Hearing System** - Automated court schedule management and display
 - **🐳 Docker Deployment** - Complete containerized infrastructure
 - **⚙️ SystemD Integration** - Auto-startup configuration for Pi endpoints
+- **⏰ Automated Scheduling** - Cron-based refresh and cleanup tasks
 - **📖 Complete Documentation** - Setup guides, API references, troubleshooting
 
 ## 🏗️ Architecture Overview
@@ -186,6 +190,11 @@ The v0.3.0 release includes basic 2-layer compositing support:
 
 ### 🎛️ Management Server
 - **Web-based Admin Interface**: Intuitive UI for staff to manage all TVs
+- **Court Hearing Management**: Complete system for court schedule displays
+- **Automated Display Updates**: Cron jobs refresh court schedules every 5 minutes
+- **CSV Import**: Bulk import hearings from external systems
+- **Status Workflow**: Track hearings through scheduled → in progress → completed lifecycle
+- **Time-Based Color Coding**: Visual urgency indicators for upcoming hearings
 - **Shared Asset System**: Upload images once, assign to multiple TVs
 - **Real-time Monitoring**: Live status of all TV displays
 - **Image Management**: Upload, delete, reorder, and shuffle capabilities
@@ -195,7 +204,6 @@ The v0.3.0 release includes basic 2-layer compositing support:
 - **Basic Layer Support**: Simple logo overlay capability
 - **MVC Architecture**: Clean separation with controllers and models
 - **Input Validation**: Joi schema validation on all endpoints
-- **Test Infrastructure**: Jest setup with basic test coverage
 
 ### 📺 TV Endpoints (Raspberry Pi)
 - **Direct Framebuffer Rendering**: No X11 required, hardware-accelerated
@@ -350,7 +358,12 @@ curl http://localhost:8080/api/health  # Health check
 ## 🎯 Use Cases
 
 ### 🏛️ Court System Digital Signage
-- **Hearing Schedules**: Dynamic court schedule displays
+- **Automated Hearing Schedules**: Real-time court schedule displays with color-coded urgency
+- **CSV Import**: Bulk import from court management systems (Tyler, Odyssey, etc.)
+- **Status Management**: Track hearing lifecycle from scheduled to completed
+- **Time Awareness**: Visual indicators for hearings starting within 15/30 minutes
+- **Multi-Room Support**: Display hearings by courtroom location
+- **Delay Tracking**: Show and manage delayed hearings with reasons
 - **Wayfinding**: Directory and navigation information
 - **Announcements**: Emergency and general announcements
 - **Multi-location**: Centralized control of courtroom displays
@@ -429,6 +442,24 @@ GET    /api/tvs/:id/layers          # Get layer configuration
 PUT    /api/tvs/:id/layers          # Update layer configuration (limited to 2 layers)
 POST   /api/tvs/:id/layers/:layerId/visibility # Toggle layer visibility
 
+# Court Hearing Management
+POST   /api/hearings                # Create hearing
+GET    /api/hearings                # List all hearings
+GET    /api/hearings/today          # Today's hearings
+GET    /api/hearings/upcoming       # Upcoming hearings (24h)
+GET    /api/hearings/date/:date     # Hearings by date
+GET    /api/hearings/room/:room     # Hearings by courtroom
+GET    /api/hearings/stats          # Statistics
+GET    /api/hearings/:id            # Get specific hearing
+PUT    /api/hearings/:id            # Update hearing
+DELETE /api/hearings/:id            # Delete hearing
+POST   /api/hearings/:id/delay      # Mark as delayed
+POST   /api/hearings/:id/in-progress # Mark as in progress
+POST   /api/hearings/:id/complete   # Mark as completed
+POST   /api/hearings/:id/cancel     # Cancel hearing
+POST   /api/hearings/refresh-display # Refresh all displays
+POST   /api/hearings/import         # Import from CSV
+
 # Image Management
 GET    /api/images                 # List all images
 POST   /api/images/upload          # Upload images
@@ -484,29 +515,42 @@ digital-signage-management/
 │   ├── server.js                  # Main server application
 │   ├── config/
 │   │   ├── database.js           # CouchDB configuration
-│   │   └── index.js              # Centralized configuration system
+│   │   ├── index.js              # Centralized configuration system
+│   │   └── multilayer.config.js  # Multi-layer configuration
 │   ├── models/
 │   │   ├── BaseModel.js          # Base model with common CRUD operations
 │   │   ├── tv.js                 # TV model (extends BaseModel)
-│   │   └── image.js              # Image model (extends BaseModel)
+│   │   ├── image.js              # Image model (extends BaseModel)
+│   │   └── CourtHearing.js       # Court hearing model (extends BaseModel)
 │   ├── controllers/              # MVC controllers
 │   │   ├── tvController.js       # TV business logic
 │   │   ├── imageController.js    # Image business logic
-│   │   └── dashboardController.js # Dashboard business logic
+│   │   ├── dashboardController.js # Dashboard business logic
+│   │   └── courtHearingController.js # Court hearing business logic
 │   ├── routes/                    # API routes
 │   │   ├── tvRoutes.js           # TV endpoints
 │   │   ├── imageRoutes.js        # Image endpoints
-│   │   └── dashboardRoutes.js    # Dashboard endpoints
+│   │   ├── dashboardRoutes.js    # Dashboard endpoints
+│   │   └── courtHearingRoutes.js # Court hearing endpoints
 │   ├── middleware/               # Middleware layer
 │   │   ├── errorHandler.js       # Centralized error handling
 │   │   ├── security.js           # Rate limiting and authentication
 │   │   ├── validation.js         # Joi schema validation
 │   │   └── upload.js             # File upload handling
 │   ├── services/
-│   │   └── mqttService.js        # MQTT integration with layer support
+│   │   ├── mqttService.js        # MQTT integration with layer support
+│   │   ├── courtDisplayService.js # Layer generation from hearings
+│   │   └── layerAutomation.js    # Cron jobs for automated updates
 │   └── utils/                    # Utility functions
 ├── public/                        # Web interface assets
+│   ├── index.html                # Main admin dashboard
+│   ├── court-schedule.html       # Court hearing management UI
+│   ├── css/style.css            # Styling
+│   └── js/
+│       ├── app.js               # Main dashboard JavaScript
+│       └── court-schedule.js    # Court hearing UI logic
 ├── tests/                         # Test suites
+│   └── demo-court-hearings.js   # Court hearing demo script
 ├── pi-slideshow-rs/               # Rust TV endpoint
 │   ├── src/
 │   │   ├── main.rs               # Main slideshow application
@@ -633,6 +677,9 @@ npm install -g pm2
 pm2 start ecosystem.config.js
 pm2 save
 pm2 startup
+
+# Note: Court hearing cron jobs will start automatically when the server starts
+# Verify cron jobs are running by checking logs for "Running scheduled..." messages
 ```
 
 ### 📋 Environment Configuration
@@ -798,6 +845,12 @@ mosquitto_sub -h mqtt-broker -t "signage/tv/+/status"
 - Database connection issues → Check CouchDB status
 - MQTT connection failed → Verify broker connectivity
 - Image upload errors → Check file permissions
+- Cron jobs not running → Check server logs for "Running scheduled..." messages
+
+**Court Hearing System:**
+- Hearings not displaying → Verify TVs have layer support (`features.multi_layer`)
+- Display not updating → Check layer automation logs (should refresh every 5 minutes)
+- CSV import failing → Verify date format is ISO 8601 (YYYY-MM-DDTHH:mm:ssZ)
 
 **TV Endpoints:**
 - No display output → Verify framebuffer permissions (`sudo`)
@@ -835,6 +888,8 @@ mosquitto_sub -h mqtt-broker -t "signage/tv/+/status"
 - **Node.js/Express Backend**: REST API and WebSocket server
 - **CouchDB Integration**: Document storage and image attachments
 - **MQTT Service**: Real-time communication with TV endpoints
+- **Court Hearing System**: Automated schedule management with cron jobs
+- **Automated Tasks**: 5-minute display refresh, morning updates, nightly cleanup
 - **Web Interface**: Staff dashboard in `public/` directory
 - **File Upload**: Image processing and optimization with Sharp
 
@@ -852,8 +907,15 @@ mosquitto_sub -h mqtt-broker -t "signage/tv/+/status"
 
 See [`pi-slideshow-rs/README.md`](pi-slideshow-rs/README.md) for detailed TV endpoint documentation.
 
-## 📚 Resources
+## 📚 Resources & Documentation
 
+### Project Documentation
+- **[Court Hearing System Guide](COURT-HEARING-SYSTEM.md)** - Complete court schedule integration documentation
+- **[Multi-Layer System Guide](MULTILAYER-README.md)** - Multi-layer compositing documentation
+- **[Version Management](VERSION-GUIDE.md)** - Version update procedures
+- **[Raspberry Pi Setup](pi-slideshow-rs/README.md)** - TV endpoint installation guide
+
+### External Resources
 - [Node.js Documentation](https://nodejs.org/docs)
 - [CouchDB Guide](https://docs.couchdb.org)
 - [MQTT Protocol](https://mqtt.org)
