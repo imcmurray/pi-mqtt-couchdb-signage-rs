@@ -108,6 +108,11 @@ class Layer extends BaseModel {
     return result.rows.map(row => new Layer(row.value));
   }
 
+  static async findByGroup(group) {
+    const allLayers = await this.findAll();
+    return allLayers.filter(layer => layer.group === group);
+  }
+
   async save() {
     this.validateRequired(['tv_id', 'layer_id', 'layer_type']);
     

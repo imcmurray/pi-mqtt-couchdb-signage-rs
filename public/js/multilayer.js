@@ -7,12 +7,18 @@ class MultiLayerManager {
         this.layers = [];
         this.ws = null;
         this.apiBase = '/api';
-        
+
+        // Alert management properties
+        this.selectedAlertType = 'INFO';
+        this.selectedTargetType = 'all';
+        this.activeAlerts = [];
+
         this.init();
     }
     
     async init() {
         await this.loadTVs();
+        await this.loadActiveAlerts();
         this.connectWebSocket();
         this.setupEventListeners();
         this.startStatusUpdates();
@@ -554,6 +560,179 @@ class MultiLayerManager {
                 this.loadLayers();
             }
         }, 5000);
+
+        // Refresh active alerts every 10 seconds
+        setInterval(() => {
+            this.loadActiveAlerts();
+        }, 10000);
+    }
+
+    // Emergency Alert System Methods
+
+    selectAlertType(type) {
+        this.selectedAlertType = type;
+
+        // Update UI to show selected state
+        document.querySelectorAll('.alert-type-button').forEach(btn => {
+            btn.classList.remove('selected');
+        });
+
+        const selectedBtn = document.querySelector(`.alert-type-button.${type.toLowerCase()}`);
+        if (selectedBtn) {
+            selectedBtn.classList.add('selected');
+        }
+
+        this.log(`Alert type selected: ${type}`);
+    }
+
+    selectTargetType(targetType) {
+        this.selectedTargetType = targetType;
+
+        // Update UI to show selected state
+        document.querySelectorAll('.target-type-option').forEach(btn => {
+            btn.classList.remove('selected');
+        });
+
+        const selectedBtn = document.querySelector(`.target-type-option[onclick*="${targetType}"]`);
+        if (selectedBtn) {
+            selectedBtn.classList.add('selected');
+        }
+
+        // Show/hide location selector based on target type
+        const locationSelector = document.getElementById('locationSelector');
+        if (locationSelector) {
+            locationSelector.style.display = targetType === 'location' ? 'block' : 'none';
+        }
+
+        this.log(`Target type selected: ${targetType}`);
+    }
+
+    async broadcastAlert() {
+        const title = document.getElementById('alertTitle').value.trim();
+        const message = document.getElementById('alertMessage').value.trim();
+
+        if (!title || !message) {
+            this.log('Please fill in alert title and message', 'error');
+            return;
+        }
+
+        const alertData = {
+            title,
+            message,
+            type: this.selectedAlertType,
+            target_type: this.selectedTargetType,
+            created_by: 'web-admin'
+        };
+
+        // Add location if targeting by location
+        if (this.selectedTargetType === 'location') {
+            const location = document.getElementById('targetLocationInput')?.value.trim();
+            if (!location) {
+                this.log('Please enter a location', 'error');
+                return;
+            }
+            alertData.target_location = location;
+        }
+
+        try {
+            const response = await fetch(`${this.apiBase}/alerts/broadcast`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(alertData)
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                const alertInfo = result.data.alert;
+                const deliveredCount = result.data.delivered_count;
+
+                this.log(`Alert broadcasted: "${alertInfo.title}" (${alertInfo.type}) to ${deliveredCount} TV(s)`);
+
+                // Clear form
+                document.getElementById('alertTitle').value = '';
+                document.getElementById('alertMessage').value = '';
+
+                // Reload active alerts
+                await this.loadActiveAlerts();
+            } else {
+                const error = await response.json();
+                this.log(`Failed to broadcast alert: ${error.error}`, 'error');
+            }
+        } catch (error) {
+            this.log(`Error broadcasting alert: ${error.message}`, 'error');
+        }
+    }
+
+    async loadActiveAlerts() {
+        try {
+            const response = await fetch(`${this.apiBase}/alerts/active`);
+            const result = await response.json();
+
+            this.activeAlerts = result.data || [];
+            this.updateActiveAlertsList();
+        } catch (error) {
+            this.log(`Error loading active alerts: ${error.message}`, 'error');
+        }
+    }
+
+    updateActiveAlertsList() {
+        const activeAlertsCount = document.getElementById('activeAlertCount');
+        const activeAlertsList = document.getElementById('activeAlertsList');
+
+        if (!activeAlertsCount || !activeAlertsList) return;
+
+        activeAlertsCount.textContent = this.activeAlerts.length;
+
+        if (this.activeAlerts.length === 0) {
+            activeAlertsList.innerHTML = '<p style="color: var(--text-muted); text-align: center; padding: 16px;">No active alerts</p>';
+            return;
+        }
+
+        activeAlertsList.innerHTML = this.activeAlerts.map(alert => {
+            const createdDate = new Date(alert.created_at).toLocaleString();
+            const typeIcon = alert.type === 'CRITICAL' ? '🚨' : alert.type === 'URGENT' ? '⚠️' : 'ℹ️';
+            const typeClass = alert.type.toLowerCase();
+
+            return `
+                <div class="active-alert-item ${typeClass}">
+                    <div class="alert-header">
+                        <span class="alert-icon">${typeIcon}</span>
+                        <span class="alert-type-badge ${typeClass}">${alert.type}</span>
+                        <span class="alert-time">${createdDate}</span>
+                    </div>
+                    <div class="alert-title">${alert.title}</div>
+                    <div class="alert-message">${alert.message}</div>
+                    <div class="alert-footer">
+                        <span class="alert-delivery">Delivered to ${alert.delivered_to_count} TV(s)</span>
+                        <button class="btn btn-small btn-secondary" onclick="dismissAlert('${alert.alert_id}')">
+                            Dismiss
+                        </button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    async dismissAlert(alertId) {
+        if (!confirm('Are you sure you want to dismiss this alert?')) return;
+
+        try {
+            const response = await fetch(`${this.apiBase}/alerts/${alertId}/dismiss`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reason: 'Manually dismissed from web interface' })
+            });
+
+            if (response.ok) {
+                this.log('Alert dismissed');
+                await this.loadActiveAlerts();
+            } else {
+                const error = await response.json();
+                this.log(`Failed to dismiss alert: ${error.error}`, 'error');
+            }
+        } catch (error) {
+            this.log(`Error dismissing alert: ${error.message}`, 'error');
+        }
     }
     
     log(message, level = 'info') {
@@ -617,4 +796,20 @@ function showAllLayers() {
 
 function deleteAllLayers() {
     manager.deleteAllLayers();
+}
+
+function selectAlertType(type) {
+    manager.selectAlertType(type);
+}
+
+function selectTargetType(targetType) {
+    manager.selectTargetType(targetType);
+}
+
+function broadcastAlert() {
+    manager.broadcastAlert();
+}
+
+function dismissAlert(alertId) {
+    manager.dismissAlert(alertId);
 }

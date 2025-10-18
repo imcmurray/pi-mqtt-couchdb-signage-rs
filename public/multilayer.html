@@ -323,6 +323,205 @@
             color: var(--primary);
         }
 
+        .alert-panel {
+            background: var(--surface);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            border: 2px solid var(--warning);
+        }
+
+        .alert-panel h3 {
+            color: var(--danger);
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .alert-type-selector {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .alert-type-button {
+            padding: 16px;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            background: var(--background);
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: center;
+        }
+
+        .alert-type-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        .alert-type-button.selected {
+            border-width: 3px;
+        }
+
+        .alert-type-button.critical {
+            border-color: var(--danger);
+            background: rgba(220, 38, 38, 0.05);
+        }
+
+        .alert-type-button.critical.selected {
+            background: rgba(220, 38, 38, 0.1);
+        }
+
+        .alert-type-button.urgent {
+            border-color: var(--warning);
+            background: rgba(217, 119, 6, 0.05);
+        }
+
+        .alert-type-button.urgent.selected {
+            background: rgba(217, 119, 6, 0.1);
+        }
+
+        .alert-type-button.info {
+            border-color: var(--primary);
+            background: rgba(37, 99, 235, 0.05);
+        }
+
+        .alert-type-button.info.selected {
+            background: rgba(37, 99, 235, 0.1);
+        }
+
+        .alert-type-icon {
+            font-size: 32px;
+            margin-bottom: 8px;
+        }
+
+        .alert-type-name {
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .alert-type-desc {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        .active-alerts {
+            margin-top: 24px;
+        }
+
+        .active-alert-item {
+            background: var(--background);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 12px;
+            border-left: 4px solid var(--primary);
+        }
+
+        .active-alert-item.critical {
+            border-left-color: var(--danger);
+            background: rgba(220, 38, 38, 0.05);
+        }
+
+        .active-alert-item.urgent {
+            border-left-color: var(--warning);
+            background: rgba(217, 119, 6, 0.05);
+        }
+
+        .active-alert-item.info {
+            border-left-color: var(--primary);
+            background: rgba(37, 99, 235, 0.05);
+        }
+
+        .alert-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .alert-icon {
+            font-size: 18px;
+        }
+
+        .alert-type-badge {
+            font-size: 11px;
+            font-weight: 600;
+            padding: 3px 8px;
+            border-radius: 4px;
+            color: white;
+        }
+
+        .alert-type-badge.critical {
+            background: var(--danger);
+        }
+
+        .alert-type-badge.urgent {
+            background: var(--warning);
+        }
+
+        .alert-type-badge.info {
+            background: var(--primary);
+        }
+
+        .alert-time {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .alert-title {
+            font-weight: 600;
+            margin-bottom: 6px;
+            color: var(--text);
+        }
+
+        .alert-message {
+            color: var(--text);
+            margin-bottom: 12px;
+            font-size: 14px;
+        }
+
+        .alert-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .alert-delivery {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .target-type-selector {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .target-type-option {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.2s;
+        }
+
+        .target-type-option:hover {
+            background: var(--background);
+        }
+
+        .target-type-option.selected {
+            border-color: var(--primary);
+            background: rgba(37, 99, 235, 0.1);
+        }
+
         .position-controls {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
@@ -357,8 +556,66 @@
             </div>
         </div>
 
+        <div class="alert-panel">
+            <h3>🚨 Emergency Alert System</h3>
+
+            <div class="alert-type-selector">
+                <div class="alert-type-button critical" onclick="selectAlertType('CRITICAL')">
+                    <div class="alert-type-icon">🚨</div>
+                    <div class="alert-type-name">CRITICAL</div>
+                    <div class="alert-type-desc">Full screen • 10 min</div>
+                </div>
+                <div class="alert-type-button urgent" onclick="selectAlertType('URGENT')">
+                    <div class="alert-type-icon">⚠️</div>
+                    <div class="alert-type-name">URGENT</div>
+                    <div class="alert-type-desc">Top banner • 5 min</div>
+                </div>
+                <div class="alert-type-button info selected" onclick="selectAlertType('INFO')">
+                    <div class="alert-type-icon">ℹ️</div>
+                    <div class="alert-type-name">INFO</div>
+                    <div class="alert-type-desc">Bottom ticker • 2 min</div>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="alertTitle">Alert Title:</label>
+                <input type="text" id="alertTitle" placeholder="e.g., Building Evacuation" maxlength="100">
+            </div>
+
+            <div class="form-group">
+                <label for="alertMessage">Alert Message:</label>
+                <textarea id="alertMessage" rows="3" placeholder="e.g., Evacuate immediately via nearest exit" maxlength="500"></textarea>
+            </div>
+
+            <div class="form-group">
+                <label>Broadcast To:</label>
+                <div class="target-type-selector">
+                    <div class="target-type-option selected" onclick="selectTargetType('all')" id="targetAll">
+                        <strong>All TVs</strong>
+                    </div>
+                    <div class="target-type-option" onclick="selectTargetType('location')" id="targetLocation">
+                        <strong>By Location</strong>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-group" id="locationSelector" style="display: none;">
+                <label for="targetLocationInput">Location:</label>
+                <input type="text" id="targetLocationInput" placeholder="e.g., Building A">
+            </div>
+
+            <button class="btn btn-danger" onclick="broadcastAlert()" style="width: 100%;">
+                📡 Broadcast Emergency Alert
+            </button>
+
+            <div class="active-alerts">
+                <h4>Active Alerts <span class="layer-count" id="activeAlertCount">0</span></h4>
+                <div id="activeAlertsList"></div>
+            </div>
+        </div>
+
         <div class="quick-actions">
-            <h3>Quick Actions</h3>
+            <h3>Layer Quick Actions</h3>
             <div class="tv-selector">
                 <label for="tvSelect">Select TV:</label>
                 <select id="tvSelect">
@@ -366,7 +623,7 @@
                 </select>
                 <button class="btn btn-secondary btn-small" onclick="loadTVs()">Refresh</button>
             </div>
-            
+
             <button class="btn" onclick="createSampleLayers()">Create Sample Layers</button>
             <button class="btn btn-warning" onclick="hideAllLayers()">Hide All</button>
             <button class="btn btn-success" onclick="showAllLayers()">Show All</button>

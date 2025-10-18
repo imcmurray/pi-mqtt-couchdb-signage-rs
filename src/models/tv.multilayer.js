@@ -70,6 +70,11 @@ class TVMultilayer extends BaseModel {
     return result.rows.map(row => new TVMultilayer(row.value));
   }
 
+  static async findByLocation(location) {
+    const allTVs = await this.findAll();
+    return allTVs.filter(tv => tv.location === location);
+  }
+
   async save() {
     // Validate required fields before saving
     this.validateRequired(['name', 'location', 'ip_address']);

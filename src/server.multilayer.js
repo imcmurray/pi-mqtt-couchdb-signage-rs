@@ -164,6 +164,8 @@ app.use('/api/tvs', tvRoutes);
 app.use('/api/images', imageRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/layers', layerRoutes); // New layer management routes
+const alertRoutes = require('./routes/alertRoutes');
+app.use('/api/alerts', alertRoutes); // Emergency alert routes
 
 // WebSocket handling for real-time updates
 wss.on('connection', (ws) => {
