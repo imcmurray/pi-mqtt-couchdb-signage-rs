@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use crate::layer_animation::{AnimationState, AnimationType, AnimationValue};
+use fontdue::{Font, FontSettings};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum LayerType {
@@ -241,6 +242,7 @@ pub struct LayerManager {
     image_cache: Arc<RwLock<HashMap<String, RgbaImage>>>,
     last_composite: Arc<RwLock<Option<RgbaImage>>>,
     composite_dirty: Arc<RwLock<bool>>,
+    font_cache: Arc<RwLock<HashMap<String, Font>>>,
 }
 
 impl LayerManager {
@@ -262,6 +264,7 @@ impl LayerManager {
             image_cache: Arc::new(RwLock::new(HashMap::new())),
             last_composite: Arc::new(RwLock::new(None)),
             composite_dirty: Arc::new(RwLock::new(true)),
+            font_cache: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -599,6 +602,50 @@ impl LayerManager {
             .sum();
         (cached_items, memory_usage)
     }
+
+    async fn get_or_load_font(&self) -> Result<Font, String> {
+        let font_key = "default".to_string();
+
+        // Check cache first
+        {
+            let cache = self.font_cache.read().await;
+            if let Some(font) = cache.get(&font_key) {
+                return Ok(font.clone());
+            }
+        }
+
+        // Try to load a system font or embedded fallback
+        let font_data = self.load_font_data()?;
+        let font = Font::from_bytes(font_data, FontSettings::default())
+            .map_err(|e| format!("Failed to parse font: {:?}", e))?;
+
+        // Cache the font
+        let mut cache = self.font_cache.write().await;
+        cache.insert(font_key, font.clone());
+
+        Ok(font)
+    }
+
+    fn load_font_data(&self) -> Result<Vec<u8>, String> {
+        // Try common system font paths
+        let font_paths = [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",           // Debian/Ubuntu
+            "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf",         // Fedora/RHEL
+            "/System/Library/Fonts/Helvetica.ttc",                        // macOS
+            "C:\\Windows\\Fonts\\arial.ttf",                              // Windows
+        ];
+
+        for path in &font_paths {
+            if let Ok(data) = std::fs::read(path) {
+                println!("Loaded font from: {}", path);
+                return Ok(data);
+            }
+        }
+
+        // Fallback to embedded minimal font data (Noto Sans Regular subset)
+        // This is a minimal fallback - in production, bundle a full font file
+        Err("No system fonts found. Please install DejaVu Sans or another TrueType font.".to_string())
+    }
     
     async fn update_all_animations(&self) {
         let mut config = self.config.write().await;
@@ -616,28 +663,91 @@ impl LayerManager {
         }
     }
     
-    async fn render_data_row_layer(&self, layer: &Layer, text: &str, bg_color: (u8, u8, u8, u8), text_color: (u8, u8, u8, u8), _font_size: u32, _alignment: &str, composite: &mut RgbaImage) -> Result<(), String> {
+    async fn render_data_row_layer(&self, layer: &Layer, text: &str, bg_color: (u8, u8, u8, u8), text_color: (u8, u8, u8, u8), font_size: u32, alignment: &str, composite: &mut RgbaImage) -> Result<(), String> {
         // First render background
-        let bg_rgba = Rgba([bg_color.0, bg_color.1, bg_color.2, bg_color.3]);
-        
         for y in layer.position.y..(layer.position.y + layer.position.height) {
             for x in layer.position.x..(layer.position.x + layer.position.width) {
                 if x < composite.width() && y < composite.height() {
                     let final_alpha = (bg_color.3 as f32 * layer.opacity) as u8;
                     let pixel_color = Rgba([bg_color.0, bg_color.1, bg_color.2, final_alpha]);
-                    
+
                     if let Some(existing_pixel) = composite.get_pixel_mut_checked(x, y) {
                         *existing_pixel = self.blend_pixels(*existing_pixel, pixel_color);
                     }
                 }
             }
         }
-        
-        // TODO: Implement text rendering using a font library
-        // For now, we'll just render a colored bar
-        // In a full implementation, we'd use a library like rusttype or fontdue
-        // to render the text with the specified font size and alignment
-        
+
+        // Load font
+        let font = match self.get_or_load_font().await {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!("Warning: Could not load font: {}. Text will not be rendered.", e);
+                return Ok(());
+            }
+        };
+
+        // Calculate text metrics
+        let scale = font_size as f32;
+        let mut total_width = 0.0f32;
+        let mut max_height = 0f32;
+
+        // Measure text to determine total width
+        for ch in text.chars() {
+            let (metrics, _) = font.rasterize(ch, scale);
+            total_width += metrics.advance_width;
+            max_height = max_height.max(metrics.height as f32);
+        }
+
+        // Calculate starting x position based on alignment
+        let start_x = match alignment {
+            "center" => layer.position.x + ((layer.position.width as f32 - total_width) / 2.0) as u32,
+            "right" => layer.position.x + layer.position.width - total_width as u32,
+            _ => layer.position.x + 10, // left (with 10px padding)
+        };
+
+        // Calculate vertical centering
+        let start_y = layer.position.y + ((layer.position.height as f32 - max_height) / 2.0) as u32;
+
+        // Render each character
+        let mut current_x = start_x as f32;
+
+        for ch in text.chars() {
+            let (metrics, bitmap) = font.rasterize(ch, scale);
+
+            // Skip whitespace rendering (but still advance)
+            if !bitmap.is_empty() {
+                // Calculate glyph position
+                let glyph_x = (current_x + metrics.xmin as f32) as u32;
+                let glyph_y = start_y + font_size - metrics.ymin as u32 - metrics.height as u32;
+
+                // Render glyph bitmap
+                for (i, &coverage) in bitmap.iter().enumerate() {
+                    if coverage > 0 {
+                        let px = glyph_x + (i % metrics.width) as u32;
+                        let py = glyph_y + (i / metrics.width) as u32;
+
+                        // Check bounds
+                        if px >= layer.position.x && px < layer.position.x + layer.position.width &&
+                           py >= layer.position.y && py < layer.position.y + layer.position.height &&
+                           px < composite.width() && py < composite.height() {
+
+                            // Apply text color with coverage as alpha
+                            let alpha = ((coverage as f32 / 255.0) * (text_color.3 as f32 / 255.0) * layer.opacity * 255.0) as u8;
+                            let text_pixel = Rgba([text_color.0, text_color.1, text_color.2, alpha]);
+
+                            if let Some(existing_pixel) = composite.get_pixel_mut_checked(px, py) {
+                                *existing_pixel = self.blend_pixels(*existing_pixel, text_pixel);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Advance to next character position
+            current_x += metrics.advance_width;
+        }
+
         Ok(())
     }
     

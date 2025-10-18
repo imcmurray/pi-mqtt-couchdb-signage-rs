@@ -25,6 +25,7 @@ warp = "0.3"
 couch_rs = { version = "0.10", default-features = false }
 url = "2.0"
 sysinfo = "0.29"
+fontdue = "0.9"
 
 [build-dependencies]
 chrono = "0.4"
