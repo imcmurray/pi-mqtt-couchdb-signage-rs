@@ -5,6 +5,8 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const path = require('path');
+const swaggerUi = require('swagger-ui-express');
+const swaggerSpec = require('./config/swagger');
 
 // Multi-layer specific imports
 const config = require('./config/multilayer.config');
@@ -74,18 +76,61 @@ if (config.isDevelopment()) {
 app.use(express.static(path.join(__dirname, '../public')));
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
-// Health check endpoint
+// API Documentation
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+  customCss: '.swagger-ui .topbar { display: none }',
+  customSiteTitle: 'Digital Signage API Docs'
+}));
+
+// Serve OpenAPI spec as JSON
+app.get('/api-docs.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.send(swaggerSpec);
+});
+
+/**
+ * @openapi
+ * /health:
+ *   get:
+ *     summary: Health check endpoint
+ *     description: Returns the health status of the server and its components
+ *     tags:
+ *       - Health
+ *     responses:
+ *       200:
+ *         description: Server is healthy
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/HealthResponse'
+ */
 app.get('/health', (req, res) => {
-  res.json({ 
+  res.json({
     status: 'ok',
     mode: 'multi-layer',
     timestamp: new Date().toISOString(),
     databases: config.database.databases,
-    mqtt_prefix: config.mqtt.topics.prefix
+    mqtt_prefix: config.mqtt.topics.prefix,
+    api_docs: '/api-docs'
   });
 });
 
-// Version endpoint
+/**
+ * @openapi
+ * /api/version:
+ *   get:
+ *     summary: Get version information
+ *     description: Returns git version, commit hash, branch, and build information
+ *     tags:
+ *       - Health
+ *     responses:
+ *       200:
+ *         description: Version information
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/VersionResponse'
+ */
 app.get('/api/version', (req, res) => {
   const fs = require('fs');
   const { execSync } = require('child_process');
@@ -305,6 +350,7 @@ Multi-layer Digital Signage Server
 ========================================
 Mode: ${config.server.environment}
 Server: http://${host}:${port}
+API Docs: http://${host}:${port}/api-docs
 Databases: ${Object.values(config.database.databases).join(', ')}
 MQTT Prefix: ${config.mqtt.topics.prefix}
 WebSocket: ws://${host}:${port}
