@@ -54,6 +54,39 @@ const delaySchema = Joi.object({
 });
 
 class CourtHearingController {
+  /**
+   * @openapi
+   * /api/hearings:
+   *   post:
+   *     summary: Create court hearing
+   *     description: Creates a new court hearing and refreshes display
+   *     tags:
+   *       - Court Hearings
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             $ref: '#/components/schemas/CourtHearing'
+   *     responses:
+   *       201:
+   *         description: Hearing created
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                 data:
+   *                   $ref: '#/components/schemas/CourtHearing'
+   *       400:
+   *         description: Validation error
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/ValidationError'
+   */
   async createHearing(req, res) {
     const { error, value } = hearingSchema.validate(req.body);
 
