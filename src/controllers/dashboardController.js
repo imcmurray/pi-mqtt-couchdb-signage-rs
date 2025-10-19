@@ -2,6 +2,58 @@ const TV = require('../models/tv');
 const Image = require('../models/image');
 
 class DashboardController {
+  /**
+   * @openapi
+   * /api/dashboard:
+   *   get:
+   *     summary: Get dashboard overview
+   *     description: Returns system overview with TV status and image statistics
+   *     tags:
+   *       - Dashboard
+   *     responses:
+   *       200:
+   *         description: Dashboard data
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 stats:
+   *                   type: object
+   *                   properties:
+   *                     total_tvs:
+   *                       type: integer
+   *                     online_tvs:
+   *                       type: integer
+   *                     offline_tvs:
+   *                       type: integer
+   *                     total_images:
+   *                       type: integer
+   *                     active_images:
+   *                       type: integer
+   *                     last_updated:
+   *                       type: string
+   *                       format: date-time
+   *                 tvs:
+   *                   type: array
+   *                   items:
+   *                     type: object
+   *                     properties:
+   *                       id:
+   *                         type: string
+   *                       name:
+   *                         type: string
+   *                       location:
+   *                         type: string
+   *                       status:
+   *                         type: string
+   *                       current_image_id:
+   *                         type: string
+   *                       last_heartbeat:
+   *                         type: string
+   *                       assigned_images_count:
+   *                         type: integer
+   */
   async getOverview(req, res) {
     const [allTvs, allImages] = await Promise.all([
       TV.findAll(),

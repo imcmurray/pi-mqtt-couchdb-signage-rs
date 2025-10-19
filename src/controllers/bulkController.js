@@ -33,7 +33,72 @@ const bulkCommandSchema = Joi.object({
 });
 
 /**
- * Get multi-TV grid view data
+ * @openapi
+ * /api/bulk/grid:
+ *   get:
+ *     summary: Get multi-TV grid view
+ *     description: Returns comprehensive grid view data for all TVs with layer information and location grouping
+ *     tags:
+ *       - Bulk Operations
+ *     responses:
+ *       200:
+ *         description: Grid view data
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     tvs:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           tv_id:
+ *                             type: string
+ *                             example: tv-001
+ *                           _id:
+ *                             type: string
+ *                           location:
+ *                             type: string
+ *                             example: Courtroom 1
+ *                           status:
+ *                             type: string
+ *                             enum: [online, offline, unknown]
+ *                           orientation:
+ *                             type: string
+ *                             enum: [landscape, portrait]
+ *                           has_layer_support:
+ *                             type: boolean
+ *                           layer_count:
+ *                             type: integer
+ *                           active_layer_count:
+ *                             type: integer
+ *                           last_heartbeat:
+ *                             type: string
+ *                             format: date-time
+ *                           is_online:
+ *                             type: boolean
+ *                           current_image:
+ *                             type: string
+ *                     by_location:
+ *                       type: object
+ *                       description: TVs grouped by location
+ *                       additionalProperties:
+ *                         type: array
+ *                         items:
+ *                           type: object
+ *                     total_count:
+ *                       type: integer
+ *                     online_count:
+ *                       type: integer
+ *                     layer_support_count:
+ *                       type: integer
  */
 async function getGridView(req, res) {
   try {
@@ -87,7 +152,90 @@ async function getGridView(req, res) {
 }
 
 /**
- * Bulk update multiple TVs
+ * @openapi
+ * /api/bulk/update:
+ *   post:
+ *     summary: Bulk update multiple TVs
+ *     description: Performs batch updates on multiple TVs with a single request. Supports configuration updates, preset application, and command sending.
+ *     tags:
+ *       - Bulk Operations
+ *     security:
+ *       - AdminAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - tv_ids
+ *               - updates
+ *               - operation
+ *             properties:
+ *               tv_ids:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 minItems: 1
+ *                 description: Array of TV IDs to update
+ *                 example: ["tv-001", "tv-002", "tv-003"]
+ *               operation:
+ *                 type: string
+ *                 enum: [update_config, apply_preset, send_command]
+ *                 description: Type of operation to perform
+ *               updates:
+ *                 type: object
+ *                 description: Operation-specific data
+ *                 example:
+ *                   name: "Updated Name"
+ *                   location: "New Location"
+ *     responses:
+ *       200:
+ *         description: Bulk update completed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     success:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           tv_id:
+ *                             type: string
+ *                           message:
+ *                             type: string
+ *                     failed:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           tv_id:
+ *                             type: string
+ *                           error:
+ *                             type: string
+ *                 summary:
+ *                   type: object
+ *                   properties:
+ *                     total:
+ *                       type: integer
+ *                     succeeded:
+ *                       type: integer
+ *                     failed:
+ *                       type: integer
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
  */
 async function bulkUpdateTVs(req, res) {
   try {
@@ -167,7 +315,84 @@ async function bulkUpdateTVs(req, res) {
 }
 
 /**
- * Apply operation to all TVs in a location
+ * @openapi
+ * /api/bulk/location:
+ *   post:
+ *     summary: Location-based batch operation
+ *     description: Applies an operation to all TVs in a specific location. Supports preset application, layer creation/deletion, and command broadcasting.
+ *     tags:
+ *       - Bulk Operations
+ *     security:
+ *       - AdminAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - location
+ *               - operation
+ *               - data
+ *             properties:
+ *               location:
+ *                 type: string
+ *                 description: Location name to target
+ *                 example: Courtroom 1
+ *               operation:
+ *                 type: string
+ *                 enum: [apply_preset, create_layer, delete_layers, send_command]
+ *                 description: Operation to perform on all TVs in location
+ *               data:
+ *                 type: object
+ *                 description: Operation-specific parameters
+ *                 example:
+ *                   preset_id: "court-basic-3zone"
+ *     responses:
+ *       200:
+ *         description: Location operation completed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     success:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                     failed:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                 summary:
+ *                   type: object
+ *                   properties:
+ *                     location:
+ *                       type: string
+ *                     total_tvs:
+ *                       type: integer
+ *                     succeeded:
+ *                       type: integer
+ *                     failed:
+ *                       type: integer
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *       404:
+ *         description: No TVs found in location
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  */
 async function locationOperation(req, res) {
   try {
@@ -289,7 +514,101 @@ async function locationOperation(req, res) {
 }
 
 /**
- * Create same layer on multiple TVs
+ * @openapi
+ * /api/bulk/layer:
+ *   post:
+ *     summary: Bulk create layer
+ *     description: Creates the same layer configuration on multiple TVs simultaneously
+ *     tags:
+ *       - Bulk Operations
+ *     security:
+ *       - AdminAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - tv_ids
+ *               - layer_config
+ *             properties:
+ *               tv_ids:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 minItems: 1
+ *                 description: Array of TV IDs to create layer on
+ *                 example: ["tv-001", "tv-002", "tv-003"]
+ *               layer_config:
+ *                 type: object
+ *                 description: Layer configuration to apply
+ *                 properties:
+ *                   name:
+ *                     type: string
+ *                     example: Emergency Alert
+ *                   type:
+ *                     type: string
+ *                     enum: [image, text, video]
+ *                   position:
+ *                     $ref: '#/components/schemas/Position'
+ *                   visible:
+ *                     type: boolean
+ *                     default: true
+ *                   z_index:
+ *                     type: integer
+ *                     minimum: 0
+ *                     maximum: 100
+ *                     default: 10
+ *     responses:
+ *       200:
+ *         description: Bulk layer creation completed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     success:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           tv_id:
+ *                             type: string
+ *                           layer_id:
+ *                             type: string
+ *                           message:
+ *                             type: string
+ *                     failed:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           tv_id:
+ *                             type: string
+ *                           error:
+ *                             type: string
+ *                 summary:
+ *                   type: object
+ *                   properties:
+ *                     total:
+ *                       type: integer
+ *                     succeeded:
+ *                       type: integer
+ *                     failed:
+ *                       type: integer
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
  */
 async function bulkCreateLayer(req, res) {
   try {
@@ -355,7 +674,92 @@ async function bulkCreateLayer(req, res) {
 }
 
 /**
- * Send command to multiple TVs
+ * @openapi
+ * /api/bulk/command:
+ *   post:
+ *     summary: Bulk send command
+ *     description: Sends the same control command to multiple TVs via MQTT
+ *     tags:
+ *       - Bulk Operations
+ *     security:
+ *       - AdminAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - tv_ids
+ *               - command
+ *             properties:
+ *               tv_ids:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 minItems: 1
+ *                 description: Array of TV IDs to send command to
+ *                 example: ["tv-001", "tv-002", "tv-003"]
+ *               command:
+ *                 type: string
+ *                 enum: [play, pause, next, previous, reboot, refresh_layers]
+ *                 description: Command to send to all specified TVs
+ *                 example: pause
+ *     responses:
+ *       200:
+ *         description: Commands sent successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     success:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           tv_id:
+ *                             type: string
+ *                           command:
+ *                             type: string
+ *                     failed:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           tv_id:
+ *                             type: string
+ *                           error:
+ *                             type: string
+ *                 summary:
+ *                   type: object
+ *                   properties:
+ *                     command:
+ *                       type: string
+ *                     total:
+ *                       type: integer
+ *                     succeeded:
+ *                       type: integer
+ *                     failed:
+ *                       type: integer
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *       503:
+ *         description: MQTT service unavailable
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  */
 async function bulkSendCommand(req, res) {
   try {
@@ -418,7 +822,44 @@ async function bulkSendCommand(req, res) {
 }
 
 /**
- * Get all unique locations
+ * @openapi
+ * /api/bulk/locations:
+ *   get:
+ *     summary: Get all locations
+ *     description: Returns all unique TV locations with statistics for each location
+ *     tags:
+ *       - Bulk Operations
+ *     responses:
+ *       200:
+ *         description: Location list with statistics
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       location:
+ *                         type: string
+ *                         example: Courtroom 1
+ *                       tv_count:
+ *                         type: integer
+ *                         description: Total TVs in this location
+ *                       layer_support_count:
+ *                         type: integer
+ *                         description: TVs with layer support
+ *                       online_count:
+ *                         type: integer
+ *                         description: Currently online TVs
+ *                 count:
+ *                   type: integer
+ *                   description: Total number of unique locations
  */
 async function getLocations(req, res) {
   try {

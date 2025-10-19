@@ -116,6 +116,32 @@ class CourtHearingController {
     }
   }
 
+  /**
+   * @openapi
+   * /api/hearings:
+   *   get:
+   *     summary: Get all hearings
+   *     description: Returns all court hearings in the system
+   *     tags:
+   *       - Court Hearings
+   *     responses:
+   *       200:
+   *         description: List of all hearings
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                   example: true
+   *                 data:
+   *                   type: array
+   *                   items:
+   *                     $ref: '#/components/schemas/CourtHearing'
+   *                 count:
+   *                   type: integer
+   */
   async getAllHearings(req, res) {
     try {
       const hearings = await CourtHearing.findAll();
@@ -133,6 +159,36 @@ class CourtHearingController {
     }
   }
 
+  /**
+   * @openapi
+   * /api/hearings/today:
+   *   get:
+   *     summary: Get today's schedule
+   *     description: Returns all hearings scheduled for today
+   *     tags:
+   *       - Court Hearings
+   *     responses:
+   *       200:
+   *         description: Today's hearing schedule
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                   example: true
+   *                 data:
+   *                   type: array
+   *                   items:
+   *                     $ref: '#/components/schemas/CourtHearing'
+   *                 count:
+   *                   type: integer
+   *                 date:
+   *                   type: string
+   *                   format: date
+   *                   example: "2025-10-18"
+   */
   async getTodaysSchedule(req, res) {
     try {
       const hearings = await CourtHearing.findTodaysSchedule();
@@ -151,6 +207,42 @@ class CourtHearingController {
     }
   }
 
+  /**
+   * @openapi
+   * /api/hearings/upcoming:
+   *   get:
+   *     summary: Get upcoming hearings
+   *     description: Returns hearings scheduled within the specified timeframe
+   *     tags:
+   *       - Court Hearings
+   *     parameters:
+   *       - in: query
+   *         name: hours
+   *         schema:
+   *           type: integer
+   *           default: 24
+   *         description: Number of hours to look ahead
+   *         example: 48
+   *     responses:
+   *       200:
+   *         description: Upcoming hearings
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                   example: true
+   *                 data:
+   *                   type: array
+   *                   items:
+   *                     $ref: '#/components/schemas/CourtHearing'
+   *                 count:
+   *                   type: integer
+   *                 timeframe_hours:
+   *                   type: integer
+   */
   async getUpcomingHearings(req, res) {
     try {
       const hours = parseInt(req.query.hours) || 24;
@@ -170,6 +262,50 @@ class CourtHearingController {
     }
   }
 
+  /**
+   * @openapi
+   * /api/hearings/date/{date}:
+   *   get:
+   *     summary: Get hearings by date
+   *     description: Returns all hearings for a specific date
+   *     tags:
+   *       - Court Hearings
+   *     parameters:
+   *       - in: path
+   *         name: date
+   *         required: true
+   *         schema:
+   *           type: string
+   *           format: date
+   *         description: Date in YYYY-MM-DD format
+   *         example: "2025-10-20"
+   *     responses:
+   *       200:
+   *         description: Hearings for the specified date
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                   example: true
+   *                 data:
+   *                   type: array
+   *                   items:
+   *                     $ref: '#/components/schemas/CourtHearing'
+   *                 count:
+   *                   type: integer
+   *                 date:
+   *                   type: string
+   *                   format: date
+   *       400:
+   *         description: Invalid date format
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/ErrorResponse'
+   */
   async getHearingsByDate(req, res) {
     try {
       const { date } = req.params;
@@ -198,6 +334,42 @@ class CourtHearingController {
     }
   }
 
+  /**
+   * @openapi
+   * /api/hearings/room/{room}:
+   *   get:
+   *     summary: Get hearings by courtroom
+   *     description: Returns all hearings for a specific courtroom
+   *     tags:
+   *       - Court Hearings
+   *     parameters:
+   *       - in: path
+   *         name: room
+   *         required: true
+   *         schema:
+   *           type: string
+   *         description: Courtroom identifier
+   *         example: "Courtroom 1"
+   *     responses:
+   *       200:
+   *         description: Hearings for the specified courtroom
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                   example: true
+   *                 data:
+   *                   type: array
+   *                   items:
+   *                     $ref: '#/components/schemas/CourtHearing'
+   *                 count:
+   *                   type: integer
+   *                 court_room:
+   *                   type: string
+   */
   async getHearingsByRoom(req, res) {
     try {
       const { room } = req.params;
@@ -217,6 +389,42 @@ class CourtHearingController {
     }
   }
 
+  /**
+   * @openapi
+   * /api/hearings/{id}:
+   *   get:
+   *     summary: Get hearing by ID
+   *     description: Returns a specific hearing by its ID
+   *     tags:
+   *       - Court Hearings
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *         description: Hearing document ID
+   *         example: "hearing-12345"
+   *     responses:
+   *       200:
+   *         description: Hearing found
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                   example: true
+   *                 data:
+   *                   $ref: '#/components/schemas/CourtHearing'
+   *       404:
+   *         description: Hearing not found
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/ErrorResponse'
+   */
   async getHearingById(req, res) {
     try {
       const { id } = req.params;
@@ -241,6 +449,75 @@ class CourtHearingController {
     }
   }
 
+  /**
+   * @openapi
+   * /api/hearings/{id}:
+   *   put:
+   *     summary: Update hearing
+   *     description: Updates an existing court hearing and refreshes display if significant changes are made
+   *     tags:
+   *       - Court Hearings
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *         description: Hearing document ID
+   *         example: "hearing-12345"
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               case_number:
+   *                 type: string
+   *                 maxLength: 100
+   *               court_room:
+   *                 type: string
+   *                 maxLength: 50
+   *               scheduled_time:
+   *                 type: string
+   *                 format: date-time
+   *               parties:
+   *                 oneOf:
+   *                   - type: string
+   *                   - type: object
+   *               judge:
+   *                 type: string
+   *               hearing_type:
+   *                 type: string
+   *                 enum: [general, trial, motion, arraignment, sentencing]
+   *               status:
+   *                 type: string
+   *                 enum: [scheduled, in_progress, delayed, completed, cancelled]
+   *     responses:
+   *       200:
+   *         description: Hearing updated
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                 data:
+   *                   $ref: '#/components/schemas/CourtHearing'
+   *       400:
+   *         description: Validation error
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/ValidationError'
+   *       404:
+   *         description: Hearing not found
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/ErrorResponse'
+   */
   async updateHearing(req, res) {
     try {
       const { id } = req.params;
@@ -284,6 +561,43 @@ class CourtHearingController {
     }
   }
 
+  /**
+   * @openapi
+   * /api/hearings/{id}:
+   *   delete:
+   *     summary: Delete hearing
+   *     description: Deletes a court hearing and refreshes display
+   *     tags:
+   *       - Court Hearings
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *         description: Hearing document ID
+   *         example: "hearing-12345"
+   *     responses:
+   *       200:
+   *         description: Hearing deleted
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                   example: true
+   *                 message:
+   *                   type: string
+   *                   example: "Hearing deleted successfully"
+   *       404:
+   *         description: Hearing not found
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/ErrorResponse'
+   */
   async deleteHearing(req, res) {
     try {
       const { id } = req.params;
@@ -313,6 +627,71 @@ class CourtHearingController {
     }
   }
 
+  /**
+   * @openapi
+   * /api/hearings/{id}/delay:
+   *   post:
+   *     summary: Mark hearing delayed
+   *     description: Marks a hearing as delayed with reason and duration, then refreshes display
+   *     tags:
+   *       - Court Hearings
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *         description: Hearing document ID
+   *         example: "hearing-12345"
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - minutes
+   *               - reason
+   *             properties:
+   *               minutes:
+   *                 type: integer
+   *                 minimum: 1
+   *                 maximum: 480
+   *                 description: Delay duration in minutes
+   *                 example: 30
+   *               reason:
+   *                 type: string
+   *                 maxLength: 500
+   *                 description: Reason for delay
+   *                 example: "Judge running late"
+   *     responses:
+   *       200:
+   *         description: Hearing marked as delayed
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                   example: true
+   *                 data:
+   *                   $ref: '#/components/schemas/CourtHearing'
+   *                 message:
+   *                   type: string
+   *       400:
+   *         description: Validation error
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/ValidationError'
+   *       404:
+   *         description: Hearing not found
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/ErrorResponse'
+   */
   async markDelayed(req, res) {
     try {
       const { id } = req.params;
@@ -352,6 +731,45 @@ class CourtHearingController {
     }
   }
 
+  /**
+   * @openapi
+   * /api/hearings/{id}/in-progress:
+   *   post:
+   *     summary: Mark hearing in progress
+   *     description: Marks a hearing as currently in progress and refreshes display
+   *     tags:
+   *       - Court Hearings
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *         description: Hearing document ID
+   *         example: "hearing-12345"
+   *     responses:
+   *       200:
+   *         description: Hearing marked as in progress
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                   example: true
+   *                 data:
+   *                   $ref: '#/components/schemas/CourtHearing'
+   *                 message:
+   *                   type: string
+   *                   example: "Hearing marked as in progress"
+   *       404:
+   *         description: Hearing not found
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/ErrorResponse'
+   */
   async markInProgress(req, res) {
     try {
       const { id } = req.params;
@@ -382,6 +800,45 @@ class CourtHearingController {
     }
   }
 
+  /**
+   * @openapi
+   * /api/hearings/{id}/completed:
+   *   post:
+   *     summary: Mark hearing completed
+   *     description: Marks a hearing as completed and removes it from active display
+   *     tags:
+   *       - Court Hearings
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *         description: Hearing document ID
+   *         example: "hearing-12345"
+   *     responses:
+   *       200:
+   *         description: Hearing marked as completed
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                   example: true
+   *                 data:
+   *                   $ref: '#/components/schemas/CourtHearing'
+   *                 message:
+   *                   type: string
+   *                   example: "Hearing marked as completed"
+   *       404:
+   *         description: Hearing not found
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/ErrorResponse'
+   */
   async markCompleted(req, res) {
     try {
       const { id } = req.params;
@@ -412,6 +869,64 @@ class CourtHearingController {
     }
   }
 
+  /**
+   * @openapi
+   * /api/hearings/{id}/cancel:
+   *   post:
+   *     summary: Cancel hearing
+   *     description: Cancels a hearing with a reason and refreshes display
+   *     tags:
+   *       - Court Hearings
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *         description: Hearing document ID
+   *         example: "hearing-12345"
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - reason
+   *             properties:
+   *               reason:
+   *                 type: string
+   *                 description: Cancellation reason
+   *                 example: "Settlement reached"
+   *     responses:
+   *       200:
+   *         description: Hearing cancelled
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                   example: true
+   *                 data:
+   *                   $ref: '#/components/schemas/CourtHearing'
+   *                 message:
+   *                   type: string
+   *                   example: "Hearing cancelled"
+   *       400:
+   *         description: Missing cancellation reason
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/ErrorResponse'
+   *       404:
+   *         description: Hearing not found
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/ErrorResponse'
+   */
   async cancelHearing(req, res) {
     try {
       const { id } = req.params;
@@ -451,6 +966,72 @@ class CourtHearingController {
     }
   }
 
+  /**
+   * @openapi
+   * /api/hearings/import:
+   *   post:
+   *     summary: Import hearings from CSV
+   *     description: Bulk imports court hearings from CSV data and refreshes display
+   *     tags:
+   *       - Court Hearings
+   *     security:
+   *       - AdminAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - hearings
+   *             properties:
+   *               hearings:
+   *                 type: array
+   *                 items:
+   *                   type: object
+   *                   properties:
+   *                     case_number:
+   *                       type: string
+   *                     court_room:
+   *                       type: string
+   *                     scheduled_time:
+   *                       type: string
+   *                       format: date-time
+   *                     parties:
+   *                       type: string
+   *                     judge:
+   *                       type: string
+   *               source:
+   *                 type: string
+   *                 default: "csv_import"
+   *                 description: Import source identifier
+   *     responses:
+   *       201:
+   *         description: Hearings imported successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                   example: true
+   *                 data:
+   *                   type: array
+   *                   items:
+   *                     $ref: '#/components/schemas/CourtHearing'
+   *                 count:
+   *                   type: integer
+   *                 message:
+   *                   type: string
+   *                   example: "Successfully imported 5 hearings"
+   *       400:
+   *         description: Invalid CSV data
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/ErrorResponse'
+   */
   async importFromCSV(req, res) {
     try {
       const { hearings, source } = req.body;
@@ -481,6 +1062,38 @@ class CourtHearingController {
     }
   }
 
+  /**
+   * @openapi
+   * /api/hearings/stats:
+   *   get:
+   *     summary: Get hearing statistics
+   *     description: Returns aggregated statistics about court hearings
+   *     tags:
+   *       - Court Hearings
+   *     responses:
+   *       200:
+   *         description: Hearing statistics
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                   example: true
+   *                 data:
+   *                   type: object
+   *                   description: Statistical data about hearings
+   *                   properties:
+   *                     total_hearings:
+   *                       type: integer
+   *                     by_status:
+   *                       type: object
+   *                     by_courtroom:
+   *                       type: object
+   *                     today_count:
+   *                       type: integer
+   */
   async getStats(req, res) {
     try {
       const stats = await CourtHearing.getStats();
@@ -497,6 +1110,34 @@ class CourtHearingController {
     }
   }
 
+  /**
+   * @openapi
+   * /api/hearings/refresh:
+   *   post:
+   *     summary: Refresh court schedule display
+   *     description: Manually triggers a refresh of the court schedule on all affected TVs
+   *     tags:
+   *       - Court Hearings
+   *     security:
+   *       - AdminAuth: []
+   *     responses:
+   *       200:
+   *         description: Display refreshed successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                   example: true
+   *                 data:
+   *                   type: object
+   *                   description: Refresh operation result
+   *                 message:
+   *                   type: string
+   *                   example: "Court schedule display refreshed"
+   */
   async refreshDisplay(req, res) {
     try {
       const result = await courtDisplayService.refreshScheduleDisplay();
