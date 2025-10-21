@@ -22,6 +22,7 @@ const hearingSchema = Joi.object({
   hearing_type: Joi.string().valid('general', 'trial', 'motion', 'arraignment', 'sentencing').optional(),
 
   // Bankruptcy-specific fields (optional)
+  schedule_id: Joi.string().pattern(/^\d{1,10}$/).optional().allow(null, ''), // Numeric ID from bankruptcy system, max 10 digits
   case_title: Joi.string().max(500).optional().allow(null, ''),
   hearing_matter: Joi.string().max(1000).optional().allow(null, ''),
   case_chapter: Joi.alternatives().try(Joi.string(), Joi.number()).optional().allow(null),
@@ -54,6 +55,15 @@ const updateHearingSchema = Joi.object({
   judge: Joi.string().max(200).optional().allow(null, ''),
   hearing_type: Joi.string().valid('general', 'trial', 'motion', 'arraignment', 'sentencing').optional(),
   status: Joi.string().valid('scheduled', 'in_progress', 'delayed', 'completed', 'cancelled').optional(),
+
+  // Bankruptcy-specific fields
+  schedule_id: Joi.string().pattern(/^\d{1,10}$/).optional().allow(null, ''), // Numeric ID from bankruptcy system, max 10 digits
+  case_title: Joi.string().max(500).optional().allow(null, ''),
+  hearing_matter: Joi.string().max(1000).optional().allow(null, ''),
+  case_chapter: Joi.alternatives().try(Joi.string(), Joi.number()).optional().allow(null),
+  hearing_moving_party: Joi.string().max(200).optional().allow(null, ''),
+  docket_entry: Joi.string().max(100).optional().allow(null, ''),
+
   display_config: Joi.object().optional()
 });
 

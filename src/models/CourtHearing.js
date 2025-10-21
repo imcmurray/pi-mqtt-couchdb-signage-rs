@@ -6,8 +6,8 @@ class CourtHearing extends BaseModel {
   constructor(data) {
     super(data, 'court_hearing');
 
-    // Core hearing information
-    this.hearing_id = data.hearing_id || `hearing_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    // Primary identifier: use schedule_id for bankruptcy cases, case_number for traditional cases
+    this.hearing_id = data.schedule_id || data.case_number;
     this.case_number = data.case_number;
     this.court_room = data.court_room;
     this.scheduled_time = data.scheduled_time; // ISO 8601 format
@@ -16,6 +16,7 @@ class CourtHearing extends BaseModel {
     this.hearing_type = data.hearing_type || 'general'; // general, trial, motion, arraignment
 
     // Bankruptcy-specific fields (optional)
+    this.schedule_id = data.schedule_id || null; // Unique schedule ID from bankruptcy system, e.g., "1720973"
     this.case_title = data.case_title || null; // Debtor name(s), e.g., "Savanna G Smith" or "Andie Arave and McKenzie Atterton"
     this.hearing_matter = data.hearing_matter || null; // Full hearing description, e.g., "Motion to Redeem Property of the Estate"
     this.case_chapter = data.case_chapter || null; // Bankruptcy chapter: 7, 11, 13

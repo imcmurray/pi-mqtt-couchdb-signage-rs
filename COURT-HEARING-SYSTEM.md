@@ -29,6 +29,27 @@ The Court Hearing Integration System automatically generates and manages display
 - Delay indicators when applicable
 - Daily schedule grouping
 
+## Identifier Strategy
+
+The system uses a dual-identifier strategy to accommodate both bankruptcy and traditional court cases:
+
+**Bankruptcy Cases:**
+- Primary ID: `schedule_id` (10-digit numeric identifier from bankruptcy court system)
+- Example: `"schedule_id": "1720973"`
+- The `hearing_id` field is automatically set to the `schedule_id` value
+- Used as the primary key for database storage and API operations
+
+**Traditional Litigation Cases:**
+- Primary ID: `case_number` (court case number)
+- Example: `"case_number": "CV-2025-12345"`
+- The `hearing_id` field is automatically set to the `case_number` value when no `schedule_id` is provided
+
+**Key Points:**
+- The `schedule_id` is a numeric string, max 10 digits
+- It is NOT displayed on TV screens (kept as metadata only)
+- The system automatically prioritizes `schedule_id` over `case_number` for the primary identifier
+- This ensures compatibility with bankruptcy court APIs while maintaining flexibility for traditional cases
+
 ## Architecture
 
 ### Data Flow
@@ -49,7 +70,8 @@ TV Endpoints (pi-slideshow-rs)
 #### Backend
 1. **CourtHearing Model** (`src/models/CourtHearing.js`)
    - Data structure and validation
-   - Bankruptcy-specific fields (case_title, hearing_matter, case_chapter, hearing_moving_party, docket_entry)
+   - Dual-identifier system: `hearing_id` = `schedule_id` (bankruptcy) or `case_number` (traditional)
+   - Bankruptcy-specific fields (schedule_id, case_title, hearing_matter, case_chapter, hearing_moving_party, docket_entry)
    - Query methods (by date, room, status)
    - CSV and JSON import capability
    - Layer conversion logic with smart abbreviation
@@ -226,6 +248,7 @@ curl -X POST http://localhost:3000/api/hearings/import/json \
   -H "Content-Type: application/json" \
   -d '[
     {
+      "Schedule ID": "1720973",
       "Case Number": "25-00001-TLM",
       "Hearing Date & Time": "Wednesday, October 29, 2025 - 09:30",
       "Court Room": "1",
@@ -240,6 +263,7 @@ curl -X POST http://localhost:3000/api/hearings/import/json \
 ```
 
 **Supported Field Names (flexible mapping):**
+- `"Schedule ID"` or `"schedule_id"` or `"scheduleId"` - **10-digit numeric identifier (bankruptcy cases)**
 - `"Case Number"` or `"case_number"`
 - `"Hearing Date & Time"` or `"scheduled_time"`
 - `"Court Room"` or `"court_room"` or `"courtRoom"`

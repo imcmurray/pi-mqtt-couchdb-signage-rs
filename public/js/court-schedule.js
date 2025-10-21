@@ -125,6 +125,8 @@ class CourtScheduleManager {
     const plaintiff = document.getElementById('plaintiff').value.trim();
     const defendant = document.getElementById('defendant').value.trim();
 
+    const scheduleId = document.getElementById('scheduleId').value.trim();
+
     const formData = {
       case_number: document.getElementById('caseNumber').value,
       court_room: document.getElementById('courtRoom').value,
@@ -135,6 +137,7 @@ class CourtScheduleManager {
         defendant: defendant || null
       } : {},
       judge: document.getElementById('judge').value || null,
+      schedule_id: scheduleId || null,
       case_title: document.getElementById('caseTitle').value || null,
       hearing_matter: document.getElementById('hearingMatter').value || null,
       case_chapter: document.getElementById('caseChapter').value || null,

@@ -36,6 +36,7 @@ class HearingImportService {
   parseJSONHearing(item) {
     const caseNumber = item.case_number || item['Case Number'];
     const courtRoom = item.court_room || item['Court Room'] || item.courtRoom;
+    const scheduleId = item.schedule_id || item['Schedule ID'] || item.scheduleId || null;
     let scheduledTime = item.scheduled_time || item['Hearing Date & Time'] || item.scheduledTime;
 
     scheduledTime = this.parseDateTime(scheduledTime);
@@ -46,6 +47,10 @@ class HearingImportService {
       scheduled_time: scheduledTime,
       judge: item.judge || item['Hearing Judge'] || null
     };
+
+    if (scheduleId) {
+      hearingData.schedule_id = scheduleId;
+    }
 
     if (item.case_title || item['Case Title']) {
       hearingData.case_title = item.case_title || item['Case Title'];

@@ -436,18 +436,18 @@
           <div class="form-row">
             <div class="form-group">
               <label for="caseNumber">Case Number *</label>
-              <input type="text" id="caseNumber" required placeholder="CV-2025-12345">
+              <input type="text" id="caseNumber" required placeholder="CV-2025-12345 or 25-00001-TLM">
             </div>
             <div class="form-group">
-              <label for="courtRoom">Court Room *</label>
-              <input type="text" id="courtRoom" required placeholder="101">
+              <label for="scheduleId">Schedule ID (Bankruptcy)</label>
+              <input type="text" id="scheduleId" pattern="\d{1,10}" maxlength="10" placeholder="1720973" title="Numeric ID, max 10 digits">
             </div>
           </div>
 
           <div class="form-row">
             <div class="form-group">
-              <label for="scheduledTime">Scheduled Time *</label>
-              <input type="datetime-local" id="scheduledTime" required>
+              <label for="courtRoom">Court Room *</label>
+              <input type="text" id="courtRoom" required placeholder="101">
             </div>
             <div class="form-group">
               <label for="hearingType">Hearing Type</label>
@@ -459,6 +459,11 @@
                 <option value="sentencing">Sentencing</option>
               </select>
             </div>
+          </div>
+
+          <div class="form-group">
+            <label for="scheduledTime">Scheduled Time *</label>
+            <input type="datetime-local" id="scheduledTime" required>
           </div>
 
           <div class="form-row">
