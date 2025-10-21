@@ -1,5 +1,6 @@
 const BaseModel = require('./BaseModel');
 const multilayerDb = require('../config/multilayer.database');
+const { formatHearingDisplay } = require('../utils/legalAbbreviations');
 
 class CourtHearing extends BaseModel {
   constructor(data) {
@@ -13,6 +14,13 @@ class CourtHearing extends BaseModel {
     this.parties = data.parties || {};
     this.judge = data.judge || null;
     this.hearing_type = data.hearing_type || 'general'; // general, trial, motion, arraignment
+
+    // Bankruptcy-specific fields (optional)
+    this.case_title = data.case_title || null; // Debtor name(s), e.g., "Savanna G Smith" or "Andie Arave and McKenzie Atterton"
+    this.hearing_matter = data.hearing_matter || null; // Full hearing description, e.g., "Motion to Redeem Property of the Estate"
+    this.case_chapter = data.case_chapter || null; // Bankruptcy chapter: 7, 11, 13
+    this.hearing_moving_party = data.hearing_moving_party || null; // Attorney/party filing, e.g., "Beutler, Derek"
+    this.docket_entry = data.docket_entry || null; // Docket entry number, e.g., "1720973"
 
     // Status tracking
     this.status = data.status || 'scheduled'; // scheduled, in_progress, delayed, completed, cancelled
@@ -212,16 +220,7 @@ class CourtHearing extends BaseModel {
    * @returns {string} Formatted hearing text
    */
   getDisplayText() {
-    const time = new Date(this.scheduled_time).toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true
-    });
-
-    const parties = this.formatParties();
-    const room = this.court_room;
-
-    let text = `${time} - Room ${room} - ${parties}`;
+    let text = formatHearingDisplay(this);
 
     if (this.status === 'delayed' && this.delay_minutes > 0) {
       text += ` (Delayed ${this.delay_minutes} min)`;
@@ -394,6 +393,14 @@ class CourtHearing extends BaseModel {
           },
           judge: row.judge,
           hearing_type: row.hearing_type || row.hearingType || row.type || 'general',
+
+          // Bankruptcy-specific fields
+          case_title: row.case_title || row.caseTitle || row.debtor || row.debtors,
+          hearing_matter: row.hearing_matter || row.hearingMatter || row.matter,
+          case_chapter: row.case_chapter || row.caseChapter || row.chapter,
+          hearing_moving_party: row.hearing_moving_party || row.movingParty || row.attorney,
+          docket_entry: row.docket_entry || row.docketEntry || row.entry,
+
           source
         });
 

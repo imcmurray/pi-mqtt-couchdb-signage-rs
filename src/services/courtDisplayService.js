@@ -106,13 +106,15 @@ class CourtDisplayService {
     const rowHeight = 50; // Height of each hearing row
     const maxRows = 20; // Maximum hearings to display
 
-    // Limit to max displayable hearings
-    const displayHearings = hearings.slice(0, maxRows);
+    // Sort hearings by court room, then by time within each room
+    const sortedHearings = hearings.sort((a, b) => {
+      const roomCompare = (a.court_room || '').localeCompare(b.court_room || '');
+      if (roomCompare !== 0) return roomCompare;
+      return new Date(a.scheduled_time) - new Date(b.scheduled_time);
+    });
 
-    // Sort hearings by time (earliest first)
-    displayHearings.sort((a, b) =>
-      new Date(a.scheduled_time) - new Date(b.scheduled_time)
-    );
+    // Limit to max displayable hearings
+    const displayHearings = sortedHearings.slice(0, maxRows);
 
     // Generate layer for each hearing
     for (let i = 0; i < displayHearings.length; i++) {

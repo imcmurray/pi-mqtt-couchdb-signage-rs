@@ -122,17 +122,24 @@ class CourtScheduleManager {
    */
   async addHearing() {
     const form = document.getElementById('hearingForm');
+    const plaintiff = document.getElementById('plaintiff').value.trim();
+    const defendant = document.getElementById('defendant').value.trim();
+
     const formData = {
       case_number: document.getElementById('caseNumber').value,
       court_room: document.getElementById('courtRoom').value,
       scheduled_time: new Date(document.getElementById('scheduledTime').value).toISOString(),
       hearing_type: document.getElementById('hearingType').value,
-      parties: {
-        plaintiff: document.getElementById('plaintiff').value,
-        defendant: document.getElementById('defendant').value
-      },
+      parties: (plaintiff || defendant) ? {
+        plaintiff: plaintiff || null,
+        defendant: defendant || null
+      } : {},
       judge: document.getElementById('judge').value || null,
-      notes: document.getElementById('notes').value || null
+      case_title: document.getElementById('caseTitle').value || null,
+      hearing_matter: document.getElementById('hearingMatter').value || null,
+      case_chapter: document.getElementById('caseChapter').value || null,
+      hearing_moving_party: document.getElementById('hearingMovingParty').value || null,
+      docket_entry: document.getElementById('docketEntry').value || null
     };
 
     try {
@@ -400,6 +407,53 @@ class CourtScheduleManager {
   }
 
   /**
+   * Handle JSON import
+   */
+  async handleJSONImport() {
+    const jsonInput = document.getElementById('jsonInput').value.trim();
+
+    if (!jsonInput) {
+      this.showError('Please paste JSON data to import');
+      return;
+    }
+
+    try {
+      const jsonData = JSON.parse(jsonInput);
+
+      if (!jsonData || (Array.isArray(jsonData) && jsonData.length === 0)) {
+        this.showError('JSON data is empty or invalid');
+        return;
+      }
+
+      const response = await fetch(`${this.apiBase}/import/json`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(jsonData)
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        this.showSuccess(
+          `Imported ${result.imported} hearings successfully!` +
+          (result.failed > 0 ? ` ${result.failed} failed.` : '')
+        );
+        document.getElementById('jsonInput').value = '';
+        await this.loadHearings();
+        await this.loadStats();
+      } else {
+        this.showError('Import failed: ' + result.error);
+      }
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        this.showError('Invalid JSON format. Please check your input.');
+      } else {
+        this.showError('Failed to import JSON: ' + error.message);
+      }
+    }
+  }
+
+  /**
    * Parse CSV file content
    */
   parseCSV(text) {
@@ -491,18 +545,34 @@ class CourtScheduleManager {
         day: 'numeric'
       });
 
-      const parties = hearing.parties ?
-        `${hearing.parties.plaintiff || 'Unknown'} v. ${hearing.parties.defendant || 'Unknown'}` :
-        'Unknown parties';
+      let partiesDisplay = '';
+      if (hearing.case_title) {
+        partiesDisplay = hearing.case_title;
+        if (hearing.case_chapter) {
+          partiesDisplay += `<br><small style="color: #6b7280;">Ch. ${hearing.case_chapter}</small>`;
+        }
+      } else if (hearing.parties) {
+        partiesDisplay = `${hearing.parties.plaintiff || 'Unknown'} v. ${hearing.parties.defendant || 'Unknown'}`;
+      } else {
+        partiesDisplay = 'Unknown parties';
+      }
+
+      let typeDisplay = hearing.hearing_type || 'hearing';
+      if (hearing.hearing_matter) {
+        const truncated = hearing.hearing_matter.length > 40 ?
+          hearing.hearing_matter.substring(0, 37) + '...' :
+          hearing.hearing_matter;
+        typeDisplay = `<span title="${hearing.hearing_matter}">${truncated}</span>`;
+      }
 
       return `
         <tr>
           <td><strong>${time}</strong><br><small style="color: #6b7280;">${date}</small></td>
           <td><strong>${hearing.case_number}</strong></td>
           <td><strong>${hearing.court_room}</strong></td>
-          <td>${parties}</td>
+          <td>${partiesDisplay}</td>
           <td>${hearing.judge || '-'}</td>
-          <td>${hearing.hearing_type || 'hearing'}</td>
+          <td>${typeDisplay}</td>
           <td><span class="status-badge status-${hearing.status}">${hearing.status.replace('_', ' ')}</span></td>
           <td>
             <div class="action-buttons">
@@ -552,11 +622,23 @@ class CourtScheduleManager {
         hour12: true
       });
 
-      const parties = hearing.parties ?
-        `${hearing.parties.plaintiff || 'Unknown'} v. ${hearing.parties.defendant || 'Unknown'}` :
-        'Unknown parties';
+      let displayText = `${time} - Rm ${hearing.court_room} - ${hearing.case_number}`;
 
-      const text = `${time} - Room ${hearing.court_room} - ${parties}`;
+      if (hearing.case_title) {
+        displayText += ` - ${hearing.case_title}`;
+      } else if (hearing.parties && (hearing.parties.plaintiff || hearing.parties.defendant)) {
+        const parties = `${hearing.parties.plaintiff || '?'} v. ${hearing.parties.defendant || '?'}`;
+        displayText += ` - ${parties}`;
+      }
+
+      if (hearing.hearing_matter) {
+        const truncated = hearing.hearing_matter.length > 60 ?
+          hearing.hearing_matter.substring(0, 57) + '...' :
+          hearing.hearing_matter;
+        displayText += ` - ${truncated}`;
+      } else if (hearing.hearing_type) {
+        displayText += ` - ${hearing.hearing_type.charAt(0).toUpperCase() + hearing.hearing_type.slice(1)}`;
+      }
 
       const delayText = hearing.status === 'delayed' && hearing.delay_minutes > 0 ?
         ` (Delayed ${hearing.delay_minutes} min)` : '';
@@ -571,7 +653,7 @@ class CourtScheduleManager {
         else if (minutesUntil < 30) className = 'warning';
       }
 
-      return `<div class="layer-preview-row ${className}">${text}${delayText}</div>`;
+      return `<div class="layer-preview-row ${className}">${displayText}${delayText}</div>`;
     }).join('');
   }
 

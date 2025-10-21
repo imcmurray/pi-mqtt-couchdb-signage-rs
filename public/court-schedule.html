@@ -463,23 +463,45 @@
 
           <div class="form-row">
             <div class="form-group">
-              <label for="plaintiff">Plaintiff *</label>
-              <input type="text" id="plaintiff" required placeholder="John Doe">
+              <label for="plaintiff">Plaintiff</label>
+              <input type="text" id="plaintiff" placeholder="John Doe">
             </div>
             <div class="form-group">
-              <label for="defendant">Defendant *</label>
-              <input type="text" id="defendant" required placeholder="Jane Smith">
+              <label for="defendant">Defendant</label>
+              <input type="text" id="defendant" placeholder="Jane Smith">
             </div>
           </div>
 
           <div class="form-group">
-            <label for="judge">Judge</label>
-            <input type="text" id="judge" placeholder="Hon. Robert Johnson">
+            <label for="caseTitle">Case Title / Debtor Name(s)</label>
+            <input type="text" id="caseTitle" placeholder="Savanna G Smith or Andie Arave and McKenzie Atterton">
           </div>
 
           <div class="form-group">
-            <label for="notes">Notes</label>
-            <textarea id="notes" rows="3" placeholder="Additional information about the hearing"></textarea>
+            <label for="hearingMatter">Hearing Matter</label>
+            <textarea id="hearingMatter" rows="2" placeholder="Motion to Redeem Property of the Estate"></textarea>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="caseChapter">Case Chapter</label>
+              <input type="text" id="caseChapter" placeholder="7, 11, or 13">
+            </div>
+            <div class="form-group">
+              <label for="hearingMovingParty">Moving Party / Attorney</label>
+              <input type="text" id="hearingMovingParty" placeholder="Beutler, Derek">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="docketEntry">Docket Entry</label>
+              <input type="text" id="docketEntry" placeholder="1720973">
+            </div>
+            <div class="form-group">
+              <label for="judge">Judge</label>
+              <input type="text" id="judge" placeholder="Hon. Robert Johnson">
+            </div>
           </div>
 
           <button type="submit" class="btn btn-primary" style="width: 100%;">Add Hearing</button>
@@ -491,6 +513,15 @@
           <label for="csvFile" class="csv-upload-btn">Choose CSV File</label>
           <p style="margin: 10px 0 0 0; font-size: 12px; color: #6b7280;">
             CSV format: case_number, court_room, scheduled_time, plaintiff, defendant, judge, hearing_type
+          </p>
+        </div>
+
+        <div class="csv-import" style="margin-top: 20px;">
+          <h3 style="margin: 0 0 15px 0; font-size: 16px; color: #374151;">📋 Import from JSON</h3>
+          <textarea id="jsonInput" rows="6" placeholder='Paste JSON array or single object&#10;Example: [&#10;  {&#10;    "Case Number": "25-00001-TLM",&#10;    "Hearing Date & Time": "Wednesday, October 29, 2025 - 09:30",&#10;    "Court Room": "1",&#10;    "Case Title": "Savanna G Smith",&#10;    "Hearing Matter": "Motion to Redeem Property...",&#10;    "Case Chapter": "7",&#10;    "Hearing Judge": "Terry L. Myers"&#10;  }&#10;]' style="width: 100%; font-family: monospace; font-size: 12px;"></textarea>
+          <button class="btn btn-success" style="width: 100%; margin-top: 10px;" onclick="courtSchedule.handleJSONImport()">Import JSON</button>
+          <p style="margin: 10px 0 0 0; font-size: 12px; color: #6b7280;">
+            Supports flexible field names: "Case Number" or "case_number", "Hearing Date & Time" or "scheduled_time"
           </p>
         </div>
       </div>

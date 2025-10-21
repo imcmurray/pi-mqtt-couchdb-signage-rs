@@ -1,5 +1,6 @@
 const CourtHearing = require('../models/CourtHearing');
 const courtDisplayService = require('../services/courtDisplayService');
+const hearingImportService = require('../services/hearingImportService');
 const Joi = require('joi');
 
 // Validation schemas
@@ -19,6 +20,14 @@ const hearingSchema = Joi.object({
   ).required(),
   judge: Joi.string().max(200).optional().allow(null, ''),
   hearing_type: Joi.string().valid('general', 'trial', 'motion', 'arraignment', 'sentencing').optional(),
+
+  // Bankruptcy-specific fields (optional)
+  case_title: Joi.string().max(500).optional().allow(null, ''),
+  hearing_matter: Joi.string().max(1000).optional().allow(null, ''),
+  case_chapter: Joi.alternatives().try(Joi.string(), Joi.number()).optional().allow(null),
+  hearing_moving_party: Joi.string().max(200).optional().allow(null, ''),
+  docket_entry: Joi.string().max(100).optional().allow(null, ''),
+
   display_config: Joi.object({
     tv_locations: Joi.array().items(Joi.string()).optional(),
     priority: Joi.number().min(1).max(255).optional(),
@@ -1146,6 +1155,36 @@ class CourtHearingController {
         success: true,
         data: result,
         message: 'Court schedule display refreshed'
+      });
+    } catch (err) {
+      res.status(500).json({
+        success: false,
+        error: err.message
+      });
+    }
+  }
+
+  async importFromJSON(req, res) {
+    try {
+      const jsonData = req.body;
+
+      if (!jsonData || (Array.isArray(jsonData) && jsonData.length === 0)) {
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid JSON data. Expected object or array of hearing objects'
+        });
+      }
+
+      const result = await hearingImportService.importFromJSON(jsonData, 'json_import');
+
+      await courtDisplayService.refreshScheduleDisplay();
+
+      res.status(201).json({
+        success: true,
+        imported: result.success,
+        failed: result.failed,
+        errors: result.errors,
+        message: `Successfully imported ${result.success} hearings${result.failed > 0 ? `, ${result.failed} failed` : ''}`
       });
     } catch (err) {
       res.status(500).json({

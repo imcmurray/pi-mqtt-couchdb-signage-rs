@@ -14,12 +14,18 @@ The Court Hearing Integration System automatically generates and manages display
 - ✅ **Real-Time Updates**: MQTT integration for instant display updates
 - ✅ **Multi-TV Support**: Automatically updates all TVs with layer support
 - ✅ **CSV Import**: Bulk import hearings from court management systems
+- ✅ **JSON Import**: Flexible import from court APIs with field mapping
+- ✅ **Bankruptcy Court Support**: Specialized fields for Chapter 7/11/13 cases
+- ✅ **Smart Text Abbreviation**: Intelligent truncation of long legal descriptions
 - ✅ **Web Admin UI**: Comprehensive interface for managing hearings
 
 ### Display Features
 - Auto-stacking layout (50px rows, max 20 hearings)
 - Responsive positioning starting at y=100
-- Party names, case numbers, room assignments
+- Flexible display format: Case Number + Debtor Names + Abbreviated Matter
+- Smart abbreviation of long hearing descriptions (150+ chars → ~80 chars)
+- Support for both traditional litigation (plaintiff v. defendant) and bankruptcy cases
+- Organized by court room, then time within each room
 - Delay indicators when applicable
 - Daily schedule grouping
 
@@ -43,23 +49,36 @@ TV Endpoints (pi-slideshow-rs)
 #### Backend
 1. **CourtHearing Model** (`src/models/CourtHearing.js`)
    - Data structure and validation
+   - Bankruptcy-specific fields (case_title, hearing_matter, case_chapter, hearing_moving_party, docket_entry)
    - Query methods (by date, room, status)
-   - CSV import capability
-   - Layer conversion logic
+   - CSV and JSON import capability
+   - Layer conversion logic with smart abbreviation
 
-2. **Court Hearing Controller** (`src/controllers/courtHearingController.js`)
+2. **Hearing Import Service** (`src/services/hearingImportService.js`)
+   - JSON/XML data parsing with flexible field mapping
+   - Court calendar date format parsing ("Wednesday, October 29, 2025 - 09:30")
+   - Bulk import with error handling and reporting
+   - Support for multiple field naming conventions
+
+3. **Legal Abbreviations Utility** (`src/utils/legalAbbreviations.js`)
+   - Dictionary of common legal term abbreviations
+   - Intelligent truncation algorithm for long hearing matters
+   - Debtor name abbreviation for multiple parties
+   - Format-preserving abbreviation (preserves first/last names)
+
+4. **Court Hearing Controller** (`src/controllers/courtHearingController.js`)
    - REST API endpoints
    - Joi validation schemas
    - CRUD operations
    - Status management
 
-3. **Court Display Service** (`src/services/courtDisplayService.js`)
+5. **Court Display Service** (`src/services/courtDisplayService.js`)
    - Layer generation from hearings
    - Multi-TV refresh orchestration
    - MQTT publishing
    - Cleanup of old schedules
 
-4. **Layer Automation** (`src/services/layerAutomation.js`)
+6. **Layer Automation** (`src/services/layerAutomation.js`)
    - 5-minute refresh cron job
    - 8 AM morning update
    - 2 AM nightly cleanup
@@ -68,15 +87,18 @@ TV Endpoints (pi-slideshow-rs)
 #### Frontend
 1. **Admin UI** (`public/court-schedule.html`)
    - Hearing management interface
+   - Bankruptcy-specific fields (debtor names, hearing matter, chapter, moving party, docket entry)
    - CSV import form
+   - JSON paste/import interface
    - Status update buttons
-   - Live display preview
+   - Live display preview with smart abbreviation
 
 2. **JavaScript Manager** (`public/js/court-schedule.js`)
    - API communication
    - WebSocket real-time updates
    - CSV parsing
-   - Display preview rendering
+   - JSON import with validation
+   - Display preview rendering with bankruptcy field support
 
 ## API Endpoints
 
@@ -106,6 +128,7 @@ POST   /api/hearings/:id/cancel      # Cancel hearing
 ```
 POST   /api/hearings/refresh-display # Refresh all TV displays
 POST   /api/hearings/import          # Import from CSV
+POST   /api/hearings/import/json     # Import from JSON
 ```
 
 ## Usage
@@ -118,7 +141,7 @@ POST   /api/hearings/import          # Import from CSV
 3. Click "Add Hearing"
 4. Display automatically refreshes
 
-**Via API:**
+**Via API (Traditional Case):**
 ```bash
 curl -X POST http://localhost:3000/api/hearings \
   -H "Content-Type: application/json" \
@@ -132,6 +155,23 @@ curl -X POST http://localhost:3000/api/hearings \
       "defendant": "Jane Smith"
     },
     "judge": "Hon. Robert Martinez"
+  }'
+```
+
+**Via API (Bankruptcy Case):**
+```bash
+curl -X POST http://localhost:3000/api/hearings \
+  -H "Content-Type: application/json" \
+  -d '{
+    "case_number": "25-00001-TLM",
+    "court_room": "1",
+    "scheduled_time": "2025-10-29T09:30:00Z",
+    "case_title": "Savanna G Smith",
+    "hearing_matter": "Motion to Redeem Property of the Estate (Chapter 7, TM Powers) re: 2024 Kia Sportage",
+    "case_chapter": "7",
+    "hearing_moving_party": "Beutler, Derek",
+    "judge": "Hon. Terry L. Myers",
+    "docket_entry": "1720973"
   }'
 ```
 
@@ -167,6 +207,82 @@ curl -X POST http://localhost:3000/api/hearings/import \
       }
     ]
   }'
+```
+
+### Importing from JSON
+
+The JSON import feature supports flexible field mapping and handles multiple date formats commonly used by court systems.
+
+**Via Web UI:**
+1. Visit `http://localhost:3000/court-schedule.html`
+2. Scroll to "Import from JSON" section
+3. Paste JSON array or single object into the text area
+4. Click "Import JSON"
+5. System automatically maps fields and creates hearings
+
+**Via API:**
+```bash
+curl -X POST http://localhost:3000/api/hearings/import/json \
+  -H "Content-Type: application/json" \
+  -d '[
+    {
+      "Case Number": "25-00001-TLM",
+      "Hearing Date & Time": "Wednesday, October 29, 2025 - 09:30",
+      "Court Room": "1",
+      "Case Title": "Savanna G Smith",
+      "Hearing Matter": "Motion to Redeem Property of the Estate",
+      "Case Chapter": "7",
+      "Hearing Moving Party": "Beutler, Derek",
+      "Hearing Judge": "Terry L. Myers",
+      "Docket Entry": "1720973"
+    }
+  ]'
+```
+
+**Supported Field Names (flexible mapping):**
+- `"Case Number"` or `"case_number"`
+- `"Hearing Date & Time"` or `"scheduled_time"`
+- `"Court Room"` or `"court_room"` or `"courtRoom"`
+- `"Case Title"` or `"case_title"` or `"caseTitle"`
+- `"Hearing Matter"` or `"hearing_matter"` or `"hearingMatter"`
+- `"Case Chapter"` or `"case_chapter"` or `"caseChapter"`
+- `"Hearing Moving Party"` or `"hearing_moving_party"` or `"movingParty"`
+- `"Hearing Judge"` or `"judge"`
+- `"Docket Entry"` or `"docket_entry"` or `"docketEntry"`
+
+**Supported Date Formats:**
+- ISO 8601: `"2025-10-29T09:30:00Z"`
+- Court Calendar: `"Wednesday, October 29, 2025 - 09:30"`
+- Any standard JavaScript parseable date string
+
+**Demo File:**
+See `tests/demo-bankruptcy-hearings.json` for complete example data with three bankruptcy hearing cases.
+
+**Response Format:**
+```json
+{
+  "success": true,
+  "imported": 3,
+  "failed": 0,
+  "errors": [],
+  "message": "Successfully imported 3 hearings"
+}
+```
+
+If some hearings fail validation:
+```json
+{
+  "success": true,
+  "imported": 2,
+  "failed": 1,
+  "errors": [
+    {
+      "case_number": "25-00002-TLM",
+      "error": "Invalid date format: Not a valid date"
+    }
+  ],
+  "message": "Successfully imported 2 hearings, 1 failed"
+}
 ```
 
 ### Managing Hearing Status
@@ -298,6 +414,7 @@ Creating sample hearings...
 
 Hearings are converted to DataRow layers with this structure:
 
+**Traditional Litigation Case:**
 ```javascript
 {
   tv_id: "tv_001",
@@ -305,7 +422,7 @@ Hearings are converted to DataRow layers with this structure:
   name: "Court Hearing: CV-2025-12345",
   group: "court_schedule_2025-10-18",
   content: {
-    text: "9:00 AM - Room 101 - Smith v. Johnson",
+    text: "9:00 AM - Rm 101 - CV-2025-12345 - Smith v. Johnson - Trial",
     backgroundColor: "rgba(30, 58, 138, 200)", // Blue
     textColor: "rgba(255, 255, 255, 255)",
     fontSize: 24,
@@ -329,6 +446,45 @@ Hearings are converted to DataRow layers with this structure:
   }
 }
 ```
+
+**Bankruptcy Case (with smart abbreviation):**
+```javascript
+{
+  tv_id: "tv_001",
+  layer_type: "DataRow",
+  name: "Court Hearing: 25-00001-TLM",
+  group: "court_schedule_2025-10-29",
+  content: {
+    text: "9:30 AM - Rm 1 - 25-00001-TLM - Savanna G Smith - Mot. to Redeem Prop. of the Estate (Ch 7, TM Powers) re: 2024 Kia...",
+    backgroundColor: "rgba(30, 58, 138, 200)",
+    textColor: "rgba(255, 255, 255, 255)",
+    fontSize: 24,
+    alignment: "left"
+  },
+  position: {
+    x: 0,
+    y: 100,
+    width: 1920,
+    height: 50
+  },
+  priority: 15,
+  visible: true,
+  opacity: 1.0,
+  metadata: {
+    hearing_id: "hearing_xyz789",
+    case_number: "25-00001-TLM",
+    court_room: "1",
+    scheduled_time: "2025-10-29T09:30:00Z",
+    status: "scheduled"
+  }
+}
+```
+
+**Display Format:**
+- `{time} - Rm {room} - {case_number} - {debtor_names or parties} - {abbreviated_matter}`
+- Hearings are automatically sorted by court room, then by time within each room
+- Long hearing matters are intelligently abbreviated using legal term dictionary
+- Format adapts to available data (traditional vs. bankruptcy cases)
 
 ## Color Coding
 
@@ -388,20 +544,49 @@ Hearings are converted to DataRow layers with this structure:
 
 1. Verify CSV format matches expected columns
 2. Check date format is ISO 8601: `YYYY-MM-DDTHH:mm:ssZ`
-3. Required fields: `case_number`, `court_room`, `scheduled_time`, `plaintiff`, `defendant`
-4. Check server logs for validation errors
+3. Required fields: `case_number`, `court_room`, `scheduled_time`
+4. Either `parties` (plaintiff/defendant) OR `case_title` must be provided
+5. Check server logs for validation errors
+
+### JSON import failing
+
+1. Verify JSON is valid (use JSON validator)
+2. Check field names match supported formats (see "Supported Field Names" above)
+3. Verify date format is supported:
+   - ISO 8601: `"2025-10-29T09:30:00Z"`
+   - Court calendar: `"Wednesday, October 29, 2025 - 09:30"`
+4. Review error details in the response:
+   ```json
+   {
+     "errors": [
+       {"case_number": "25-00001", "error": "Invalid date format: xyz"}
+     ]
+   }
+   ```
+5. Test with `tests/demo-bankruptcy-hearings.json` to verify system is working
 
 ## Future Enhancements
 
+### Completed
+- [x] JSON import for court APIs
+- [x] Bankruptcy court support (Chapter 7/11/13)
+- [x] Smart abbreviation for long legal text
+- [x] Room-based sorting
+
+### Planned
 - [ ] Multi-location filtering (show different hearings on different TV locations)
 - [ ] Judge photo integration
 - [ ] QR codes for case information
-- [ ] Integration with court management systems (Tyler, Odyssey)
+- [ ] Direct integration with court management systems (Tyler Technologies, Odyssey, etc.)
+- [ ] XML import support
 - [ ] Calendar view in admin UI
 - [ ] Email notifications for hearing updates
 - [ ] Audio announcements for upcoming hearings
 - [ ] Mobile app for judges/clerks
 - [ ] Accessibility features (text-to-speech, high contrast)
+- [ ] Multi-judge hearing support
+- [ ] Hearing room availability tracking
+- [ ] Export hearing reports (PDF, Excel)
 
 ## Architecture Decisions
 

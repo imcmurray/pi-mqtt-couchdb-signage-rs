@@ -30,6 +30,9 @@ router.post('/refresh-display', asyncHandler(courtHearingController.refreshDispl
 // Import from CSV
 router.post('/import', asyncHandler(courtHearingController.importFromCSV));
 
+// Import from JSON
+router.post('/import/json', asyncHandler(courtHearingController.importFromJSON));
+
 // Get specific hearing
 router.get('/:id', asyncHandler(courtHearingController.getHearingById));
 
