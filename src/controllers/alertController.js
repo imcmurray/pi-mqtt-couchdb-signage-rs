@@ -1,4 +1,7 @@
 const alertService = require('../services/alertService');
+const queueService = require('../services/alertQueueService');
+const scheduleService = require('../services/alertScheduleService');
+const Alert = require('../models/Alert');
 const Joi = require('joi');
 
 const alertSchema = Joi.object({
@@ -412,6 +415,361 @@ class AlertController {
       success: true,
       data: alert
     });
+  }
+
+  /**
+   * @openapi
+   * /api/alerts/queue:
+   *   get:
+   *     summary: Get alert queue status
+   *     description: Returns current queue status and statistics
+   *     tags:
+   *       - Alert Queue
+   *     responses:
+   *       200:
+   *         description: Queue status
+   */
+  async getQueueStatus(req, res) {
+    const status = queueService.getQueueStatus();
+    const stats = queueService.getQueueStatistics();
+
+    res.json({
+      success: true,
+      data: {
+        ...status,
+        statistics: stats
+      }
+    });
+  }
+
+  /**
+   * @openapi
+   * /api/alerts/queue/clear:
+   *   post:
+   *     summary: Clear alert queue
+   *     description: Removes all queued alerts (does not affect currently playing alerts)
+   *     tags:
+   *       - Alert Queue
+   *     responses:
+   *       200:
+   *         description: Queue cleared
+   */
+  async clearQueue(req, res) {
+    const count = queueService.clearQueue();
+
+    res.json({
+      success: true,
+      data: {
+        cleared_count: count,
+        message: `Cleared ${count} alerts from queue`
+      }
+    });
+  }
+
+  /**
+   * @openapi
+   * /api/alerts/queue/{alertId}:
+   *   delete:
+   *     summary: Remove alert from queue
+   *     description: Removes a specific alert from the queue
+   *     tags:
+   *       - Alert Queue
+   *     parameters:
+   *       - in: path
+   *         name: alertId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Alert removed from queue
+   *       404:
+   *         description: Alert not in queue
+   */
+  async removeFromQueue(req, res) {
+    const { alertId } = req.params;
+
+    const removed = queueService.dequeue(alertId);
+
+    if (!removed) {
+      return res.status(404).json({
+        success: false,
+        error: 'Alert not found in queue'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        alert_id: removed.alert.alert_id,
+        message: 'Alert removed from queue'
+      }
+    });
+  }
+
+  /**
+   * @openapi
+   * /api/alerts/schedule:
+   *   post:
+   *     summary: Schedule alert for future broadcast
+   *     description: Creates a scheduled alert that will broadcast at a specified time
+   *     tags:
+   *       - Alert Scheduling
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - title
+   *               - message
+   *               - scheduled_for
+   *             properties:
+   *               title:
+   *                 type: string
+   *               message:
+   *                 type: string
+   *               type:
+   *                 type: string
+   *                 enum: [CRITICAL, URGENT, INFO]
+   *               scheduled_for:
+   *                 type: string
+   *                 format: date-time
+   *               recurrence_pattern:
+   *                 type: string
+   *                 enum: [hourly, daily, weekly, monthly]
+   *               recurrence_end:
+   *                 type: string
+   *                 format: date-time
+   *     responses:
+   *       201:
+   *         description: Alert scheduled successfully
+   */
+  async scheduleAlert(req, res) {
+    const scheduleSchema = Joi.object({
+      title: Joi.string().required().max(100),
+      message: Joi.string().required().max(500),
+      type: Joi.string().valid('CRITICAL', 'URGENT', 'INFO').default('INFO'),
+      target_type: Joi.string().valid('all', 'specific', 'location').default('all'),
+      target_ids: Joi.array().items(Joi.string()).optional(),
+      target_location: Joi.string().optional(),
+      scheduled_for: Joi.string().isoDate().required(),
+      recurrence_pattern: Joi.string().valid('hourly', 'daily', 'weekly', 'monthly').optional(),
+      recurrence_end: Joi.string().isoDate().optional(),
+      created_by: Joi.string().default('admin')
+    });
+
+    const { error, value } = scheduleSchema.validate(req.body);
+
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        error: error.details[0].message
+      });
+    }
+
+    try {
+      const result = await scheduleService.scheduleAlert(value, {
+        scheduled_for: value.scheduled_for,
+        recurrence_pattern: value.recurrence_pattern,
+        recurrence_end: value.recurrence_end
+      });
+
+      if (!result.scheduled) {
+        return res.status(400).json({
+          success: false,
+          error: result.error
+        });
+      }
+
+      res.status(201).json({
+        success: true,
+        data: {
+          alert_id: result.alert.alert_id,
+          title: result.alert.title,
+          scheduled_for: result.scheduled_for,
+          time_until_ms: result.time_until_ms,
+          recurrence: value.recurrence_pattern ? {
+            pattern: value.recurrence_pattern,
+            end: value.recurrence_end
+          } : null
+        }
+      });
+    } catch (err) {
+      return res.status(500).json({
+        success: false,
+        error: err.message
+      });
+    }
+  }
+
+  /**
+   * @openapi
+   * /api/alerts/scheduled:
+   *   get:
+   *     summary: Get scheduled alerts
+   *     description: Returns all scheduled alerts or upcoming within specified hours
+   *     tags:
+   *       - Alert Scheduling
+   *     parameters:
+   *       - in: query
+   *         name: hours
+   *         schema:
+   *           type: integer
+   *           default: 24
+   *         description: Limit to alerts within next N hours
+   *     responses:
+   *       200:
+   *         description: List of scheduled alerts
+   */
+  async getScheduledAlerts(req, res) {
+    const hours = parseInt(req.query.hours) || null;
+
+    try {
+      const alerts = hours
+        ? await scheduleService.getUpcomingAlerts(hours)
+        : await scheduleService.getScheduledAlerts();
+
+      res.json({
+        success: true,
+        data: alerts.map(alert => ({
+          alert_id: alert.alert_id,
+          title: alert.title,
+          message: alert.message,
+          type: alert.type,
+          scheduled_for: alert.scheduled_for,
+          recurrence_pattern: alert.recurrence_pattern,
+          recurrence_end: alert.recurrence_end,
+          time_until_ms: new Date(alert.scheduled_for) - new Date()
+        }))
+      });
+    } catch (err) {
+      return res.status(500).json({
+        success: false,
+        error: err.message
+      });
+    }
+  }
+
+  /**
+   * @openapi
+   * /api/alerts/scheduled/{alertId}:
+   *   delete:
+   *     summary: Cancel scheduled alert
+   *     description: Cancels a scheduled alert before it executes
+   *     tags:
+   *       - Alert Scheduling
+   *     parameters:
+   *       - in: path
+   *         name: alertId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Alert cancelled
+   */
+  async cancelScheduledAlert(req, res) {
+    const { alertId } = req.params;
+
+    try {
+      const alert = await scheduleService.cancelScheduledAlert(alertId);
+
+      res.json({
+        success: true,
+        data: {
+          alert_id: alert.alert_id,
+          message: 'Scheduled alert cancelled'
+        }
+      });
+    } catch (err) {
+      return res.status(404).json({
+        success: false,
+        error: err.message
+      });
+    }
+  }
+
+  /**
+   * @openapi
+   * /api/alerts/preview:
+   *   post:
+   *     summary: Preview alert without broadcasting
+   *     description: Generates a preview of how the alert will appear
+   *     tags:
+   *       - Alert Preview
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - title
+   *               - message
+   *             properties:
+   *               title:
+   *                 type: string
+   *               message:
+   *                 type: string
+   *               type:
+   *                 type: string
+   *                 enum: [CRITICAL, URGENT, INFO]
+   *     responses:
+   *       200:
+   *         description: Preview generated
+   */
+  async previewAlert(req, res) {
+    const previewSchema = Joi.object({
+      title: Joi.string().required().max(100),
+      message: Joi.string().required().max(500),
+      type: Joi.string().valid('CRITICAL', 'URGENT', 'INFO').default('INFO')
+    });
+
+    const { error, value } = previewSchema.validate(req.body);
+
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        error: error.details[0].message
+      });
+    }
+
+    try {
+      const alert = new Alert({
+        ...value,
+        target_type: 'all',
+        created_by: 'preview'
+      });
+
+      const previewLayer = alert.toLayer('preview_tv');
+
+      res.json({
+        success: true,
+        data: {
+          rendered: {
+            title: alert.title,
+            message: alert.message,
+            type: alert.type,
+            priority: alert.priority
+          },
+          layer: previewLayer,
+          visual_treatment: {
+            position: previewLayer.position,
+            background_color: previewLayer.content.backgroundColor,
+            text_color: previewLayer.content.textColor,
+            font_size: previewLayer.content.fontSize,
+            auto_dismiss_ms: alert.auto_dismiss_ms
+          }
+        }
+      });
+    } catch (err) {
+      return res.status(500).json({
+        success: false,
+        error: err.message
+      });
+    }
   }
 }
 

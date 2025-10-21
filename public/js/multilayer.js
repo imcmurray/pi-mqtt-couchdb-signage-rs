@@ -813,3 +813,159 @@ function broadcastAlert() {
 function dismissAlert(alertId) {
     manager.dismissAlert(alertId);
 }
+
+async function quickSendTemplate(templateId) {
+    try {
+        const response = await fetch(`/api/alerts/templates/${templateId}`);
+        const data = await response.json();
+
+        if (!data.success) {
+            alert('Failed to load template');
+            return;
+        }
+
+        const template = data.data;
+
+        if (template.variables.length === 0) {
+            if (confirm(`Send "${template.name}" alert to all TVs?`)) {
+                await sendTemplateAlert(templateId, {}, 'all');
+            }
+            return;
+        }
+
+        const variables = {};
+        for (const variable of template.variables) {
+            const label = variable.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+            const value = prompt(`Enter ${label}:`);
+            if (value === null) {
+                return;
+            }
+            variables[variable] = value;
+        }
+
+        await sendTemplateAlert(templateId, variables, 'all');
+    } catch (error) {
+        console.error('Error with quick-send template:', error);
+        alert('Error sending template alert');
+    }
+}
+
+async function sendTemplateAlert(templateId, variables, targetType) {
+    try {
+        const response = await fetch(`/api/alerts/templates/${templateId}/send`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                variables,
+                target_type: targetType,
+                created_by: 'admin'
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            alert(`✅ Alert sent to ${data.data.delivered_count} TVs!\n\nTitle: ${data.data.alert.title}`);
+            manager.loadActiveAlerts();
+            loadQueueStatus();
+        } else {
+            alert(`Error: ${data.error}`);
+        }
+    } catch (error) {
+        console.error('Error sending template alert:', error);
+        alert('Error sending alert');
+    }
+}
+
+async function loadQueueStatus() {
+    try {
+        const response = await fetch('/api/alerts/queue');
+        const data = await response.json();
+
+        if (data.success) {
+            const queueCount = document.getElementById('queueCount');
+            const queueList = document.getElementById('queueList');
+
+            queueCount.textContent = data.data.queue_length;
+
+            if (data.data.queue.length === 0) {
+                queueList.innerHTML = '<div style="color: #64748b; font-size: 13px; padding: 8px;">No alerts in queue</div>';
+                return;
+            }
+
+            queueList.innerHTML = data.data.queue.map((item, index) => `
+                <div style="background: #f8fafc; padding: 10px; border-radius: 6px; margin-bottom: 6px; border-left: 3px solid ${getAlertColor(item.type)};">
+                    <div style="display: flex; justify-content: space-between; align-items: start;">
+                        <div style="flex: 1;">
+                            <div style="font-weight: 500; font-size: 14px;">${item.title}</div>
+                            <div style="font-size: 12px; color: #64748b; margin-top: 2px;">
+                                Position: ${index + 1} | Type: ${item.type} | ${item.target_tv_count} TVs
+                            </div>
+                        </div>
+                        <button class="btn btn-danger btn-small" onclick="removeFromQueue('${item.alert_id}')" style="font-size: 11px; padding: 4px 8px;">
+                            ✕
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+    } catch (error) {
+        console.error('Error loading queue status:', error);
+    }
+}
+
+async function clearAlertQueue() {
+    if (!confirm('Clear all queued alerts?')) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/alerts/queue/clear', {
+            method: 'POST'
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            alert(`Cleared ${data.data.cleared_count} alerts from queue`);
+            loadQueueStatus();
+        } else {
+            alert(`Error: ${data.error}`);
+        }
+    } catch (error) {
+        console.error('Error clearing queue:', error);
+        alert('Error clearing queue');
+    }
+}
+
+async function removeFromQueue(alertId) {
+    try {
+        const response = await fetch(`/api/alerts/queue/${alertId}`, {
+            method: 'DELETE'
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            loadQueueStatus();
+        } else {
+            alert(`Error: ${data.error}`);
+        }
+    } catch (error) {
+        console.error('Error removing from queue:', error);
+        alert('Error removing alert');
+    }
+}
+
+function getAlertColor(type) {
+    switch (type) {
+        case 'CRITICAL': return '#dc2626';
+        case 'URGENT': return '#d97706';
+        case 'INFO': return '#2563eb';
+        default: return '#64748b';
+    }
+}
+
+// Auto-refresh queue status every 5 seconds
+setInterval(loadQueueStatus, 5000);
+setTimeout(loadQueueStatus, 1000);

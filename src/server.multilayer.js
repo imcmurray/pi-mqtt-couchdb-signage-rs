@@ -213,7 +213,9 @@ app.use('/api/tvs', tvRoutes);
 app.use('/api/images', imageRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/layers', layerRoutes); // New layer management routes
+const alertTemplateRoutes = require('./routes/alertTemplateRoutes');
 const alertRoutes = require('./routes/alertRoutes');
+app.use('/api/alerts/templates', alertTemplateRoutes); // Alert template management (must be before /api/alerts)
 app.use('/api/alerts', alertRoutes); // Emergency alert routes
 app.use('/api/hearings', courtHearingRoutes); // Court hearing management routes
 app.use('/api/presets', presetRoutes); // Zone preset templates
@@ -334,6 +336,21 @@ async function startServer() {
     // Start layer automation service
     console.log('Starting layer automation service...');
     layerAutomationService.start();
+
+    // Initialize alert template service
+    console.log('Initializing alert template service...');
+    const templateService = require('./services/templateService');
+    await templateService.initialize();
+
+    // Start alert queue service
+    console.log('Starting alert queue service...');
+    const queueService = require('./services/alertQueueService');
+    queueService.start();
+
+    // Start alert schedule service
+    console.log('Starting alert schedule service...');
+    const scheduleService = require('./services/alertScheduleService');
+    scheduleService.start();
 
     // Start batch scheduler
     console.log('Starting batch scheduler...');

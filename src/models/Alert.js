@@ -27,10 +27,21 @@ class Alert extends BaseModel {
     this.target_location = data.target_location || null; // For location-based
 
     // Status tracking
-    this.status = data.status || 'active'; // active, dismissed, expired
+    this.status = data.status || 'active'; // active, dismissed, expired, queued
     this.created_by = data.created_by || 'system';
     this.dismissed_at = data.dismissed_at || null;
     this.delivered_to = data.delivered_to || []; // List of TV IDs that received this alert
+
+    // Queue tracking
+    this.queued_at = data.queued_at || null;
+    this.queue_position = data.queue_position !== undefined ? data.queue_position : null;
+    this.interrupted_by = data.interrupted_by || null; // Alert ID that interrupted this one
+
+    // Scheduling
+    this.scheduled_for = data.scheduled_for || null; // ISO timestamp for future broadcast
+    this.is_scheduled = data.is_scheduled || false;
+    this.recurrence_pattern = data.recurrence_pattern || null; // daily, weekly, monthly, hourly
+    this.recurrence_end = data.recurrence_end || null; // When to stop recurring
   }
 
   generateAlertId() {

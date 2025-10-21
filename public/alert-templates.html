@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Alert Template Manager</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1d4ed8;
+            --secondary: #64748b;
+            --success: #059669;
+            --warning: #d97706;
+            --danger: #dc2626;
+            --background: #f8fafc;
+            --surface: #ffffff;
+            --border: #e2e8f0;
+            --text: #1e293b;
+            --text-muted: #64748b;
+            --critical: #dc2626;
+            --urgent: #d97706;
+            --info: #2563eb;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--background);
+            color: var(--text);
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            background: var(--surface);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            border: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            color: var(--primary);
+            font-size: 28px;
+            font-weight: 600;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 12px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-dark);
+        }
+
+        .btn-secondary {
+            background: var(--secondary);
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #475569;
+        }
+
+        .btn-danger {
+            background: var(--danger);
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #b91c1c;
+        }
+
+        .btn-small {
+            padding: 6px 12px;
+            font-size: 13px;
+        }
+
+        .filters {
+            background: var(--surface);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 24px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            border: 1px solid var(--border);
+            display: flex;
+            gap: 16px;
+            align-items: center;
+        }
+
+        .filter-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .filter-group label {
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        .filter-group select, .filter-group input {
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card {
+            background: var(--surface);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            border: 1px solid var(--border);
+        }
+
+        .stat-card h3 {
+            font-size: 14px;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+
+        .stat-card .value {
+            font-size: 32px;
+            font-weight: 600;
+            color: var(--primary);
+        }
+
+        .templates-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 20px;
+        }
+
+        .template-card {
+            background: var(--surface);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            border: 1px solid var(--border);
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+
+        .template-card:hover {
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            transform: translateY(-2px);
+        }
+
+        .template-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 12px;
+        }
+
+        .template-name {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .template-badges {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .badge {
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .badge-builtin {
+            background: #e0e7ff;
+            color: #4338ca;
+        }
+
+        .badge-custom {
+            background: #dcfce7;
+            color: #15803d;
+        }
+
+        .badge-critical {
+            background: #fee2e2;
+            color: var(--critical);
+        }
+
+        .badge-urgent {
+            background: #fed7aa;
+            color: var(--urgent);
+        }
+
+        .badge-info {
+            background: #dbeafe;
+            color: var(--info);
+        }
+
+        .badge-category {
+            background: #f3f4f6;
+            color: #374151;
+        }
+
+        .template-description {
+            color: var(--text-muted);
+            font-size: 14px;
+            margin-bottom: 12px;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .template-variables {
+            margin-bottom: 16px;
+        }
+
+        .template-variables h4 {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+        }
+
+        .variable-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .variable-chip {
+            background: #f1f5f9;
+            color: #334155;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-family: 'Courier New', monospace;
+        }
+
+        .template-actions {
+            display: flex;
+            gap: 8px;
+            border-top: 1px solid var(--border);
+            padding-top: 16px;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .modal.active {
+            display: flex;
+            justify-content: center;
+            align-items: start;
+            padding-top: 40px;
+        }
+
+        .modal-content {
+            background: var(--surface);
+            border-radius: 16px;
+            padding: 32px;
+            max-width: 700px;
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+
+        .modal-header h2 {
+            color: var(--primary);
+            font-size: 24px;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 28px;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 0;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: var(--text);
+        }
+
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: inherit;
+        }
+
+        .form-group textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        .form-group small {
+            display: block;
+            margin-top: 4px;
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+
+        .preview-panel {
+            background: #f8fafc;
+            border-radius: 8px;
+            padding: 16px;
+            margin-top: 20px;
+        }
+
+        .preview-panel h3 {
+            font-size: 16px;
+            margin-bottom: 12px;
+            color: var(--text);
+        }
+
+        .preview-content {
+            background: var(--surface);
+            border-radius: 8px;
+            padding: 16px;
+            border: 2px dashed var(--border);
+        }
+
+        .preview-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .preview-message {
+            font-size: 14px;
+            color: var(--text-muted);
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-muted);
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-muted);
+        }
+
+        .empty-state h3 {
+            font-size: 20px;
+            margin-bottom: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div>
+                <h1>🎯 Alert Template Manager</h1>
+            </div>
+            <div class="header-actions">
+                <button class="btn btn-secondary" onclick="window.location.href='/multilayer.html'">← Back to Dashboard</button>
+                <button class="btn btn-primary" onclick="openCreateModal()">+ Create Template</button>
+            </div>
+        </div>
+
+        <div class="stats" id="stats">
+            <div class="stat-card">
+                <h3>Total Templates</h3>
+                <div class="value" id="stat-total">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>Built-in</h3>
+                <div class="value" id="stat-builtin">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>Custom</h3>
+                <div class="value" id="stat-custom">-</div>
+            </div>
+        </div>
+
+        <div class="filters">
+            <div class="filter-group">
+                <label>Category:</label>
+                <select id="filter-category" onchange="filterTemplates()">
+                    <option value="">All</option>
+                    <option value="emergency">Emergency</option>
+                    <option value="court">Court</option>
+                    <option value="maintenance">Maintenance</option>
+                    <option value="weather">Weather</option>
+                    <option value="general">General</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>Type:</label>
+                <select id="filter-type" onchange="filterTemplates()">
+                    <option value="">All</option>
+                    <option value="builtin">Built-in</option>
+                    <option value="custom">Custom</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>Alert Level:</label>
+                <select id="filter-alert-type" onchange="filterTemplates()">
+                    <option value="">All</option>
+                    <option value="CRITICAL">Critical</option>
+                    <option value="URGENT">Urgent</option>
+                    <option value="INFO">Info</option>
+                </select>
+            </div>
+            <div class="filter-group" style="margin-left: auto;">
+                <input type="text" id="search-input" placeholder="Search templates..." onkeyup="searchTemplates()" style="width: 250px;">
+            </div>
+        </div>
+
+        <div class="templates-grid" id="templates-grid">
+            <div class="loading">Loading templates...</div>
+        </div>
+    </div>
+
+    <!-- Create/Edit Modal -->
+    <div class="modal" id="template-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modal-title">Create Template</h2>
+                <button class="close-btn" onclick="closeModal()">&times;</button>
+            </div>
+            <form id="template-form" onsubmit="saveTemplate(event)">
+                <div class="form-group">
+                    <label>Template Name *</label>
+                    <input type="text" id="template-name" required maxlength="100">
+                </div>
+
+                <div class="form-group">
+                    <label>Category *</label>
+                    <select id="template-category" required>
+                        <option value="emergency">Emergency</option>
+                        <option value="court">Court</option>
+                        <option value="maintenance">Maintenance</option>
+                        <option value="weather">Weather</option>
+                        <option value="general">General</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Alert Type *</label>
+                    <select id="template-alert-type" required>
+                        <option value="CRITICAL">Critical (Full Screen, Red)</option>
+                        <option value="URGENT">Urgent (Top Banner, Orange)</option>
+                        <option value="INFO">Info (Bottom Ticker, Blue)</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Title Template *</label>
+                    <input type="text" id="template-title" required maxlength="200" placeholder="e.g., Alert in ${building}">
+                    <small>Use ${variable_name} for placeholders</small>
+                </div>
+
+                <div class="form-group">
+                    <label>Message Template *</label>
+                    <textarea id="template-message" required maxlength="1000" placeholder="e.g., Evacuate ${building} via ${exit_route}"></textarea>
+                    <small>Use ${variable_name} for placeholders</small>
+                </div>
+
+                <div class="form-group">
+                    <label>Description</label>
+                    <textarea id="template-description" maxlength="500" placeholder="Optional description for this template"></textarea>
+                </div>
+
+                <div style="display: flex; gap: 12px; justify-content: flex-end;">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Template</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Quick-Send Modal -->
+    <div class="modal" id="quick-send-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="quick-send-title">Quick-Send Alert</h2>
+                <button class="close-btn" onclick="closeQuickSendModal()">&times;</button>
+            </div>
+            <div id="quick-send-content"></div>
+        </div>
+    </div>
+
+    <script src="/js/alert-templates.js"></script>
+</body>
+</html>

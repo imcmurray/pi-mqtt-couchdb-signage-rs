@@ -2,9 +2,42 @@ const Alert = require('../models/Alert');
 const Layer = require('../models/Layer');
 const TV = require('../models/tv.multilayer');
 const mqtt = require('./multilayer.mqttService');
+const queueService = require('./alertQueueService');
 
 class AlertService {
-  async broadcastAlert(alertData) {
+  async broadcastAlert(alertData, options = {}) {
+    const useQueue = options.use_queue !== undefined ? options.use_queue : false;
+
+    if (useQueue) {
+      return await this.broadcastWithQueue(alertData);
+    }
+
+    return await this.broadcastImmediate(alertData);
+  }
+
+  async broadcastWithQueue(alertData) {
+    const alert = new Alert(alertData);
+    alert.status = 'queued';
+    await alert.save();
+
+    const targetTVs = await this.getTargetTVs(alert);
+    const targetTvIds = targetTVs.map(tv => tv.tv_id);
+
+    alert.queued_at = new Date().toISOString();
+    await alert.save();
+
+    const queueItem = queueService.enqueue(alert, targetTvIds);
+
+    return {
+      alert,
+      queued: true,
+      queue_position: queueItem.queue_position,
+      estimated_wait_ms: queueService.getEstimatedWaitTime(alert.alert_id),
+      target_count: targetTvIds.length
+    };
+  }
+
+  async broadcastImmediate(alertData) {
     const alert = new Alert(alertData);
     await alert.save();
 
