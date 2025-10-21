@@ -969,3 +969,179 @@ function getAlertColor(type) {
 // Auto-refresh queue status every 5 seconds
 setInterval(loadQueueStatus, 5000);
 setTimeout(loadQueueStatus, 1000);
+
+// ============ Alert Scheduling Functions ============
+
+function toggleScheduleForm() {
+    const container = document.getElementById('scheduleFormContainer');
+    container.style.display = container.style.display === 'none' ? 'block' : 'none';
+
+    if (container.style.display === 'block') {
+        const now = new Date();
+        now.setMinutes(now.getMinutes() + 10);
+        document.getElementById('scheduleDateTime').value = now.toISOString().slice(0, 16);
+    }
+}
+
+async function scheduleCurrentAlert() {
+    const title = document.getElementById('alertTitle').value.trim();
+    const message = document.getElementById('alertMessage').value.trim();
+    const type = currentAlertType;
+    const targetType = currentTargetType;
+    const targetLocation = document.getElementById('targetLocation')?.value?.trim() || null;
+
+    if (!title || !message) {
+        alert('Please enter alert title and message before scheduling');
+        return;
+    }
+
+    const scheduledFor = document.getElementById('scheduleDateTime').value;
+    if (!scheduledFor) {
+        alert('Please select a date and time');
+        return;
+    }
+
+    const scheduledDate = new Date(scheduledFor);
+    if (scheduledDate <= new Date()) {
+        alert('Scheduled time must be in the future');
+        return;
+    }
+
+    const recurrencePattern = document.getElementById('scheduleRecurrence').value || null;
+    const recurrenceEnd = document.getElementById('recurrenceEnd').value || null;
+
+    try {
+        const response = await fetch('/api/alerts/schedule', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                title,
+                message,
+                type,
+                target_type: targetType,
+                target_location: targetLocation,
+                scheduled_for: new Date(scheduledFor).toISOString(),
+                recurrence_pattern: recurrencePattern,
+                recurrence_end: recurrenceEnd ? new Date(recurrenceEnd).toISOString() : null,
+                created_by: 'admin'
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            const timeUntil = formatScheduleTime(data.data.time_until_ms);
+            alert(`✅ Alert scheduled for ${new Date(scheduledFor).toLocaleString()}!\n\nExecutes ${timeUntil}`);
+
+            document.getElementById('alertTitle').value = '';
+            document.getElementById('alertMessage').value = '';
+            toggleScheduleForm();
+            loadScheduledAlerts();
+        } else {
+            alert(`Error: ${data.error}`);
+        }
+    } catch (error) {
+        console.error('Error scheduling alert:', error);
+        alert('Error scheduling alert');
+    }
+}
+
+async function loadScheduledAlerts() {
+    try {
+        const response = await fetch('/api/alerts/scheduled');
+        const data = await response.json();
+
+        if (data.success) {
+            const scheduledCount = document.getElementById('scheduledCount');
+            const scheduledList = document.getElementById('scheduledList');
+
+            scheduledCount.textContent = data.data.length;
+
+            if (data.data.length === 0) {
+                scheduledList.innerHTML = '<div style="color: #64748b; font-size: 13px; padding: 8px;">No scheduled alerts</div>';
+                return;
+            }
+
+            scheduledList.innerHTML = data.data.map(alert => {
+                const timeUntil = formatScheduleTime(alert.time_until_ms);
+                const isUrgent = alert.time_until_ms < 3600000;
+                const recurrenceLabel = alert.recurrence_pattern
+                    ? ` • Repeats ${alert.recurrence_pattern}`
+                    : '';
+
+                return `
+                    <div style="background: #f8fafc; padding: 10px; border-radius: 6px; margin-bottom: 6px; border-left: 3px solid ${getAlertColor(alert.type)};">
+                        <div style="display: flex; justify-content: space-between; align-items: start;">
+                            <div style="flex: 1;">
+                                <div style="font-weight: 500; font-size: 14px;">${alert.title}</div>
+                                <div style="font-size: 12px; color: ${isUrgent ? '#d97706' : '#64748b'}; margin-top: 2px; font-weight: ${isUrgent ? '500' : 'normal'};">
+                                    ${isUrgent ? '⏰ ' : ''}${timeUntil} • ${alert.type}${recurrenceLabel}
+                                </div>
+                                <div style="font-size: 11px; color: #94a3b8; margin-top: 2px;">
+                                    ${new Date(alert.scheduled_for).toLocaleString()}
+                                </div>
+                            </div>
+                            <button class="btn btn-danger btn-small" onclick="cancelScheduledAlert('${alert.alert_id}')" style="font-size: 11px; padding: 4px 8px;">
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+    } catch (error) {
+        console.error('Error loading scheduled alerts:', error);
+    }
+}
+
+async function cancelScheduledAlert(alertId) {
+    if (!confirm('Cancel this scheduled alert?')) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/alerts/scheduled/${alertId}`, {
+            method: 'DELETE'
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            alert('✅ Scheduled alert cancelled');
+            loadScheduledAlerts();
+        } else {
+            alert(`Error: ${data.error}`);
+        }
+    } catch (error) {
+        console.error('Error cancelling scheduled alert:', error);
+        alert('Error cancelling alert');
+    }
+}
+
+function formatScheduleTime(ms) {
+    if (ms < 0) return 'Past due';
+
+    const seconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+
+    if (days > 0) return `in ${days}d ${hours % 24}h`;
+    if (hours > 0) return `in ${hours}h ${minutes % 60}m`;
+    if (minutes > 0) return `in ${minutes}m`;
+    return `in ${seconds}s`;
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const recurrenceSelect = document.getElementById('scheduleRecurrence');
+    if (recurrenceSelect) {
+        recurrenceSelect.addEventListener('change', function() {
+            const container = document.getElementById('recurrenceEndContainer');
+            container.style.display = this.value ? 'block' : 'none';
+        });
+    }
+});
+
+// Auto-refresh scheduled alerts every 30 seconds
+setInterval(loadScheduledAlerts, 30000);
+setTimeout(loadScheduledAlerts, 1500);

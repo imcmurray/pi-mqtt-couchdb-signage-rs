@@ -633,6 +633,43 @@
                 </div>
                 <div id="queueList" style="margin-top: 8px;"></div>
             </div>
+
+            <div class="active-alerts" style="margin-top: 16px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <h4>Scheduled Alerts <span class="layer-count" id="scheduledCount">0</span></h4>
+                    <button class="btn btn-small" onclick="toggleScheduleForm()" style="font-size: 12px;">➕ Schedule</button>
+                </div>
+
+                <div id="scheduleFormContainer" style="display: none; margin-top: 12px; padding: 12px; background: #f8fafc; border-radius: 6px;">
+                    <div style="margin-bottom: 10px;">
+                        <label style="display: block; font-size: 13px; font-weight: 500; margin-bottom: 4px;">Schedule For:</label>
+                        <input type="datetime-local" id="scheduleDateTime" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px;">
+                    </div>
+
+                    <div style="margin-bottom: 10px;">
+                        <label style="display: block; font-size: 13px; font-weight: 500; margin-bottom: 4px;">Recurrence:</label>
+                        <select id="scheduleRecurrence" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px;">
+                            <option value="">None (one-time)</option>
+                            <option value="hourly">Every Hour</option>
+                            <option value="daily">Every Day</option>
+                            <option value="weekly">Every Week</option>
+                            <option value="monthly">Every Month</option>
+                        </select>
+                    </div>
+
+                    <div id="recurrenceEndContainer" style="display: none; margin-bottom: 10px;">
+                        <label style="display: block; font-size: 13px; font-weight: 500; margin-bottom: 4px;">Stop Recurring After:</label>
+                        <input type="datetime-local" id="recurrenceEnd" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px;">
+                    </div>
+
+                    <div style="display: flex; gap: 8px;">
+                        <button class="btn btn-success btn-small" onclick="scheduleCurrentAlert()" style="flex: 1; font-size: 12px;">Schedule Alert</button>
+                        <button class="btn btn-secondary btn-small" onclick="toggleScheduleForm()" style="font-size: 12px;">Cancel</button>
+                    </div>
+                </div>
+
+                <div id="scheduledList" style="margin-top: 8px;"></div>
+            </div>
         </div>
 
         <div class="quick-actions">

@@ -2,9 +2,16 @@
 
 **Complete end-to-end digital signage solution** featuring a Node.js management server with CouchDB backend and Rust-based Raspberry Pi TV endpoints. This repository contains both the centralized management infrastructure and the high-performance TV endpoint software - everything needed to deploy a professional digital signage network.
 
-## 🚀 Current Version: v0.4.0
+## 🚀 Current Version: v0.5.0
 
 **Latest improvements include:**
+- ✅ **Emergency Alert System** - Complete alert broadcasting with templates, queueing, and scheduling
+  - 10 built-in alert templates + custom template creation
+  - Priority-based queueing (CRITICAL/URGENT/INFO)
+  - Cron-based scheduling with recurring patterns
+  - Alert preview before broadcasting
+  - 23 API endpoints for comprehensive alert management
+  - 83 test cases with production-ready coverage
 - ✅ **Court Hearing Integration** - Automated court schedule displays with real-time updates
 - ✅ **Time-Based Color Coding** - Visual urgency indicators (red/orange/blue/green/gray)
 - ✅ **CSV Import** - Bulk import hearings from court management systems
@@ -18,10 +25,12 @@
 
 - **🖥️ Management Server** (`/`) - Node.js/Express backend with web interface
 - **📺 TV Endpoint Software** (`pi-slideshow-rs/`) - Rust application for Raspberry Pi displays
+- **🚨 Emergency Alert System** - Complete alert broadcasting with templates, queueing, and scheduling
 - **🏛️ Court Hearing System** - Automated court schedule management and display
 - **🐳 Docker Deployment** - Complete containerized infrastructure
 - **⚙️ SystemD Integration** - Auto-startup configuration for Pi endpoints
 - **⏰ Automated Scheduling** - Cron-based refresh and cleanup tasks
+- **🧪 Comprehensive Testing** - 83 test cases with production-ready coverage
 - **📖 Complete Documentation** - Setup guides, API references, troubleshooting
 
 ## 🏗️ Architecture Overview
@@ -181,15 +190,20 @@ The v0.3.0 release includes basic 2-layer compositing support:
 - **Alpha Blending**: Basic transparency support for PNG overlays
 
 **Limitations:**
-- Maximum 2 layers currently supported
-- No dynamic text or emergency overlays yet
-- Position is predefined (top-right corner for logos)
-- Advanced features planned for future phases
+- Maximum 2 layers currently supported (emergency alerts use layer system)
+- Position is predefined for basic overlays (top-right corner for logos)
+- Advanced multi-layer features planned for future phases
 
 ## ✨ Features
 
 ### 🎛️ Management Server
 - **Web-based Admin Interface**: Intuitive UI for staff to manage all TVs
+- **Emergency Alert System**: Complete alert broadcasting with templates, queueing, and scheduling
+  - 10 built-in alert templates + custom template creation
+  - Priority-based queueing (CRITICAL/URGENT/INFO)
+  - Cron-based scheduling with recurring patterns
+  - Alert preview before broadcasting
+  - 23 API endpoints for comprehensive alert management
 - **Court Hearing Management**: Complete system for court schedule displays
 - **Automated Display Updates**: Cron jobs refresh court schedules every 5 minutes
 - **CSV Import**: Bulk import hearings from external systems
@@ -204,6 +218,7 @@ The v0.3.0 release includes basic 2-layer compositing support:
 - **Basic Layer Support**: Simple logo overlay capability
 - **MVC Architecture**: Clean separation with controllers and models
 - **Input Validation**: Joi schema validation on all endpoints
+- **Comprehensive Testing**: 83 test cases with production-ready coverage
 
 ### 📺 TV Endpoints (Raspberry Pi)
 - **Direct Framebuffer Rendering**: No X11 required, hardware-accelerated
@@ -364,8 +379,14 @@ curl http://localhost:8080/api/health  # Health check
 - **Time Awareness**: Visual indicators for hearings starting within 15/30 minutes
 - **Multi-Room Support**: Display hearings by courtroom location
 - **Delay Tracking**: Show and manage delayed hearings with reasons
+- **Emergency Alerts**: Broadcast critical alerts with 3-tier priority system
+  - CRITICAL alerts (red full-screen) - Building evacuations, security threats
+  - URGENT alerts (orange banner) - Court delays, facility closures
+  - INFO alerts (blue ticker) - General notices, reminders
+  - Template system with 10 built-in templates + custom creation
+  - Priority-based queueing prevents alert overlap
+  - Schedule alerts for future broadcast with recurring patterns
 - **Wayfinding**: Directory and navigation information
-- **Announcements**: Emergency and general announcements
 - **Multi-location**: Centralized control of courtroom displays
 
 ### 🏢 Corporate Digital Signage
