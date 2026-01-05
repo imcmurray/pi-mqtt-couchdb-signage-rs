@@ -107,6 +107,8 @@ impl Layer {
         self
     }
 
+    /// Builder for visibility (for future API)
+    #[allow(dead_code)]
     pub fn with_visibility(mut self, visible: bool) -> Self {
         self.visible = visible;
         self
@@ -117,6 +119,8 @@ impl Layer {
         self
     }
     
+    /// Builder for data row content (for future data row feature)
+    #[allow(dead_code)]
     pub fn with_data_row(mut self, text: String, bg_color: (u8, u8, u8, u8), text_color: (u8, u8, u8, u8), font_size: u32, alignment: String) -> Self {
         self.content = LayerContent::DataRow {
             text,
@@ -158,6 +162,8 @@ impl Layer {
         self.animation_state = Some(AnimationState::fade_out(duration_ms));
     }
     
+    /// Start position animation (for future use)
+    #[allow(dead_code)]
     pub fn start_move_to(&mut self, to_x: u32, to_y: u32, duration_ms: u64) {
         let from_x = self.position.x as f32;
         let from_y = self.position.y as f32;
@@ -356,6 +362,8 @@ impl LayerManager {
         config.layers.get(id).cloned()
     }
 
+    /// Get all layers sorted by priority (for future HTTP API)
+    #[allow(dead_code)]
     pub async fn get_all_layers(&self) -> Vec<Layer> {
         let config = self.config.read().await;
         let mut layers: Vec<Layer> = config.layers.values().cloned().collect();
@@ -363,6 +371,8 @@ impl LayerManager {
         layers
     }
 
+    /// Get only visible layers (for future HTTP API)
+    #[allow(dead_code)]
     pub async fn get_visible_layers(&self) -> Vec<Layer> {
         let layers = self.get_all_layers().await;
         layers.into_iter().filter(|layer| layer.visible).collect()
@@ -473,8 +483,6 @@ impl LayerManager {
     }
 
     async fn render_color_layer(&self, layer: &Layer, r: u8, g: u8, b: u8, a: u8, composite: &mut RgbaImage) -> Result<(), String> {
-        let layer_color = Rgba([r, g, b, a]);
-        
         // Apply color to the layer's position with opacity
         for y in layer.position.y..(layer.position.y + layer.position.height) {
             for x in layer.position.x..(layer.position.x + layer.position.width) {
@@ -567,12 +575,16 @@ impl LayerManager {
         ])
     }
 
+    /// Clear image cache (for future HTTP API)
+    #[allow(dead_code)]
     pub async fn clear_cache(&self) {
         self.image_cache.write().await.clear();
         *self.last_composite.write().await = None;
         *self.composite_dirty.write().await = true;
     }
 
+    /// Get current layer configuration (for future HTTP API)
+    #[allow(dead_code)]
     pub async fn get_config(&self) -> LayerConfig {
         self.config.read().await.clone()
     }
@@ -594,6 +606,8 @@ impl LayerManager {
         Ok(())
     }
 
+    /// Get cache statistics (for future HTTP API)
+    #[allow(dead_code)]
     pub async fn get_cache_stats(&self) -> (usize, usize) {
         let cache = self.image_cache.read().await;
         let cached_items = cache.len();
@@ -751,10 +765,12 @@ impl LayerManager {
         Ok(())
     }
     
-    // Animation control methods
+    // Animation control methods (for future HTTP API)
+    /// Start animation on a layer by type (for future HTTP API)
+    #[allow(dead_code)]
     pub async fn start_layer_animation(&self, layer_id: &str, animation_type: AnimationType, duration_ms: u64, distance: Option<f32>) -> Result<(), String> {
         let mut config = self.config.write().await;
-        
+
         if let Some(layer) = config.layers.get_mut(layer_id) {
             match animation_type {
                 AnimationType::SlideUp => layer.start_slide_up(distance.unwrap_or(100.0), duration_ms),
@@ -771,10 +787,12 @@ impl LayerManager {
             Err(format!("Layer '{}' not found", layer_id))
         }
     }
-    
+
+    /// Move layer to position with optional animation (for future HTTP API)
+    #[allow(dead_code)]
     pub async fn move_layer_to(&self, layer_id: &str, x: u32, y: u32, animate: bool, duration_ms: u64) -> Result<(), String> {
         let mut config = self.config.write().await;
-        
+
         if let Some(layer) = config.layers.get_mut(layer_id) {
             if animate {
                 layer.start_move_to(x, y, duration_ms);
@@ -788,7 +806,9 @@ impl LayerManager {
             Err(format!("Layer '{}' not found", layer_id))
         }
     }
-    
+
+    /// Add a data row layer (for future data row feature)
+    #[allow(dead_code)]
     pub async fn add_data_row_layer(&self, id: String, text: String, y_position: u32, height: u32) -> Result<(), String> {
         let layer = Layer::new(id.clone(), LayerType::DataRow)
             .with_position(0, y_position, 1920, height)
@@ -800,7 +820,7 @@ impl LayerManager {
                 "left".to_string()    // Alignment
             )
             .with_priority(15);
-            
+
         self.add_layer(layer).await
     }
 }

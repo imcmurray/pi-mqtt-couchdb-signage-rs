@@ -15,6 +15,8 @@ pub enum AnimationType {
 }
 
 impl AnimationType {
+    /// Parse animation type from string (for future HTTP API)
+    #[allow(dead_code)]
     pub fn from_string(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "none" => Some(Self::None),
@@ -266,6 +268,8 @@ impl AnimationState {
         )
     }
 
+    /// Generic position animation (for future use)
+    #[allow(dead_code)]
     pub fn move_to(from_x: f32, from_y: f32, to_x: f32, to_y: f32, duration_ms: u64) -> Self {
         Self::new(
             AnimationType::Move,

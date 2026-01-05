@@ -785,14 +785,20 @@ impl SlideshowController {
         self.layer_manager.read().await.get_layer(id).await
     }
 
+    /// Get all layers (for future HTTP API)
+    #[allow(dead_code)]
     pub async fn get_all_layers(&self) -> Vec<Layer> {
         self.layer_manager.read().await.get_all_layers().await
     }
 
+    /// Get layer configuration (for future HTTP API)
+    #[allow(dead_code)]
     pub async fn get_layer_config(&self) -> LayerConfig {
         self.layer_manager.read().await.get_config().await
     }
 
+    /// Update layer configuration (for future HTTP API)
+    #[allow(dead_code)]
     pub async fn update_layer_config(&self, config: LayerConfig) -> Result<(), String> {
         self.layer_manager.write().await.update_config(config).await
     }
@@ -805,20 +811,26 @@ impl SlideshowController {
         self.layer_manager.write().await.update_slideshow_content(image_path).await
     }
 
+    /// Add static overlay layer (for future HTTP API)
+    #[allow(dead_code)]
     pub async fn add_overlay_layer(&self, id: String, image_path: String, x: u32, y: u32, width: u32, height: u32, opacity: f32) -> Result<(), String> {
         let overlay_layer = Layer::new(id, LayerType::StaticOverlay)
             .with_image(image_path)
             .with_position(x, y, width, height)
             .with_opacity(opacity)
             .with_name("Static Overlay".to_string());
-        
+
         self.add_layer(overlay_layer).await
     }
 
+    /// Clear layer cache (for future HTTP API)
+    #[allow(dead_code)]
     pub async fn clear_layer_cache(&self) {
         self.layer_manager.write().await.clear_cache().await;
     }
 
+    /// Get cache statistics (for future HTTP API)
+    #[allow(dead_code)]
     pub async fn get_layer_cache_stats(&self) -> (usize, usize) {
         self.layer_manager.read().await.get_cache_stats().await
     }
