@@ -39,6 +39,7 @@ app.use(helmet({
       imgSrc: ["'self'", "data:", "blob:"],
       connectSrc: ["'self'", "ws:", "wss:"],
       fontSrc: ["'self'", "https://cdnjs.cloudflare.com"],
+      upgradeInsecureRequests: null,
     },
   },
 }));

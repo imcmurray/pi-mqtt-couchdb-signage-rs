@@ -137,10 +137,48 @@ async function createMultilayerDesignDocuments() {
     }
   ];
 
+  // Alerts database design documents
+  const alertDesignDocs = [
+    {
+      _id: '_design/alerts',
+      views: {
+        all: {
+          map: function(doc) {
+            if (doc.type === 'alert') {
+              emit(doc._id, doc);
+            }
+          }.toString()
+        },
+        by_status: {
+          map: function(doc) {
+            if (doc.type === 'alert') {
+              emit(doc.status, doc);
+            }
+          }.toString()
+        },
+        by_type: {
+          map: function(doc) {
+            if (doc.type === 'alert') {
+              emit(doc.type, doc);
+            }
+          }.toString()
+        },
+        by_created_at: {
+          map: function(doc) {
+            if (doc.type === 'alert') {
+              emit(doc.created_at, doc);
+            }
+          }.toString()
+        }
+      }
+    }
+  ];
+
   // Apply design documents to respective databases
   await applyDesignDocs(databases.tvs, tvDesignDocs);
   await applyDesignDocs(databases.layers, layerDesignDocs);
   await applyDesignDocs(databases.images, imageDesignDocs);
+  await applyDesignDocs(databases.alerts, alertDesignDocs);
 }
 
 async function applyDesignDocs(db, designDocs) {
