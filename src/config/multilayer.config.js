@@ -18,7 +18,8 @@ const multilayerConfig = {
       images: 'images_multilayer',
       layers: 'layers_multilayer',
       alert_templates: 'alert_templates_multilayer',
-      presets: 'presets_multilayer'
+      presets: 'presets_multilayer',
+      alerts: 'alerts_multilayer'
     }
   },
 
@@ -90,7 +91,8 @@ multilayerConfig.getDatabaseUrls = () => {
     images: `${baseUrl}/${databases.images}`,
     layers: `${baseUrl}/${databases.layers}`,
     alert_templates: `${baseUrl}/${databases.alert_templates}`,
-    presets: `${baseUrl}/${databases.presets}`
+    presets: `${baseUrl}/${databases.presets}`,
+    alerts: `${baseUrl}/${databases.alerts}`
   };
 };
 

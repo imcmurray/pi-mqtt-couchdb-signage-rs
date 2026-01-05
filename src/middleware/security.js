@@ -53,7 +53,7 @@ const registrationLimiter = rateLimit({
 const speedLimiter = slowDown({
   windowMs: 15 * 60 * 1000, // 15 minutes
   delayAfter: 100, // Allow 100 requests per windowMs without delay
-  delayMs: 500, // Add 500ms delay after delayAfter requests
+  delayMs: () => 500, // Add 500ms delay after delayAfter requests (v2 API)
   maxDelayMs: 20000, // Maximum delay of 20 seconds
 });
 
