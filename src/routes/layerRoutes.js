@@ -22,4 +22,7 @@ router.post('/tvs/:tv_id/layers/batch', asyncHandler(layerController.batchLayerO
 // Animation status
 router.get('/tvs/:tv_id/layers/animations/active', asyncHandler(layerController.getActiveAnimations));
 
+// Save layer as template
+router.post('/tvs/:tv_id/layers/:layer_id/save-as-template', asyncHandler(layerController.saveLayerAsTemplate));
+
 module.exports = router;

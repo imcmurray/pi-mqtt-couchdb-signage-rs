@@ -2,6 +2,7 @@ const Preset = require('../models/Preset');
 const Layer = require('../models/Layer');
 const TV = require('../models/tv.multilayer');
 const BUILTIN_PRESETS = require('../config/builtinPresets');
+const mqttService = require('../services/multilayer.mqttService');
 const Joi = require('joi');
 
 /**
@@ -36,6 +37,12 @@ const createPresetSchema = Joi.object({
 });
 
 const applyPresetSchema = Joi.object({
+  override_existing: Joi.boolean().default(false)
+});
+
+const applyBulkSchema = Joi.object({
+  preset_id: Joi.string().required(),
+  tv_ids: Joi.array().items(Joi.string()).min(1).required(),
   override_existing: Joi.boolean().default(false)
 });
 
@@ -955,6 +962,215 @@ async function applyPresetToTV(req, res) {
 
 /**
  * @openapi
+ * /api/presets/apply-bulk:
+ *   post:
+ *     summary: Apply preset to multiple TVs
+ *     description: Applies a preset's layer configuration to multiple TV displays in a single operation
+ *     tags:
+ *       - Presets
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - preset_id
+ *               - tv_ids
+ *             properties:
+ *               preset_id:
+ *                 type: string
+ *                 description: Preset ID to apply
+ *                 example: court-basic-3zone
+ *               tv_ids:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 description: Array of TV IDs to apply preset to
+ *                 example: ["tv-001", "tv-002", "tv-003"]
+ *               override_existing:
+ *                 type: boolean
+ *                 default: false
+ *                 description: If true, removes existing layers tagged with 'from-preset' before applying
+ *     responses:
+ *       200:
+ *         description: Preset applied to multiple TVs
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     preset_id:
+ *                       type: string
+ *                     results:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           tv_id:
+ *                             type: string
+ *                           success:
+ *                             type: boolean
+ *                           layers_created:
+ *                             type: integer
+ *                           error:
+ *                             type: string
+ *                     total_applied:
+ *                       type: integer
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *       404:
+ *         description: Preset not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
+async function applyPresetToMultipleTVs(req, res) {
+  try {
+    const { error, value } = applyBulkSchema.validate(req.body);
+
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        error: error.details[0].message
+      });
+    }
+
+    const { preset_id, tv_ids, override_existing } = value;
+
+    // Find preset
+    let preset = BUILTIN_PRESETS.find(p => p.preset_id === preset_id);
+    if (preset) {
+      preset = new Preset(preset);
+    } else {
+      preset = await Preset.findByPresetId(preset_id) || await Preset.findById(preset_id);
+    }
+
+    if (!preset) {
+      return res.status(404).json({
+        success: false,
+        error: 'Preset not found'
+      });
+    }
+
+    const results = [];
+    let totalApplied = 0;
+
+    for (const tvId of tv_ids) {
+      try {
+        // Verify TV exists and has layer support
+        const tv = await TV.findById(tvId);
+        if (!tv) {
+          results.push({
+            tv_id: tvId,
+            success: false,
+            error: 'TV not found'
+          });
+          continue;
+        }
+
+        if (!tv.hasLayerSupport()) {
+          results.push({
+            tv_id: tvId,
+            success: false,
+            error: 'TV does not support multi-layer functionality'
+          });
+          continue;
+        }
+
+        // Get layer configurations from preset
+        const layerConfigs = preset.applyToTV(tvId);
+
+        // If override_existing, delete existing layers tagged with 'from-preset'
+        if (override_existing) {
+          const existingLayers = await Layer.findByTv(tvId);
+          const presetLayers = existingLayers.filter(layer =>
+            layer.tags && layer.tags.includes('from-preset')
+          );
+
+          for (const layer of presetLayers) {
+            await layer.delete();
+          }
+        }
+
+        // Create new layers
+        const createdLayers = [];
+        for (const config of layerConfigs) {
+          const layer = new Layer(config);
+          await layer.save();
+          createdLayers.push(layer);
+        }
+
+        // Notify TV via MQTT about new layers
+        if (mqttService.isConnected()) {
+          mqttService.publishLayerBatch(tvId, 'bulk_add', createdLayers.map(l => ({
+            layer_id: l.layer_id,
+            name: l.name,
+            layer_type: l.layer_type,
+            position: l.position,
+            content: l.content,
+            visible: l.visible,
+            opacity: l.opacity,
+            priority: l.priority
+          })));
+        }
+
+        results.push({
+          tv_id: tvId,
+          success: true,
+          layers_created: createdLayers.length
+        });
+        totalApplied++;
+      } catch (tvError) {
+        results.push({
+          tv_id: tvId,
+          success: false,
+          error: tvError.message
+        });
+      }
+    }
+
+    // Record preset usage (only if custom preset)
+    if (!preset.is_builtin && preset._id && totalApplied > 0) {
+      await preset.recordUsage();
+    }
+
+    res.json({
+      success: true,
+      data: {
+        preset_id: preset.preset_id || preset_id,
+        results,
+        total_applied: totalApplied
+      }
+    });
+  } catch (error) {
+    console.error('Error applying preset to multiple TVs:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+}
+
+/**
+ * @openapi
  * /api/presets/save-layout/{tvId}:
  *   post:
  *     summary: Save TV layout as preset
@@ -1107,5 +1323,6 @@ module.exports = {
   deletePreset,
   clonePreset,
   applyPresetToTV,
+  applyPresetToMultipleTVs,
   saveCurrentLayoutAsPreset
 };

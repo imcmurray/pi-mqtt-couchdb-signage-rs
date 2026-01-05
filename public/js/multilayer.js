@@ -13,15 +13,24 @@ class MultiLayerManager {
         this.selectedTargetType = 'all';
         this.activeAlerts = [];
 
+        // Template management properties
+        this.templates = [];
+        this.selectedTemplate = null;
+        this.tvSelectionMode = 'single';
+        this.selectedTvIds = [];
+        this.tvs = [];
+
         this.init();
     }
     
     async init() {
         await this.loadTVs();
         await this.loadActiveAlerts();
+        await this.loadTemplates();
         this.connectWebSocket();
         this.setupEventListeners();
         this.startStatusUpdates();
+        this.renderTvCheckboxes();
         this.log('Multi-Layer Manager initialized');
     }
     
@@ -29,24 +38,28 @@ class MultiLayerManager {
         try {
             const response = await fetch(`${this.apiBase}/tvs`);
             const tvs = await response.json();
-            
+            this.tvs = tvs;
+
             const tvSelect = document.getElementById('tvSelect');
             tvSelect.innerHTML = '<option value="">Select a TV...</option>';
-            
+
             tvs.forEach(tv => {
                 const option = document.createElement('option');
                 option.value = tv._id;
                 option.textContent = `${tv.name} (${tv.location})`;
                 tvSelect.appendChild(option);
             });
-            
+
             // Auto-select first TV if available
             if (tvs.length > 0 && !this.selectedTvId) {
                 this.selectedTvId = tvs[0]._id;
                 tvSelect.value = this.selectedTvId;
                 await this.loadLayers();
             }
-            
+
+            // Update multi-TV checkboxes
+            this.renderTvCheckboxes();
+
             this.log(`Loaded ${tvs.length} TVs`);
         } catch (error) {
             this.log(`Error loading TVs: ${error.message}`, 'error');
@@ -739,11 +752,323 @@ class MultiLayerManager {
         const logOutput = document.getElementById('logOutput');
         const timestamp = new Date().toLocaleTimeString();
         const prefix = level === 'error' ? '❌' : level === 'warning' ? '⚠️' : '✅';
-        
+
         logOutput.textContent += `${timestamp} ${prefix} ${message}\n`;
         logOutput.scrollTop = logOutput.scrollHeight;
-        
+
         console.log(`[${level.toUpperCase()}] ${message}`);
+    }
+
+    // ============ Template Management Methods ============
+
+    async loadTemplates() {
+        try {
+            const response = await fetch(`${this.apiBase}/presets`);
+            const result = await response.json();
+
+            if (result.success) {
+                this.templates = result.data;
+                this.renderTemplates();
+                this.log(`Loaded ${this.templates.length} templates`);
+            }
+        } catch (error) {
+            this.log(`Error loading templates: ${error.message}`, 'error');
+        }
+    }
+
+    renderTemplates() {
+        const templateList = document.getElementById('templateList');
+        if (!templateList) return;
+
+        const filter = document.getElementById('templateCategoryFilter')?.value || '';
+        const filteredTemplates = filter
+            ? this.templates.filter(t => t.category === filter)
+            : this.templates;
+
+        if (filteredTemplates.length === 0) {
+            templateList.innerHTML = `
+                <div style="text-align: center; padding: 40px 20px; color: var(--text-muted);">
+                    ${filter ? 'No templates in this category' : 'No templates available'}
+                </div>
+            `;
+            return;
+        }
+
+        templateList.innerHTML = filteredTemplates.map(template => {
+            const isSelected = this.selectedTemplate?.preset_id === template.preset_id;
+            const preview = this.generateTemplatePreview(template);
+
+            return `
+                <div class="template-card ${isSelected ? 'selected' : ''}"
+                     onclick="selectTemplate('${template.preset_id}')">
+                    <div class="template-card-header">
+                        <span class="template-card-name">${template.name}</span>
+                        <span class="template-card-category ${template.category}">${template.category}</span>
+                    </div>
+                    <div class="template-card-preview">${preview}</div>
+                    <div class="template-card-meta">
+                        ${template.layers?.length || 0} layer(s) • Used ${template.usage_count || 0} times
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    generateTemplatePreview(template) {
+        if (!template.layers || template.layers.length === 0) {
+            return '(empty)';
+        }
+
+        const lines = [];
+        const sortedLayers = [...template.layers].sort((a, b) => (a.position?.y || 0) - (b.position?.y || 0));
+
+        for (const layer of sortedLayers.slice(0, 4)) {
+            const yPos = layer.position?.y || 0;
+            const height = layer.position?.height || 50;
+            const text = layer.content?.text || layer.name || 'Layer';
+            const truncated = text.length > 25 ? text.substring(0, 22) + '...' : text;
+            lines.push(`Y:${yPos} H:${height} "${truncated}"`);
+        }
+
+        if (sortedLayers.length > 4) {
+            lines.push(`... +${sortedLayers.length - 4} more`);
+        }
+
+        return lines.join('\n');
+    }
+
+    filterTemplates() {
+        this.renderTemplates();
+    }
+
+    selectTemplate(presetId) {
+        const template = this.templates.find(t => t.preset_id === presetId);
+        if (!template) return;
+
+        this.selectedTemplate = template;
+        this.renderTemplates();
+
+        // Show apply section
+        const applySection = document.getElementById('templateApplySection');
+        const templateName = document.getElementById('selectedTemplateName');
+
+        if (applySection && templateName) {
+            applySection.style.display = 'block';
+            templateName.textContent = template.name;
+        }
+
+        this.log(`Selected template: ${template.name}`);
+    }
+
+    clearTemplateSelection() {
+        this.selectedTemplate = null;
+        this.renderTemplates();
+
+        const applySection = document.getElementById('templateApplySection');
+        if (applySection) {
+            applySection.style.display = 'none';
+        }
+    }
+
+    // ============ Multi-TV Selection Methods ============
+
+    setTvMode(mode) {
+        this.tvSelectionMode = mode;
+
+        // Update button states
+        document.getElementById('singleTvMode')?.classList.toggle('active', mode === 'single');
+        document.getElementById('multiTvMode')?.classList.toggle('active', mode === 'multi');
+
+        // Show/hide selectors
+        document.getElementById('singleTvSelector').style.display = mode === 'single' ? 'block' : 'none';
+        document.getElementById('multiTvSelector').style.display = mode === 'multi' ? 'block' : 'none';
+
+        this.log(`TV selection mode: ${mode}`);
+    }
+
+    renderTvCheckboxes() {
+        const container = document.getElementById('tvCheckboxList');
+        if (!container || !this.tvs) return;
+
+        container.innerHTML = this.tvs.map(tv => `
+            <label class="tv-checkbox-item">
+                <input type="checkbox" value="${tv._id}" onchange="updateSelectedTvs()">
+                <span>${tv.name} (${tv.location})</span>
+            </label>
+        `).join('');
+
+        this.updateSelectedTvCount();
+    }
+
+    updateSelectedTvs() {
+        const checkboxes = document.querySelectorAll('#tvCheckboxList input[type="checkbox"]:checked');
+        this.selectedTvIds = Array.from(checkboxes).map(cb => cb.value);
+        this.updateSelectedTvCount();
+    }
+
+    updateSelectedTvCount() {
+        const countEl = document.getElementById('selectedTvCount');
+        if (countEl) {
+            countEl.textContent = `${this.selectedTvIds.length} selected`;
+        }
+    }
+
+    selectAllTvs() {
+        const checkboxes = document.querySelectorAll('#tvCheckboxList input[type="checkbox"]');
+        checkboxes.forEach(cb => cb.checked = true);
+        this.updateSelectedTvs();
+    }
+
+    deselectAllTvs() {
+        const checkboxes = document.querySelectorAll('#tvCheckboxList input[type="checkbox"]');
+        checkboxes.forEach(cb => cb.checked = false);
+        this.updateSelectedTvs();
+    }
+
+    getSelectedTvIds() {
+        if (this.tvSelectionMode === 'single') {
+            return this.selectedTvId ? [this.selectedTvId] : [];
+        }
+        return this.selectedTvIds;
+    }
+
+    // ============ Template Apply Methods ============
+
+    async applyTemplateToSelectedTvs() {
+        if (!this.selectedTemplate) {
+            this.log('Please select a template first', 'error');
+            return;
+        }
+
+        const tvIds = this.getSelectedTvIds();
+        if (tvIds.length === 0) {
+            this.log('Please select at least one TV', 'error');
+            return;
+        }
+
+        const overrideExisting = document.getElementById('overrideExistingLayers')?.checked || false;
+
+        try {
+            const response = await fetch(`${this.apiBase}/presets/apply-bulk`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    preset_id: this.selectedTemplate.preset_id,
+                    tv_ids: tvIds,
+                    override_existing: overrideExisting
+                })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                const successCount = result.data.results.filter(r => r.success).length;
+                const failures = result.data.results.filter(r => !r.success);
+
+                this.log(`Template "${this.selectedTemplate.name}" applied to ${successCount}/${tvIds.length} TVs`);
+
+                // Show detailed results in log
+                if (failures.length > 0) {
+                    failures.forEach(f => this.log(`Failed for ${f.tv_id}: ${f.error}`, 'warning'));
+                }
+
+                // Show user-friendly feedback
+                if (successCount === tvIds.length) {
+                    alert(`✅ Template "${this.selectedTemplate.name}" applied successfully to ${successCount} TV(s)!`);
+                } else if (successCount > 0) {
+                    alert(`⚠️ Template applied to ${successCount}/${tvIds.length} TVs.\n\nFailed:\n${failures.map(f => `• ${f.tv_id}: ${f.error}`).join('\n')}`);
+                } else {
+                    alert(`❌ Failed to apply template to any TV.\n\n${failures.map(f => `• ${f.tv_id}: ${f.error}`).join('\n')}`);
+                }
+
+                // Reload layers if current TV was affected
+                if (tvIds.includes(this.selectedTvId)) {
+                    await this.loadLayers();
+                }
+
+                this.clearTemplateSelection();
+            } else {
+                this.log(`Failed to apply template: ${result.error}`, 'error');
+                alert(`❌ Failed to apply template: ${result.error}`);
+            }
+        } catch (error) {
+            this.log(`Error applying template: ${error.message}`, 'error');
+            alert(`❌ Error applying template: ${error.message}`);
+        }
+    }
+
+    // ============ Save Layer as Template Methods ============
+
+    openSaveTemplateModal(layerId = null) {
+        const targetLayerId = layerId || this.selectedLayerId;
+
+        if (!targetLayerId) {
+            this.log('Please select a layer first', 'error');
+            return;
+        }
+
+        const layer = this.layers.find(l => l.layer_id === targetLayerId);
+        if (!layer) {
+            this.log('Layer not found', 'error');
+            return;
+        }
+
+        // Populate modal
+        document.getElementById('templateLayerId').value = targetLayerId;
+        document.getElementById('templateName').value = '';
+        document.getElementById('templateDescription').value = '';
+        document.getElementById('templateCategory').value = 'custom';
+
+        // Open modal
+        document.getElementById('saveTemplateModal').classList.add('open');
+    }
+
+    closeSaveTemplateModal() {
+        document.getElementById('saveTemplateModal').classList.remove('open');
+    }
+
+    async saveLayerAsTemplate(event) {
+        event.preventDefault();
+
+        const layerId = document.getElementById('templateLayerId').value;
+        const name = document.getElementById('templateName').value.trim();
+        const description = document.getElementById('templateDescription').value.trim();
+        const category = document.getElementById('templateCategory').value;
+
+        if (!name || name.length < 3) {
+            this.log('Template name must be at least 3 characters', 'error');
+            return;
+        }
+
+        try {
+            const response = await fetch(`${this.apiBase}/tvs/${this.selectedTvId}/layers/${layerId}/save-as-template`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, description, category })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                this.log(`Layer saved as template "${name}"`);
+                this.closeSaveTemplateModal();
+                await this.loadTemplates();
+                alert(`✅ Layer saved as template "${name}"!\n\nYou can now apply it to any TV from the Templates sidebar.`);
+            } else {
+                this.log(`Failed to save template: ${result.error}`, 'error');
+                alert(`❌ Failed to save template: ${result.error}`);
+            }
+        } catch (error) {
+            this.log(`Error saving template: ${error.message}`, 'error');
+            alert(`❌ Error saving template: ${error.message}`);
+        }
+    }
+
+    toggleTemplateSidebar() {
+        const sidebar = document.getElementById('templateSidebar');
+        if (sidebar) {
+            sidebar.classList.toggle('open');
+        }
     }
 }
 
@@ -812,6 +1137,56 @@ function broadcastAlert() {
 
 function dismissAlert(alertId) {
     manager.dismissAlert(alertId);
+}
+
+// Template management global functions
+function toggleTemplateSidebar() {
+    manager.toggleTemplateSidebar();
+}
+
+function filterTemplates() {
+    manager.filterTemplates();
+}
+
+function selectTemplate(presetId) {
+    manager.selectTemplate(presetId);
+}
+
+function clearTemplateSelection() {
+    manager.clearTemplateSelection();
+}
+
+function applyTemplateToSelectedTvs() {
+    manager.applyTemplateToSelectedTvs();
+}
+
+function openSaveTemplateModal() {
+    manager.openSaveTemplateModal();
+}
+
+function closeSaveTemplateModal() {
+    manager.closeSaveTemplateModal();
+}
+
+function saveLayerAsTemplate(event) {
+    manager.saveLayerAsTemplate(event);
+}
+
+// Multi-TV selection global functions
+function setTvMode(mode) {
+    manager.setTvMode(mode);
+}
+
+function updateSelectedTvs() {
+    manager.updateSelectedTvs();
+}
+
+function selectAllTvs() {
+    manager.selectAllTvs();
+}
+
+function deselectAllTvs() {
+    manager.deselectAllTvs();
 }
 
 async function quickSendTemplate(templateId) {

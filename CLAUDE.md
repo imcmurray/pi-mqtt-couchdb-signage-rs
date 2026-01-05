@@ -101,6 +101,16 @@ Our system uses a **dual-protocol architecture** optimized for different data ty
 - **83 Test Cases:** Comprehensive test coverage across all features
 - **Production Ready:** ~5,200 lines of production code, fully documented
 
+**✅ Phase 6: Layer Template & Multi-TV Management (v0.6.0)**
+- **Layer Template System:** Reusable presets with category organization (court/emergency/info/layout/custom)
+- **Multi-TV Operations:** Bulk preset application with per-TV success/failure results
+- **Save Layer as Template:** Convert any layer to reusable preset with smart tag filtering
+- **Template Sidebar UI:** Category filtering and quick template application
+- **Single/Multi TV Selection:** Toggle between individual and bulk TV targeting
+- **MQTT Batch Notifications:** Real-time layer updates via `publishLayerBatch()`
+- **12 Preset API Endpoints:** Full REST API for template management
+- **~250 Lines JavaScript:** Template management methods in multilayer.js
+
 ### Project Structure
 ```
 src/
@@ -113,6 +123,8 @@ src/
 │   ├── courtHearingController.js    # Court hearing management
 │   ├── dashboardController.js       # Dashboard logic
 │   ├── imageController.js           # Image operations
+│   ├── layerController.js           # Layer operations + save-as-template
+│   ├── presetController.js          # Preset/template management + bulk apply
 │   └── tvController.js              # TV operations
 ├── middleware/upload.js      # Multer file upload with Sharp processing
 ├── models/
@@ -121,6 +133,8 @@ src/
 │   ├── AlertTemplate.js     # Alert template model
 │   ├── CourtHearing.js      # Court hearing model
 │   ├── image.js             # Image document model
+│   ├── Layer.js             # Layer document model
+│   ├── Preset.js            # Preset/template model with categories
 │   └── tv.js                # TV document model
 ├── routes/
 │   ├── alertRoutes.js             # Emergency alert API (13 endpoints)
@@ -128,6 +142,8 @@ src/
 │   ├── courtHearingRoutes.js      # Court hearing API endpoints
 │   ├── dashboardRoutes.js         # Dashboard API endpoints
 │   ├── imageRoutes.js             # Image management endpoints
+│   ├── layerRoutes.js             # Layer management + save-as-template
+│   ├── presetRoutes.js            # Preset/template API (12 endpoints)
 │   └── tvRoutes.js                # TV management endpoints
 ├── services/
 │   ├── alertService.js          # Alert broadcasting and management
@@ -137,15 +153,15 @@ src/
 │   ├── courtDisplayService.js   # Layer generation from hearings
 │   ├── layerAutomation.js       # Cron jobs for automated updates
 │   └── mqttService.js           # MQTT client service
-├── server.js                 # Main application entry point
-├── server.multilayer.js      # Multi-layer server with alert system
+├── server.js                 # Main application entry point (multi-layer enabled)
 └── utils/                    # Utility functions
 
 pi-slideshow-rs/
 ├── src/
 │   ├── main.rs                    # Main application entry
-│   ├── slideshow_controller.rs    # Core slideshow logic
+│   ├── slideshow_controller.rs    # Core slideshow logic + MQTT layer commands
 │   ├── layer_manager.rs           # Layer compositing system
+│   ├── layer_animation.rs         # Animation types and easing functions
 │   ├── http_server.rs             # REST API server
 │   └── mqtt_client.rs             # MQTT communication
 └── images/                        # Sample slideshow images
@@ -153,8 +169,9 @@ pi-slideshow-rs/
 public/
 ├── index.html             # Admin panel frontend
 ├── court-schedule.html    # Court hearing management UI
-├── multilayer.html        # Multi-layer dashboard with alerts
+├── multilayer.html        # Multi-layer dashboard with template sidebar
 ├── alert-templates.html   # Alert template manager UI
+├── preset-manager.html    # Preset/template management UI
 ├── css/style.css         # Frontend styling
 └── js/
     ├── app.js               # Main frontend JavaScript
@@ -195,10 +212,18 @@ tests/
 - 23 API endpoints for complete alert management
 - 83 comprehensive test cases
 
+### ✅ Implemented (Layer Template System - v0.6.0)
+- **Layer Template Management** - Reusable presets with categories (court/emergency/info/layout/custom)
+- **Multi-TV Operations** - Bulk preset application with per-TV results
+- **Template Sidebar UI** - Category filtering and quick template application
+- **Save Layer as Template** - Convert any layer to reusable preset
+- **Smart Tag Filtering** - Auto-removes template-specific tags (from-preset, from-layer:)
+- **MQTT Batch Updates** - Real-time notifications via `publishLayerBatch()`
+- **Single/Multi TV Selection** - Toggle between individual and bulk TV targeting
+- 12 preset management API endpoints
+
 ### 🎯 Planned (Future Phases)
 - Multi-layer support (>2 layers)
-- Zone-based preset templates
-- Bulk operations across multiple TVs
 - Location-based filtering for hearings
 - Judge photo integration
 - Alert acknowledgment system
@@ -214,10 +239,19 @@ Each TV operates with hybrid connectivity for optimal performance:
 
 **Communication Patterns:**
 - MQTT command topic: `signage/tv/{id}/command` (receive control commands)
-- MQTT status topic: `signage/tv/{id}/status` (publish status updates)  
+- MQTT status topic: `signage/tv/{id}/status` (publish status updates)
 - MQTT heartbeat topic: `signage/tv/{id}/heartbeat` (health monitoring)
+- MQTT layer topic: `signage/tv/{id}/layers` (layer batch operations)
 - CouchDB queries: Direct database access for images and configuration
 - HTTP API: `http://pi-ip:8080/api/` (local control interface)
+
+**MQTT Layer Commands (Rust):**
+- `AddLayer` - Add new layer to composition
+- `RemoveLayer` - Remove layer by ID
+- `UpdateLayer` - Update existing layer configuration
+- `SetLayerVisibility` - Toggle layer visibility
+- `SetLayerOpacity` - Adjust layer opacity (0.0-1.0)
+- `AnimateLayer` - Trigger layer animation (slide/fade/move with easing)
 
 **Operational Flow:**
 1. **Startup**: Connect to both CouchDB and MQTT broker

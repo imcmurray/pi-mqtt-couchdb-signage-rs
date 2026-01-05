@@ -1,91 +1,136 @@
 const express = require('express');
+const http = require('http');
+const WebSocket = require('ws');
 const cors = require('cors');
 const helmet = require('helmet');
+const morgan = require('morgan');
 const path = require('path');
-const WebSocket = require('ws');
-const http = require('http');
+const swaggerUi = require('swagger-ui-express');
+const swaggerSpec = require('./config/swagger');
 
-const config = require('./config');
-const { initializeDatabase } = require('./config/database');
-const mqttService = require('./services/mqttService');
-const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
-const { 
-  generalLimiter, 
-  speedLimiter, 
-  securityHeaders, 
-  corsOptions, 
-  requestSizeLimit 
-} = require('./middleware/security');
+// Multi-layer specific imports
+const config = require('./config/multilayer.config');
+const { initializeMultilayerDatabases } = require('./config/multilayer.database');
+const mqttService = require('./services/multilayer.mqttService');
+const layerAutomationService = require('./services/layerAutomation');
+const batchScheduler = require('./services/batchScheduler');
+const { errorHandler } = require('./middleware/errorHandler');
 
-// Route imports
+// Routes
 const tvRoutes = require('./routes/tvRoutes');
 const imageRoutes = require('./routes/imageRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
+const layerRoutes = require('./routes/layerRoutes');
+const courtHearingRoutes = require('./routes/courtHearingRoutes');
+const presetRoutes = require('./routes/presetRoutes');
+const bulkRoutes = require('./routes/bulkRoutes');
 
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
 // Security middleware
-app.use(securityHeaders);
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "blob:"],
+      connectSrc: ["'self'", "ws:", "wss:"],
+    },
+  },
+}));
 
-if (config.isProduction()) {
-  app.use(helmet());
-  app.use(cors(corsOptions));
+// CORS configuration
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Allow requests with no origin (mobile apps, Postman, etc.)
+    if (!origin) return callback(null, true);
+    
+    // Check against allowed origins
+    if (config.security.allowedOrigins.length === 0 || 
+        config.security.allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  optionsSuccessStatus: 200
+};
+app.use(cors(corsOptions));
+
+// Body parsing middleware
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Logging middleware
+if (config.isDevelopment()) {
+  app.use(morgan('dev'));
 } else {
-  app.use(helmet({
-    contentSecurityPolicy: false,
-    crossOriginEmbedderPolicy: false
-  }));
-  app.use(cors());
+  app.use(morgan('combined'));
 }
 
-// Rate limiting
-app.use(generalLimiter);
-app.use(speedLimiter);
-
-// Body parsing with size limits
-app.use(express.json({ limit: requestSizeLimit.json }));
-app.use(express.urlencoded({ 
-  extended: true, 
-  limit: requestSizeLimit.urlencoded 
-}));
-app.use(express.raw({ limit: requestSizeLimit.raw }));
-
-// Trust proxy for accurate IP addresses (important for rate limiting)
-app.set('trust proxy', 1);
-
 // Static files
+app.use(express.static(path.join(__dirname, '../public')));
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
-app.use('/public', express.static(path.join(__dirname, '../public')));
-// Serve CSS and JS files directly from root paths for easier HTML references
-app.use('/css', express.static(path.join(__dirname, '../public/css')));
-app.use('/js', express.static(path.join(__dirname, '../public/js')));
-app.use('/images', express.static(path.join(__dirname, '../public/images')));
 
-// Routes
-app.use('/api/tvs', tvRoutes);
-app.use('/api/images', imageRoutes);
-app.use('/api/dashboard', dashboardRoutes);
+// API Documentation
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+  customCss: '.swagger-ui .topbar { display: none }',
+  customSiteTitle: 'Digital Signage API Docs'
+}));
 
-// Health check endpoint
-app.get('/api/health', (req, res) => {
+// Serve OpenAPI spec as JSON
+app.get('/api-docs.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.send(swaggerSpec);
+});
+
+/**
+ * @openapi
+ * /health:
+ *   get:
+ *     summary: Health check endpoint
+ *     description: Returns the health status of the server and its components
+ *     tags:
+ *       - Health
+ *     responses:
+ *       200:
+ *         description: Server is healthy
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/HealthResponse'
+ */
+app.get('/health', (req, res) => {
   res.json({
-    status: 'healthy',
+    status: 'ok',
+    mode: 'multi-layer',
     timestamp: new Date().toISOString(),
-    environment: config.server.environment,
-    version: config.isProduction() ? 'hidden' : process.env.npm_package_version,
-    mqtt_connected: mqttService.isConnected,
-    uptime: process.uptime(),
-    config: {
-      database: config.database.name,
-      mqtt_broker: config.mqtt.brokerUrl.replace(/\/\/.*@/, '//***:***@'), // Hide credentials
-      layer_system_enabled: config.layers.maxLayers > 0
-    }
+    databases: config.database.databases,
+    mqtt_prefix: config.mqtt.topics.prefix,
+    api_docs: '/api-docs'
   });
 });
 
-// Version endpoint
+/**
+ * @openapi
+ * /api/version:
+ *   get:
+ *     summary: Get version information
+ *     description: Returns git version, commit hash, branch, and build information
+ *     tags:
+ *       - Health
+ *     responses:
+ *       200:
+ *         description: Version information
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/VersionResponse'
+ */
 app.get('/api/version', (req, res) => {
   const fs = require('fs');
   const { execSync } = require('child_process');
@@ -145,7 +190,8 @@ app.get('/api/version', (req, res) => {
       build_time: versionInfo.build_time,
       version: displayVersion,
       management_ui_version: managementVersion,
-      is_dirty: isDirty
+      is_dirty: isDirty,
+      mode: 'multi-layer'
     });
   } catch (error) {
     console.error('Error getting version info:', error);
@@ -156,118 +202,194 @@ app.get('/api/version', (req, res) => {
       build_time: new Date().toISOString(),
       version: 'unknown',
       management_ui_version: 'unknown',
-      is_dirty: false
+      is_dirty: false,
+      mode: 'multi-layer'
     });
   }
 });
 
-// Serve admin panel
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, '../public/index.html'));
-});
+// API routes
+app.use('/api/tvs', tvRoutes);
+app.use('/api/images', imageRoutes);
+app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/layers', layerRoutes); // New layer management routes
+const alertTemplateRoutes = require('./routes/alertTemplateRoutes');
+const alertRoutes = require('./routes/alertRoutes');
+app.use('/api/alerts/templates', alertTemplateRoutes); // Alert template management (must be before /api/alerts)
+app.use('/api/alerts', alertRoutes); // Emergency alert routes
+app.use('/api/hearings', courtHearingRoutes); // Court hearing management routes
+app.use('/api/presets', presetRoutes); // Zone preset templates
+app.use('/api/bulk', bulkRoutes); // Bulk operations for multi-TV management
 
-// WebSocket connection handling
+// WebSocket handling for real-time updates
 wss.on('connection', (ws) => {
-  console.log('WebSocket client connected');
+  console.log('New WebSocket connection (multi-layer mode)');
   
-  const subscriberId = Date.now().toString();
-  
-  // Subscribe to MQTT updates
-  mqttService.addSubscriber(subscriberId, (data) => {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({
-        type: 'mqtt_update',
-        data
-      }));
-    }
-  });
-
   ws.on('message', (message) => {
     try {
       const data = JSON.parse(message);
-      console.log('Received WebSocket message:', data);
+      console.log('WebSocket message:', data);
       
-      // Handle different message types
-      switch (data.type) {
-        case 'ping':
-          ws.send(JSON.stringify({ type: 'pong' }));
-          break;
-        case 'subscribe_tv':
-          // Client wants to subscribe to specific TV updates
-          break;
-        default:
-          console.log('Unknown WebSocket message type:', data.type);
+      // Handle layer-specific WebSocket messages
+      if (data.type === 'subscribe_layers') {
+        ws.subscribedTvId = data.tv_id;
+        ws.send(JSON.stringify({ 
+          type: 'subscription_confirmed', 
+          tv_id: data.tv_id 
+        }));
       }
     } catch (error) {
-      console.error('Error parsing WebSocket message:', error);
+      console.error('WebSocket message error:', error);
     }
   });
-
+  
   ws.on('close', () => {
-    console.log('WebSocket client disconnected');
-    mqttService.removeSubscriber(subscriberId);
-  });
-
-  ws.on('error', (error) => {
-    console.error('WebSocket error:', error);
-    mqttService.removeSubscriber(subscriberId);
+    console.log('WebSocket connection closed');
   });
 });
 
-// Error handling middleware
-app.use(notFoundHandler);
+// MQTT event forwarding to WebSocket clients
+mqttService.on('message', ({ topic, payload }) => {
+  // Forward layer updates to subscribed WebSocket clients
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      // Extract TV ID from topic
+      const topicParts = topic.split('/');
+      const tvIdIndex = topicParts.indexOf('tv') + 1;
+      const tvId = topicParts[tvIdIndex];
+      
+      // Only send to clients subscribed to this TV
+      if (!client.subscribedTvId || client.subscribedTvId === tvId) {
+        client.send(JSON.stringify({
+          type: 'mqtt_message',
+          topic,
+          payload,
+          timestamp: new Date().toISOString()
+        }));
+      }
+    }
+  });
+});
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({ error: 'Endpoint not found' });
+});
+
+// Error handling middleware (must be last)
 app.use(errorHandler);
 
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('SIGTERM received, shutting down gracefully');
-  mqttService.disconnect();
-  server.close(() => {
-    console.log('Server closed');
-    process.exit(0);
-  });
-});
+// Graceful shutdown handling
+let isShuttingDown = false;
 
-process.on('SIGINT', () => {
-  console.log('SIGINT received, shutting down gracefully');
-  mqttService.disconnect();
+async function gracefulShutdown(signal) {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  
+  console.log(`\n${signal} received. Starting graceful shutdown...`);
+  
+  // Stop accepting new connections
   server.close(() => {
-    console.log('Server closed');
-    process.exit(0);
+    console.log('HTTP server closed');
   });
-});
+  
+  // Close WebSocket connections
+  wss.clients.forEach((client) => {
+    client.close();
+  });
+  
+  // Stop layer automation
+  layerAutomationService.stop();
+  console.log('Layer automation stopped');
 
-// Start server
+  // Stop batch scheduler
+  batchScheduler.stop();
+  console.log('Batch scheduler stopped');
+
+  // Disconnect from MQTT
+  await mqttService.disconnect();
+  console.log('MQTT disconnected');
+  
+  // Wait for pending operations
+  setTimeout(() => {
+    console.log('Graceful shutdown complete');
+    process.exit(0);
+  }, config.server.shutdownTimeout);
+}
+
+// Register shutdown handlers
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+// Initialize and start server
 async function startServer() {
   try {
-    // Initialize database
-    await initializeDatabase();
-    console.log('Database initialized');
-
+    // Initialize multi-layer databases
+    console.log('Initializing multi-layer databases...');
+    await initializeMultilayerDatabases();
+    console.log('Multi-layer databases initialized');
+    
     // Connect to MQTT broker
-    try {
-      await mqttService.connect();
-      console.log('MQTT service connected');
-    } catch (error) {
-      console.error('MQTT connection failed, continuing without MQTT:', error.message);
-    }
+    console.log('Connecting to MQTT broker (multi-layer mode)...');
+    await mqttService.connect();
+    
+    // Start layer automation service
+    console.log('Starting layer automation service...');
+    layerAutomationService.start();
+
+    // Initialize alert template service
+    console.log('Initializing alert template service...');
+    const templateService = require('./services/templateService');
+    await templateService.initialize();
+
+    // Start alert queue service
+    console.log('Starting alert queue service...');
+    const queueService = require('./services/alertQueueService');
+    queueService.start();
+
+    // Start alert schedule service
+    console.log('Starting alert schedule service...');
+    const scheduleService = require('./services/alertScheduleService');
+    scheduleService.start();
+
+    // Start batch scheduler
+    console.log('Starting batch scheduler...');
+    batchScheduler.start();
 
     // Start HTTP server
-    server.listen(config.server.port, config.server.host, () => {
-      console.log(`Digital Signage Management Server running on ${config.server.host}:${config.server.port}`);
-      console.log(`Environment: ${config.server.environment}`);
-      console.log(`Database: ${config.database.name}`);
-      console.log(`MQTT Broker: ${config.mqtt.brokerUrl.replace(/\/\/.*@/, '//***:***@')}`);
-      console.log(`WebSocket server running on the same port`);
-      if (config.layers.maxLayers > 0) {
-        console.log(`Layer system enabled (max ${config.layers.maxLayers} layers per TV)`);
-      }
+    const port = config.server.port;
+    const host = config.server.host;
+    
+    server.listen(port, host, () => {
+      console.log(`
+========================================
+Multi-layer Digital Signage Server
+========================================
+Mode: ${config.server.environment}
+Server: http://${host}:${port}
+API Docs: http://${host}:${port}/api-docs
+Databases: ${Object.values(config.database.databases).join(', ')}
+MQTT Prefix: ${config.mqtt.topics.prefix}
+WebSocket: ws://${host}:${port}
+========================================
+      `);
     });
-
   } catch (error) {
     console.error('Failed to start server:', error);
     process.exit(1);
   }
 }
 
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  // Don't exit in development
+  if (!config.isDevelopment()) {
+    gracefulShutdown('UNHANDLED_REJECTION');
+  }
+});
+
+// Start the server
 startServer();
+
+module.exports = { app, server, wss };

@@ -311,6 +311,49 @@ impl SlideshowController {
                 println!("Shutdown command received - stopping slideshow");
                 *self.state.write().await = SlideshowState::Stopped;
             }
+            SlideshowCommand::AddLayer { layer } => {
+                if let Err(e) = self.add_layer(layer).await {
+                    eprintln!("Failed to add layer: {}", e);
+                }
+            }
+            SlideshowCommand::RemoveLayer { layer_id } => {
+                if let Err(e) = self.remove_layer(&layer_id).await {
+                    eprintln!("Failed to remove layer: {}", e);
+                }
+            }
+            SlideshowCommand::UpdateLayer { layer_id, layer } => {
+                if let Err(e) = self.update_layer(&layer_id, layer).await {
+                    eprintln!("Failed to update layer: {}", e);
+                }
+            }
+            SlideshowCommand::SetLayerVisibility { layer_id, visible } => {
+                if let Err(e) = self.set_layer_visibility(&layer_id, visible).await {
+                    eprintln!("Failed to set layer visibility: {}", e);
+                }
+            }
+            SlideshowCommand::SetLayerOpacity { layer_id, opacity } => {
+                if let Err(e) = self.set_layer_opacity(&layer_id, opacity).await {
+                    eprintln!("Failed to set layer opacity: {}", e);
+                }
+            }
+            SlideshowCommand::AnimateLayer { layer_id, animation_type, duration_ms, distance } => {
+                if let Some(mut layer) = self.get_layer(&layer_id).await {
+                    match animation_type.as_str() {
+                        "slide_up" => layer.start_slide_up(distance.unwrap_or(100.0), duration_ms),
+                        "slide_down" => layer.start_slide_down(distance.unwrap_or(100.0), duration_ms),
+                        "slide_left" => layer.start_slide_left(distance.unwrap_or(100.0), duration_ms),
+                        "slide_right" => layer.start_slide_right(distance.unwrap_or(100.0), duration_ms),
+                        "fade_in" => layer.start_fade_in(duration_ms),
+                        "fade_out" => layer.start_fade_out(duration_ms),
+                        _ => eprintln!("Unknown animation type: {}", animation_type),
+                    }
+                    if let Err(e) = self.update_layer(&layer_id, layer).await {
+                        eprintln!("Failed to update layer after animation: {}", e);
+                    }
+                } else {
+                    eprintln!("Layer not found for animation: {}", layer_id);
+                }
+            }
         }
 
         // Send status update

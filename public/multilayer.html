@@ -541,6 +541,308 @@
             border-radius: 12px;
             margin-left: 8px;
         }
+
+        /* Template Sidebar Styles */
+        .template-sidebar {
+            position: fixed;
+            right: -380px;
+            top: 0;
+            width: 380px;
+            height: 100vh;
+            background: var(--surface);
+            box-shadow: -4px 0 20px rgba(0, 0, 0, 0.15);
+            z-index: 1000;
+            transition: right 0.3s ease;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .template-sidebar.open {
+            right: 0;
+        }
+
+        .sidebar-header {
+            padding: 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .sidebar-header h3 {
+            margin: 0;
+            color: var(--primary);
+            font-size: 18px;
+        }
+
+        .sidebar-close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: var(--text-muted);
+        }
+
+        .sidebar-close:hover {
+            color: var(--text);
+        }
+
+        .template-filters {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .template-filters select {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .template-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px 20px;
+        }
+
+        .template-card {
+            background: var(--background);
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .template-card:hover {
+            border-color: var(--primary);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        .template-card.selected {
+            border-color: var(--primary);
+            background: rgba(37, 99, 235, 0.05);
+        }
+
+        .template-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .template-card-name {
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .template-card-category {
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 4px;
+            background: var(--secondary);
+            color: white;
+        }
+
+        .template-card-category.court { background: #7c3aed; }
+        .template-card-category.emergency { background: var(--danger); }
+        .template-card-category.info { background: var(--primary); }
+        .template-card-category.layout { background: var(--success); }
+        .template-card-category.custom { background: var(--secondary); }
+
+        .template-card-preview {
+            background: #1e293b;
+            color: #94a3b8;
+            font-family: monospace;
+            font-size: 10px;
+            padding: 8px;
+            border-radius: 4px;
+            margin-bottom: 8px;
+            white-space: pre;
+            line-height: 1.3;
+        }
+
+        .template-card-meta {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .sidebar-footer {
+            padding: 16px 20px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .sidebar-footer a {
+            text-align: center;
+            color: var(--primary);
+            text-decoration: none;
+            font-size: 13px;
+        }
+
+        .sidebar-footer a:hover {
+            text-decoration: underline;
+        }
+
+        .template-toggle-btn {
+            position: fixed;
+            right: 20px;
+            bottom: 20px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 30px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            box-shadow: 0 4px 16px rgba(37, 99, 235, 0.3);
+            z-index: 999;
+            transition: all 0.2s;
+        }
+
+        .template-toggle-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(37, 99, 235, 0.4);
+        }
+
+        /* Template Apply Panel */
+        .template-apply-section {
+            padding: 16px 20px;
+            background: rgba(37, 99, 235, 0.05);
+            border-top: 1px solid var(--primary);
+        }
+
+        .template-apply-section h4 {
+            margin: 0 0 12px 0;
+            font-size: 14px;
+            color: var(--primary);
+        }
+
+        .apply-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .apply-controls label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+
+        .apply-controls input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+        }
+
+        .apply-buttons {
+            display: flex;
+            gap: 8px;
+        }
+
+        /* Multi-TV Selector Styles */
+        .tv-selection-mode {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .tv-mode-btn {
+            padding: 8px 16px;
+            border: 2px solid var(--border);
+            border-radius: 6px;
+            background: var(--background);
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .tv-mode-btn.active {
+            border-color: var(--primary);
+            background: rgba(37, 99, 235, 0.1);
+            color: var(--primary);
+        }
+
+        .tv-checkbox-list {
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 8px;
+            background: var(--background);
+        }
+
+        .tv-checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .tv-checkbox-item:hover {
+            background: rgba(37, 99, 235, 0.05);
+        }
+
+        .tv-checkbox-item input {
+            width: 16px;
+            height: 16px;
+        }
+
+        .tv-checkbox-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        /* Save Template Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+        }
+
+        .modal-overlay.open {
+            display: flex;
+        }
+
+        .modal {
+            background: var(--surface);
+            border-radius: 12px;
+            padding: 24px;
+            width: 100%;
+            max-width: 450px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        .modal h3 {
+            margin: 0 0 16px 0;
+            color: var(--primary);
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+            margin-top: 20px;
+        }
     </style>
 </head>
 <body>
@@ -675,11 +977,32 @@
         <div class="quick-actions">
             <h3>Layer Quick Actions</h3>
             <div class="tv-selector">
-                <label for="tvSelect">Select TV:</label>
-                <select id="tvSelect">
-                    <option value="">Loading TVs...</option>
-                </select>
-                <button class="btn btn-secondary btn-small" onclick="loadTVs()">Refresh</button>
+                <div class="tv-selection-mode">
+                    <button class="tv-mode-btn active" id="singleTvMode" onclick="setTvMode('single')">Single TV</button>
+                    <button class="tv-mode-btn" id="multiTvMode" onclick="setTvMode('multi')">Multi-TV</button>
+                </div>
+
+                <!-- Single TV mode: dropdown -->
+                <div id="singleTvSelector">
+                    <label for="tvSelect">Select TV:</label>
+                    <select id="tvSelect">
+                        <option value="">Loading TVs...</option>
+                    </select>
+                    <button class="btn btn-secondary btn-small" onclick="loadTVs()">Refresh</button>
+                </div>
+
+                <!-- Multi TV mode: checkboxes -->
+                <div id="multiTvSelector" style="display: none;">
+                    <label>Select TVs:</label>
+                    <div class="tv-checkbox-list" id="tvCheckboxList">
+                        <!-- TV checkboxes rendered here -->
+                    </div>
+                    <div class="tv-checkbox-actions">
+                        <button class="btn btn-small btn-secondary" onclick="selectAllTvs()">Select All</button>
+                        <button class="btn btn-small btn-secondary" onclick="deselectAllTvs()">Deselect All</button>
+                        <span id="selectedTvCount" style="margin-left: 8px; font-size: 12px; color: var(--text-muted);">0 selected</span>
+                    </div>
+                </div>
             </div>
 
             <button class="btn" onclick="createSampleLayers()">Create Sample Layers</button>
@@ -765,6 +1088,96 @@
         <div class="logs">
             <h3>Activity Log</h3>
             <div class="log-output" id="logOutput"></div>
+        </div>
+    </div>
+
+    <!-- Template Sidebar -->
+    <div class="template-sidebar" id="templateSidebar">
+        <div class="sidebar-header">
+            <h3>📚 Layer Templates</h3>
+            <button class="sidebar-close" onclick="toggleTemplateSidebar()">×</button>
+        </div>
+
+        <div class="template-filters">
+            <select id="templateCategoryFilter" onchange="filterTemplates()">
+                <option value="">All Categories</option>
+                <option value="court">Court</option>
+                <option value="emergency">Emergency</option>
+                <option value="info">Info</option>
+                <option value="layout">Layout</option>
+                <option value="custom">Custom</option>
+            </select>
+        </div>
+
+        <div class="template-list" id="templateList">
+            <div style="text-align: center; padding: 40px 20px; color: var(--text-muted);">
+                Loading templates...
+            </div>
+        </div>
+
+        <!-- Apply Section (shown when template selected) -->
+        <div class="template-apply-section" id="templateApplySection" style="display: none;">
+            <h4>Apply Template: <span id="selectedTemplateName"></span></h4>
+            <div class="apply-controls">
+                <label>
+                    <input type="checkbox" id="overrideExistingLayers">
+                    Override existing preset layers
+                </label>
+                <div class="apply-buttons">
+                    <button class="btn btn-success btn-small" onclick="applyTemplateToSelectedTvs()">
+                        Apply to Selected TVs
+                    </button>
+                    <button class="btn btn-secondary btn-small" onclick="clearTemplateSelection()">
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="sidebar-footer">
+            <button class="btn" onclick="openSaveTemplateModal()">+ Save Current Layer as Template</button>
+            <a href="/preset-manager.html">Manage All Templates →</a>
+        </div>
+    </div>
+
+    <!-- Template Toggle Button -->
+    <button class="template-toggle-btn" onclick="toggleTemplateSidebar()">
+        📚 Templates
+    </button>
+
+    <!-- Save Template Modal -->
+    <div class="modal-overlay" id="saveTemplateModal">
+        <div class="modal">
+            <h3>💾 Save Layer as Template</h3>
+            <form id="saveTemplateForm" onsubmit="saveLayerAsTemplate(event)">
+                <div class="form-group">
+                    <label for="templateName">Template Name:</label>
+                    <input type="text" id="templateName" required placeholder="e.g., Court Header Banner" minlength="3" maxlength="100">
+                </div>
+
+                <div class="form-group">
+                    <label for="templateDescription">Description:</label>
+                    <textarea id="templateDescription" rows="2" placeholder="Optional description" maxlength="500"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="templateCategory">Category:</label>
+                    <select id="templateCategory">
+                        <option value="custom">Custom</option>
+                        <option value="court">Court</option>
+                        <option value="emergency">Emergency</option>
+                        <option value="info">Info</option>
+                        <option value="layout">Layout</option>
+                    </select>
+                </div>
+
+                <input type="hidden" id="templateLayerId">
+
+                <div class="modal-buttons">
+                    <button type="button" class="btn btn-secondary" onclick="closeSaveTemplateModal()">Cancel</button>
+                    <button type="submit" class="btn btn-success">Save Template</button>
+                </div>
+            </form>
         </div>
     </div>
 

@@ -14,6 +14,23 @@ pub enum AnimationType {
     Move,
 }
 
+impl AnimationType {
+    pub fn from_string(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "none" => Some(Self::None),
+            "slide_up" | "slideup" => Some(Self::SlideUp),
+            "slide_down" | "slidedown" => Some(Self::SlideDown),
+            "slide_left" | "slideleft" => Some(Self::SlideLeft),
+            "slide_right" | "slideright" => Some(Self::SlideRight),
+            "fade_in" | "fadein" => Some(Self::FadeIn),
+            "fade_out" | "fadeout" => Some(Self::FadeOut),
+            "scale" => Some(Self::Scale),
+            "move" => Some(Self::Move),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum EasingFunction {
     Linear,

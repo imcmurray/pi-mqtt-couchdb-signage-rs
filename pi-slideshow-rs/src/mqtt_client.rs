@@ -5,6 +5,7 @@ use std::time::Duration;
 use tokio::sync::{broadcast, mpsc};
 use uuid::Uuid;
 use sysinfo::{CpuExt, DiskExt, System, SystemExt};
+use crate::layer_manager::{Layer, LayerType};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MqttCommand {
@@ -54,6 +55,12 @@ pub enum SlideshowCommand {
     UpdateConfig { config: SlideshowConfig },
     Reboot,
     Shutdown,
+    AddLayer { layer: Layer },
+    RemoveLayer { layer_id: String },
+    UpdateLayer { layer_id: String, layer: Layer },
+    SetLayerVisibility { layer_id: String, visible: bool },
+    SetLayerOpacity { layer_id: String, opacity: f32 },
+    AnimateLayer { layer_id: String, animation_type: String, duration_ms: u64, distance: Option<f32> },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -115,8 +122,12 @@ impl MqttClient {
         // Subscribe to command topic
         let command_topic = format!("signage/tv/{}/command", tv_id);
         client.subscribe(&command_topic, QoS::AtLeastOnce).await?;
-        
-        println!("MQTT client connected, subscribed to {}", command_topic);
+
+        // Subscribe to alert topic for emergency alerts
+        let alert_topic = format!("signage_dev/tv/{}/alert", tv_id);
+        client.subscribe(&alert_topic, QoS::AtLeastOnce).await?;
+
+        println!("MQTT client connected, subscribed to {} and {}", command_topic, alert_topic);
 
         let mqtt_client = Self {
             client,
@@ -154,8 +165,16 @@ impl MqttClient {
         command_sender: &broadcast::Sender<SlideshowCommand>,
         tv_id: &str,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let expected_topic = format!("signage/tv/{}/command", tv_id);
-        if topic != expected_topic {
+        let expected_command_topic = format!("signage/tv/{}/command", tv_id);
+        let expected_alert_topic = format!("signage_dev/tv/{}/alert", tv_id);
+
+        // Handle alert messages
+        if topic == expected_alert_topic {
+            return Self::handle_alert_message(payload, command_sender).await;
+        }
+
+        // Handle command messages
+        if topic != expected_command_topic {
             return Ok(());
         }
 
@@ -193,6 +212,51 @@ impl MqttClient {
                 println!("🔄 MQTT CONFIG UPDATE received: {:?}", config);
                 SlideshowCommand::UpdateConfig { config }
             },
+            "add_layer" => {
+                let layer: Layer = serde_json::from_value(mqtt_command.payload["layer"].clone())?;
+                println!("📦 MQTT ADD LAYER received: {:?}", layer.id);
+                SlideshowCommand::AddLayer { layer }
+            },
+            "remove_layer" => {
+                let layer_id = mqtt_command.payload["layer_id"].as_str()
+                    .ok_or("Missing layer_id")?.to_string();
+                println!("🗑️ MQTT REMOVE LAYER received: {}", layer_id);
+                SlideshowCommand::RemoveLayer { layer_id }
+            },
+            "update_layer" => {
+                let layer_id = mqtt_command.payload["layer_id"].as_str()
+                    .ok_or("Missing layer_id")?.to_string();
+                let layer: Layer = serde_json::from_value(mqtt_command.payload["layer"].clone())?;
+                println!("🔄 MQTT UPDATE LAYER received: {}", layer_id);
+                SlideshowCommand::UpdateLayer { layer_id, layer }
+            },
+            "set_layer_visibility" => {
+                let layer_id = mqtt_command.payload["layer_id"].as_str()
+                    .ok_or("Missing layer_id")?.to_string();
+                let visible = mqtt_command.payload["visible"].as_bool()
+                    .ok_or("Missing visible")?;
+                println!("👁️ MQTT SET LAYER VISIBILITY received: {} -> {}", layer_id, visible);
+                SlideshowCommand::SetLayerVisibility { layer_id, visible }
+            },
+            "set_layer_opacity" => {
+                let layer_id = mqtt_command.payload["layer_id"].as_str()
+                    .ok_or("Missing layer_id")?.to_string();
+                let opacity = mqtt_command.payload["opacity"].as_f64()
+                    .ok_or("Missing opacity")? as f32;
+                println!("🎨 MQTT SET LAYER OPACITY received: {} -> {}", layer_id, opacity);
+                SlideshowCommand::SetLayerOpacity { layer_id, opacity }
+            },
+            "animate_layer" => {
+                let layer_id = mqtt_command.payload["layer_id"].as_str()
+                    .ok_or("Missing layer_id")?.to_string();
+                let animation_type = mqtt_command.payload["animation_type"].as_str()
+                    .ok_or("Missing animation_type")?.to_string();
+                let duration_ms = mqtt_command.payload["duration_ms"].as_u64()
+                    .unwrap_or(500);
+                let distance = mqtt_command.payload["distance"].as_f64().map(|d| d as f32);
+                println!("🎬 MQTT ANIMATE LAYER received: {} -> {} ({}ms)", layer_id, animation_type, duration_ms);
+                SlideshowCommand::AnimateLayer { layer_id, animation_type, duration_ms, distance }
+            },
             _ => {
                 println!("Unknown command: {}", mqtt_command.command);
                 return Ok(());
@@ -201,6 +265,57 @@ impl MqttClient {
 
         if let Err(e) = command_sender.send(slideshow_command) {
             eprintln!("Error sending command to slideshow: {}", e);
+        }
+
+        Ok(())
+    }
+
+    async fn handle_alert_message(
+        payload: &[u8],
+        command_sender: &broadcast::Sender<SlideshowCommand>,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let payload_str = String::from_utf8(payload.to_vec())?;
+        let alert: serde_json::Value = serde_json::from_str(&payload_str)?;
+
+        println!("🚨 Received emergency alert: {:?}", alert.get("alert_id"));
+
+        // Extract alert data
+        let alert_id = alert["alert_id"].as_str().unwrap_or("unknown");
+        let layer_data = &alert["layer"];
+
+        // Extract background color from alert, defaulting to red for emergencies
+        let bg_r = layer_data["content"]["backgroundColor"][0].as_u64().unwrap_or(220) as u8;
+        let bg_g = layer_data["content"]["backgroundColor"][1].as_u64().unwrap_or(38) as u8;
+        let bg_b = layer_data["content"]["backgroundColor"][2].as_u64().unwrap_or(38) as u8;
+        let bg_a = layer_data["content"]["backgroundColor"][3].as_u64().unwrap_or(242) as u8;
+
+        // Extract position if provided, otherwise use default banner position
+        let x = layer_data["position"]["x"].as_u64().unwrap_or(0) as u32;
+        let y = layer_data["position"]["y"].as_u64().unwrap_or(0) as u32;
+        let width = layer_data["position"]["width"].as_u64().unwrap_or(1920) as u32;
+        let height = layer_data["position"]["height"].as_u64().unwrap_or(120) as u32;
+
+        // Create the emergency layer
+        let layer = Layer::new(format!("alert_{}", alert_id), LayerType::Emergency)
+            .with_position(x, y, width, height)
+            .with_color(bg_r, bg_g, bg_b, bg_a);
+
+        // Send command to add the layer
+        if let Err(e) = command_sender.send(SlideshowCommand::AddLayer { layer }) {
+            eprintln!("Failed to send add layer command: {}", e);
+            return Err(e.into());
+        }
+
+        // Schedule auto-dismiss if specified
+        let auto_hide_ms = alert["layer"]["schedule"]["autoHideAfterMs"].as_u64().unwrap_or(0);
+        if auto_hide_ms > 0 {
+            let layer_id = format!("alert_{}", alert_id);
+            let sender = command_sender.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(auto_hide_ms)).await;
+                println!("🔕 Auto-dismissing alert: {}", layer_id);
+                let _ = sender.send(SlideshowCommand::RemoveLayer { layer_id });
+            });
         }
 
         Ok(())

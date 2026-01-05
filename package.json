@@ -1,18 +1,16 @@
 {
   "name": "digital-signage-management",
   "version": "0.2.0",
-  "description": "Digital signage management system with CouchDB, MQTT, and court hearing integration",
+  "description": "Digital signage management system with CouchDB, MQTT, court hearings, and emergency alerts",
   "main": "src/server.js",
   "scripts": {
     "dev": "nodemon src/server.js",
-    "dev:multilayer": "nodemon src/server.multilayer.js",
     "start": "node src/server.js",
-    "start:multilayer": "node src/server.multilayer.js",
     "test": "jest",
     "lint": "eslint src/",
     "build": "echo 'No build step required for Node.js'",
     "db:setup": "node scripts/db-setup.js",
-    "demo:multilayer": "node demo-multilayer-system.js"
+    "demo": "node demo-multilayer-system.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

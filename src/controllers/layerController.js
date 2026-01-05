@@ -1,5 +1,6 @@
 const Layer = require('../models/Layer');
 const TVMultilayer = require('../models/tv.multilayer');
+const Preset = require('../models/Preset');
 const mqttService = require('../services/multilayer.mqttService');
 const Joi = require('joi');
 
@@ -73,6 +74,12 @@ const batchOperationSchema = Joi.object({
       })
     })
   ).required()
+});
+
+const saveAsTemplateSchema = Joi.object({
+  name: Joi.string().required().min(3).max(100),
+  description: Joi.string().allow('').max(500),
+  category: Joi.string().valid('court', 'emergency', 'info', 'layout', 'custom').default('custom')
 });
 
 class LayerController {
@@ -1023,10 +1030,10 @@ class LayerController {
    */
   async getActiveAnimations(req, res) {
     const { tv_id } = req.params;
-    
+
     const layers = await Layer.findByTv(tv_id);
     const animatingLayers = layers.filter(layer => layer.isAnimating());
-    
+
     res.json({
       tv_id,
       animating_count: animatingLayers.length,
@@ -1036,6 +1043,161 @@ class LayerController {
         progress: layer.getAnimationProgress(),
         duration: layer.animation_state.duration
       }))
+    });
+  }
+
+  /**
+   * @openapi
+   * /api/layers/tvs/{tv_id}/layers/{layer_id}/save-as-template:
+   *   post:
+   *     summary: Save layer as template
+   *     description: Creates a new preset template from a single layer, stripping TV-specific data
+   *     tags:
+   *       - Layers
+   *     parameters:
+   *       - in: path
+   *         name: tv_id
+   *         required: true
+   *         schema:
+   *           type: string
+   *         description: TV identifier
+   *         example: tv-001
+   *       - in: path
+   *         name: layer_id
+   *         required: true
+   *         schema:
+   *           type: string
+   *         description: Layer identifier
+   *         example: layer-header-001
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - name
+   *             properties:
+   *               name:
+   *                 type: string
+   *                 minLength: 3
+   *                 maxLength: 100
+   *                 description: Template name
+   *                 example: Court Header Banner
+   *               description:
+   *                 type: string
+   *                 maxLength: 500
+   *                 description: Optional description
+   *                 example: Standard header banner for court displays
+   *               category:
+   *                 type: string
+   *                 enum: [court, emergency, info, layout, custom]
+   *                 default: custom
+   *                 example: court
+   *     responses:
+   *       201:
+   *         description: Layer saved as template successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                   example: true
+   *                 data:
+   *                   type: object
+   *                   properties:
+   *                     preset_id:
+   *                       type: string
+   *                     name:
+   *                       type: string
+   *                     layers:
+   *                       type: array
+   *                 message:
+   *                   type: string
+   *                   example: Layer saved as template "Court Header Banner"
+   *       400:
+   *         description: Validation error
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/ValidationError'
+   *       404:
+   *         description: Layer not found
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/ErrorResponse'
+   *       500:
+   *         description: Server error
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/ErrorResponse'
+   */
+  async saveLayerAsTemplate(req, res) {
+    const { tv_id, layer_id } = req.params;
+
+    // Validate request body
+    const { error, value } = saveAsTemplateSchema.validate(req.body);
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        error: error.details[0].message
+      });
+    }
+
+    const { name, description, category } = value;
+
+    // Find the layer
+    const layer = await Layer.findById(layer_id);
+    if (!layer || layer.tv_id !== tv_id) {
+      return res.status(404).json({
+        success: false,
+        error: 'Layer not found'
+      });
+    }
+
+    // Convert layer to preset format (strip TV-specific data)
+    const presetLayer = {
+      name: layer.name,
+      layer_type: layer.layer_type,
+      content: layer.content,
+      position: layer.position,
+      priority: layer.priority,
+      visible: layer.visible,
+      opacity: layer.opacity,
+      tags: layer.tags ? layer.tags.filter(tag =>
+        !tag.startsWith('preset:') &&
+        !tag.startsWith('from-tv:') &&
+        !tag.startsWith('from-preset') &&
+        !tag.startsWith('from-layer:')
+      ) : [],
+      metadata: {}
+    };
+
+    // Create preset with single layer
+    const preset = new Preset({
+      name,
+      description: description || `Created from layer "${layer.name}"`,
+      category: category || 'custom',
+      layers: [presetLayer],
+      is_builtin: false,
+      created_by: 'user',
+      tags: ['single-layer', `from-layer:${layer.layer_id}`, `from-tv:${tv_id}`]
+    });
+
+    await preset.save();
+
+    res.status(201).json({
+      success: true,
+      data: {
+        preset_id: preset.preset_id,
+        name: preset.name,
+        layers: preset.layers
+      },
+      message: `Layer saved as template "${name}"`
     });
   }
 }

@@ -35,6 +35,9 @@ router.post('/:id/clone', asyncHandler(presetController.clonePreset));
 // Apply preset to TV
 router.post('/apply/:tvId/:presetId', asyncHandler(presetController.applyPresetToTV));
 
+// Apply preset to multiple TVs
+router.post('/apply-bulk', asyncHandler(presetController.applyPresetToMultipleTVs));
+
 // Save current TV layout as preset
 router.post('/save-layout/:tvId', asyncHandler(presetController.saveCurrentLayoutAsPreset));
 
