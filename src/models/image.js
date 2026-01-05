@@ -1,10 +1,10 @@
-const { getDatabase } = require('../config/database');
+const multilayerDb = require('../config/multilayer.database');
 const BaseModel = require('./BaseModel');
 
 class Image extends BaseModel {
   constructor(data) {
     super(data, 'image');
-    
+
     // Image-specific fields
     this.original_name = data.original_name;
     this.size = data.size;
@@ -25,14 +25,34 @@ class Image extends BaseModel {
     };
   }
 
+  static getDb() {
+    return multilayerDb.getDatabase('images');
+  }
+
   static async findAll() {
-    const images = await BaseModel.findAll('images', Image);
-    // Filter to only return active images
-    return images.filter(img => img.status === 'active');
+    const db = this.getDb();
+    try {
+      const result = await db.view('images', 'all');
+      const images = result.rows.map(row => new Image(row.value));
+      return images.filter(img => img.status === 'active');
+    } catch (error) {
+      console.error('Error finding all Images:', error);
+      throw error;
+    }
   }
 
   static async findById(id) {
-    return BaseModel.findById(id, 'image', Image);
+    const db = this.getDb();
+    try {
+      const doc = await db.get(id);
+      if (doc.type !== 'image') {
+        throw new Error('Document is not an image');
+      }
+      return new Image(doc);
+    } catch (error) {
+      console.error('Error finding Image by ID:', error);
+      throw error;
+    }
   }
 
   /**
@@ -41,7 +61,7 @@ class Image extends BaseModel {
    * @returns {Promise<Array>} Array of images sorted by order
    */
   static async findByTvId(tvId) {
-    const db = getDatabase();
+    const db = this.getDb();
     try {
       const result = await db.view('images', 'by_tv', { key: tvId });
       const images = result.rows
@@ -56,32 +76,57 @@ class Image extends BaseModel {
   }
 
   static async findByStatus(status) {
-    return BaseModel.findByView('images', 'by_status', status, Image);
+    const db = this.getDb();
+    try {
+      const result = await db.view('images', 'by_status', { key: status });
+      return result.rows.map(row => new Image(row.value));
+    } catch (error) {
+      console.error('Error finding images by status:', error);
+      throw error;
+    }
   }
 
   async save() {
     // Validate required fields before saving
     this.validateRequired(['original_name', 'size', 'mimetype']);
-    return super.save();
+
+    const db = Image.getDb();
+    this.updated_at = new Date().toISOString();
+
+    try {
+      if (this._rev) {
+        const result = await db.insert({ ...this.toJSON(), _id: this._id, _rev: this._rev });
+        this._rev = result.rev;
+      } else {
+        const result = await db.insert(this.toJSON());
+        this._id = result.id;
+        this._rev = result.rev;
+      }
+      return this;
+    } catch (error) {
+      console.error('Error saving Image:', error);
+      throw error;
+    }
   }
 
   async saveWithAttachment(imageBuffer, contentType) {
-    const db = getDatabase();
+    const db = Image.getDb();
     try {
       this.updated_at = new Date().toISOString();
-      
+
       // First create the document
-      const result = await db.insert(this);
+      const result = await db.insert(this.toJSON());
+      this._id = result.id;
       this._rev = result.rev;
-      
+
       // Then attach the image data
       const attachmentName = `image${this.getFileExtension()}`;
       await db.attachment.insert(this._id, attachmentName, imageBuffer, contentType, { rev: this._rev });
-      
+
       // Get updated document with new revision
       const updated = await db.get(this._id);
       this._rev = updated._rev;
-      
+
       return this;
     } catch (error) {
       console.error('Error saving image with attachment:', error);
@@ -90,7 +135,7 @@ class Image extends BaseModel {
   }
 
   async getAttachment() {
-    const db = getDatabase();
+    const db = Image.getDb();
     try {
       const attachmentName = `image${this.getFileExtension()}`;
       return await db.attachment.get(this._id, attachmentName);
@@ -109,14 +154,25 @@ class Image extends BaseModel {
     return `image${this.getFileExtension()}`;
   }
 
-  // update() method is inherited from BaseModel
+  async update(updates) {
+    const db = Image.getDb();
+    try {
+      Object.assign(this, updates);
+      this.updated_at = new Date().toISOString();
+      const result = await db.insert({ ...this.toJSON(), _id: this._id, _rev: this._rev });
+      this._rev = result.rev;
+      return this;
+    } catch (error) {
+      console.error('Error updating Image:', error);
+      throw error;
+    }
+  }
 
-  // Override delete to handle attachments
   async delete() {
-    const db = getDatabase();
+    const db = Image.getDb();
     try {
       const existing = await db.get(this._id);
-      
+
       // Delete attachments first (if any exist)
       if (existing._attachments) {
         for (const attachmentName of Object.keys(existing._attachments)) {
@@ -130,9 +186,10 @@ class Image extends BaseModel {
           }
         }
       }
-      
-      // Call parent delete method
-      return super.delete();
+
+      // Delete the document
+      await db.destroy(existing._id, existing._rev);
+      return true;
     } catch (error) {
       console.error('Error deleting image with attachments:', error);
       throw error;
@@ -171,23 +228,30 @@ class Image extends BaseModel {
    * @returns {Promise<Object>} Statistics object
    */
   static async getStats() {
-    const allImages = await BaseModel.findAll('images', Image);
-    
-    const activeImages = allImages.filter(img => img.status === 'active');
-    const totalSize = activeImages.reduce((sum, img) => sum + (img.size || 0), 0);
-    
-    return {
-      total: allImages.length,
-      active: activeImages.length,
-      inactive: allImages.filter(img => img.status !== 'active').length,
-      totalSizeMB: Math.round(totalSize / 1024 / 1024 * 100) / 100,
-      avgSizeMB: activeImages.length > 0 ? 
-        Math.round(totalSize / activeImages.length / 1024 / 1024 * 100) / 100 : 0,
-      byMimeType: activeImages.reduce((acc, img) => {
-        acc[img.mimetype] = (acc[img.mimetype] || 0) + 1;
-        return acc;
-      }, {})
-    };
+    const db = this.getDb();
+    try {
+      const result = await db.view('images', 'all');
+      const allImages = result.rows.map(row => new Image(row.value));
+
+      const activeImages = allImages.filter(img => img.status === 'active');
+      const totalSize = activeImages.reduce((sum, img) => sum + (img.size || 0), 0);
+
+      return {
+        total: allImages.length,
+        active: activeImages.length,
+        inactive: allImages.filter(img => img.status !== 'active').length,
+        totalSizeMB: Math.round(totalSize / 1024 / 1024 * 100) / 100,
+        avgSizeMB: activeImages.length > 0 ?
+          Math.round(totalSize / activeImages.length / 1024 / 1024 * 100) / 100 : 0,
+        byMimeType: activeImages.reduce((acc, img) => {
+          acc[img.mimetype] = (acc[img.mimetype] || 0) + 1;
+          return acc;
+        }, {})
+      };
+    } catch (error) {
+      console.error('Error getting Image stats:', error);
+      throw error;
+    }
   }
 
   /**
@@ -198,20 +262,20 @@ class Image extends BaseModel {
     if (!this.schedule.start_time && !this.schedule.end_time) {
       return true; // No schedule means always show
     }
-    
+
     const now = new Date();
     const start = this.schedule.start_time ? new Date(this.schedule.start_time) : null;
     const end = this.schedule.end_time ? new Date(this.schedule.end_time) : null;
-    
+
     if (start && now < start) return false;
     if (end && now > end) return false;
-    
+
     // Check day of week if specified
     if (this.schedule.days_of_week && this.schedule.days_of_week.length > 0) {
       const currentDay = now.getDay();
       return this.schedule.days_of_week.includes(currentDay);
     }
-    
+
     return true;
   }
 
@@ -245,12 +309,29 @@ class Image extends BaseModel {
   async hasAttachment() {
     try {
       const attachmentName = this.getAttachmentName();
-      const db = getDatabase();
+      const db = Image.getDb();
       await db.attachment.get(this._id, attachmentName);
       return true;
     } catch (error) {
       return false;
     }
+  }
+
+  toJSON() {
+    return {
+      _id: this._id,
+      type: this.type,
+      original_name: this.original_name,
+      size: this.size,
+      mimetype: this.mimetype,
+      assigned_tvs: this.assigned_tvs,
+      tv_orders: this.tv_orders,
+      status: this.status,
+      metadata: this.metadata,
+      schedule: this.schedule,
+      created_at: this.created_at,
+      updated_at: this.updated_at
+    };
   }
 }
 
