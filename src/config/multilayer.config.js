@@ -14,9 +14,11 @@ const multilayerConfig = {
     // Database names for isolated development
     databases: {
       main: 'signage_multilayer',
-      tvs: 'tvs_multilayer', 
+      tvs: 'tvs_multilayer',
       images: 'images_multilayer',
-      layers: 'layers_multilayer' // New database for layer configs
+      layers: 'layers_multilayer',
+      alert_templates: 'alert_templates_multilayer',
+      presets: 'presets_multilayer'
     }
   },
 
@@ -81,12 +83,14 @@ multilayerConfig.getLayersBatchMqttTopic = (tvId) => {
 multilayerConfig.getDatabaseUrls = () => {
   const baseUrl = multilayerConfig.getDatabaseUrl();
   const { databases } = multilayerConfig.database;
-  
+
   return {
     main: `${baseUrl}/${databases.main}`,
     tvs: `${baseUrl}/${databases.tvs}`,
     images: `${baseUrl}/${databases.images}`,
-    layers: `${baseUrl}/${databases.layers}`
+    layers: `${baseUrl}/${databases.layers}`,
+    alert_templates: `${baseUrl}/${databases.alert_templates}`,
+    presets: `${baseUrl}/${databases.presets}`
   };
 };
 
