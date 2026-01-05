@@ -264,9 +264,8 @@ mqttService.on('message', ({ topic, payload }) => {
       // Only send to clients subscribed to this TV
       if (!client.subscribedTvId || client.subscribedTvId === tvId) {
         client.send(JSON.stringify({
-          type: 'mqtt_message',
-          topic,
-          payload,
+          type: 'mqtt_update',
+          data: { topic, payload },
           timestamp: new Date().toISOString()
         }));
       }

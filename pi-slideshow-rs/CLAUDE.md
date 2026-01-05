@@ -44,8 +44,31 @@ The project implements a complete digital signage solution with these key compon
 ### MQTT Topics
 - `signage/tv/{tv_id}/command` - Receive commands (play, pause, next, reboot)
 - `signage/tv/{tv_id}/status` - Publish status updates
-- `signage/tv/{tv_id}/heartbeat` - Health monitoring
+- `signage/tv/{tv_id}/heartbeat` - Health monitoring with system metrics
 - `signage/tv/{tv_id}/image/current` - Current image notifications
+
+### Heartbeat Payload
+The heartbeat message includes system metrics for monitoring:
+```json
+{
+  "tv_id": "living-room-tv",
+  "timestamp": "2026-01-05T12:34:56.789Z",
+  "status": "online",
+  "system_metrics": {
+    "cpu_usage": 25.5,
+    "memory_usage": 45.2,
+    "memory_total": 4294967296,
+    "memory_used": 1932735283,
+    "disk_usage": 32.1,
+    "disk_total": 32000000000,
+    "disk_used": 10272000000,
+    "temperature": 52.3,
+    "load_average": 0.85,
+    "device_uptime_seconds": 86400,
+    "app_uptime_seconds": 3600
+  }
+}
+```
 
 ### HTTP API Endpoints
 - `GET /api/health` - Health check

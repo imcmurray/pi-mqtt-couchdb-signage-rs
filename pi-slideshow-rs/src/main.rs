@@ -1255,6 +1255,7 @@ fn display_exit_joke(fb: &mut Framebuffer) -> IoResult<()> {
 
 #[tokio::main]
 async fn main() -> IoResult<()> {
+    let start_time = std::time::Instant::now();
     let args = Args::parse();
     
     // Generate TV ID if not provided
@@ -1274,13 +1275,13 @@ async fn main() -> IoResult<()> {
     println!("CouchDB server: {}", args.couchdb_url);
     
     if args.enable_mqtt {
-        run_with_mqtt_control(args, tv_id).await
+        run_with_mqtt_control(args, tv_id, start_time).await
     } else {
         run_standalone_mode(args).await
     }
 }
 
-async fn run_with_mqtt_control(args: Args, tv_id: String) -> IoResult<()> {
+async fn run_with_mqtt_control(args: Args, tv_id: String, start_time: std::time::Instant) -> IoResult<()> {
     // Create communication channels
     let (command_sender, command_receiver) = broadcast::channel::<SlideshowCommand>(100);
     let (status_sender, status_receiver) = async_mpsc::channel::<TvStatus>(100);
@@ -1324,7 +1325,7 @@ async fn run_with_mqtt_control(args: Args, tv_id: String) -> IoResult<()> {
             // Start heartbeat publisher only if MQTT connected
             let mut heartbeat_client = mqtt_client.clone();
             tokio::spawn(async move {
-                heartbeat_client.run_status_publisher().await;
+                heartbeat_client.run_status_publisher(start_time).await;
             });
         }
         Ok(Err(e)) => {

@@ -51,11 +51,19 @@ class MultilayerMqttService extends EventEmitter {
   }
 
   subscribeToTopics() {
-    // Subscribe to layer-specific topics
+    // Subscribe to layer-specific topics and TV status topics
     const topics = [
+      // Layer-specific topics (signage_dev prefix)
       `${config.mqtt.topics.prefix}/tv/+/layer/+/status`,
       `${config.mqtt.topics.prefix}/tv/+/layers/status`,
-      `${config.mqtt.topics.prefix}/tv/+/animation/complete`
+      `${config.mqtt.topics.prefix}/tv/+/animation/complete`,
+      // TV status topics - subscribe to BOTH prefixes for compatibility with Rust endpoints
+      `signage/tv/+/heartbeat`,
+      `signage/tv/+/status`,
+      `signage/tv/+/image/current`,
+      `${config.mqtt.topics.prefix}/tv/+/heartbeat`,
+      `${config.mqtt.topics.prefix}/tv/+/status`,
+      `${config.mqtt.topics.prefix}/tv/+/image/current`
     ];
 
     topics.forEach(topic => {
@@ -157,9 +165,14 @@ class MultilayerMqttService extends EventEmitter {
     this.publish(topic, command);
   }
 
-  async publishConfig(tvId, config) {
+  async publishConfig(tvId, configData) {
     const topic = config.getMqttTopic(tvId, 'config');
-    this.publish(topic, config);
+    this.publish(topic, configData);
+  }
+
+  async updateConfig(tvId, configData) {
+    console.log(`🔄 SENDING CONFIG UPDATE to TV ${tvId}:`, configData);
+    return this.publishConfig(tvId, configData);
   }
 
   async publishImages(tvId, images) {

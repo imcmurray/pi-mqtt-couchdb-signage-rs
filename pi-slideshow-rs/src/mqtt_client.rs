@@ -35,6 +35,8 @@ pub struct SystemMetrics {
     pub disk_used: u64,
     pub temperature: Option<f32>,
     pub load_average: Option<f32>,
+    pub device_uptime_seconds: u64,
+    pub app_uptime_seconds: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -352,26 +354,26 @@ impl MqttClient {
         Ok(())
     }
 
-    pub async fn run_status_publisher(&mut self) {
+    pub async fn run_status_publisher(&mut self, start_time: std::time::Instant) {
         let client = self.client.clone();
         let tv_id = self.tv_id.clone();
         let status_receiver = self.status_receiver.clone();
-        
+
         // Start heartbeat task with system metrics
         let heartbeat_client = client.clone();
         let heartbeat_tv_id = tv_id.clone();
         tokio::spawn(async move {
             let mut heartbeat_interval = tokio::time::interval(Duration::from_secs(30));
             let mut system = System::new_all();
-            
+
             loop {
                 heartbeat_interval.tick().await;
-                
+
                 // Refresh system information
                 system.refresh_all();
-                
-                let system_metrics = Self::collect_system_metrics(&system);
-                
+
+                let system_metrics = Self::collect_system_metrics(&system, start_time);
+
                 let heartbeat = HeartbeatMessage {
                     tv_id: heartbeat_tv_id.clone(),
                     timestamp: chrono::Utc::now().to_rfc3339(),
@@ -403,7 +405,7 @@ impl MqttClient {
         });
     }
 
-    fn collect_system_metrics(system: &System) -> SystemMetrics {
+    fn collect_system_metrics(system: &System, app_start_time: std::time::Instant) -> SystemMetrics {
         // Calculate CPU usage (average across all cores)
         let cpu_usage = system.cpus().iter()
             .map(|cpu| cpu.cpu_usage())
@@ -440,6 +442,12 @@ impl MqttClient {
         // Load average (1 minute)
         let load_average = system.load_average().one;
 
+        // Device uptime (how long the Raspberry Pi has been running)
+        let device_uptime_seconds = system.uptime();
+
+        // App uptime (how long this slideshow app has been running)
+        let app_uptime_seconds = app_start_time.elapsed().as_secs();
+
         SystemMetrics {
             cpu_usage,
             memory_usage,
@@ -450,6 +458,8 @@ impl MqttClient {
             disk_used,
             temperature,
             load_average: Some(load_average as f32),
+            device_uptime_seconds,
+            app_uptime_seconds,
         }
     }
 
