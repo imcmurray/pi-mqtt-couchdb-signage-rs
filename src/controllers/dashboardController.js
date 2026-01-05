@@ -1,4 +1,4 @@
-const TV = require('../models/tv');
+const TV = require('../models/tv.multilayer');
 const Image = require('../models/image');
 
 class DashboardController {

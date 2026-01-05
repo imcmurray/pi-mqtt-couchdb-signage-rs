@@ -21,9 +21,18 @@ pub struct ControllerConfig {
     pub couchdb_url: String,
     pub couchdb_username: Option<String>,
     pub couchdb_password: Option<String>,
+    pub couchdb_database: String,
+    pub couchdb_images_database: String,
     pub tv_id: String,
     pub orientation: String,
     pub transition_effect: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct RegistrationStatus {
+    pub is_new: bool,
+    pub tv_id: String,
+    pub ip_address: String,
 }
 
 pub struct SlideshowController {
@@ -36,6 +45,7 @@ pub struct SlideshowController {
     mqtt_client: Arc<RwLock<Option<MqttClient>>>,
     couchdb_client: Arc<RwLock<Option<CouchDbClient>>>,
     layer_manager: Arc<RwLock<LayerManager>>,
+    registration_status: Arc<RwLock<Option<RegistrationStatus>>>,
     pub start_time: Instant,
 }
 
@@ -51,6 +61,7 @@ impl Clone for SlideshowController {
             mqtt_client: self.mqtt_client.clone(),
             couchdb_client: self.couchdb_client.clone(),
             layer_manager: self.layer_manager.clone(),
+            registration_status: self.registration_status.clone(),
             start_time: self.start_time,
         }
     }
@@ -78,6 +89,7 @@ impl SlideshowController {
             mqtt_client: Arc::new(RwLock::new(None)),
             couchdb_client: Arc::new(RwLock::new(None)),
             layer_manager: Arc::new(RwLock::new(layer_manager)),
+            registration_status: Arc::new(RwLock::new(None)),
             start_time: Instant::now(),
         }
     }
@@ -90,6 +102,10 @@ impl SlideshowController {
         *self.couchdb_client.write().await = Some(couchdb_client);
     }
 
+    pub async fn get_registration_status(&self) -> Option<RegistrationStatus> {
+        self.registration_status.read().await.clone()
+    }
+
     pub async fn initialize(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Try to initialize CouchDB client with timeout - but continue if it fails
         let config = self.config.read().await;
@@ -99,6 +115,8 @@ impl SlideshowController {
                 &config.couchdb_url,
                 config.couchdb_username.as_deref(),
                 config.couchdb_password.as_deref(),
+                &config.couchdb_database,
+                &config.couchdb_images_database,
             )
         ).await {
             Ok(Ok(couchdb_client)) => {
@@ -515,7 +533,8 @@ impl SlideshowController {
         if let Some(ref couchdb_client) = *self.couchdb_client.read().await {
             let config = self.config.read().await;
             let tv_id = format!("tv_{}", config.tv_id);
-            if let Err(e) = couchdb_client.update_tv_status(&tv_id, &status_str, current_image.as_deref()).await {
+            let local_ip = Self::get_local_ip();
+            if let Err(e) = couchdb_client.update_tv_status(&tv_id, &status_str, current_image.as_deref(), local_ip.as_deref()).await {
                 eprintln!("Failed to update TV status in CouchDB: {}", e);
             }
         }
@@ -707,6 +726,15 @@ impl SlideshowController {
         if response.status().is_success() {
             let result: serde_json::Value = response.json().await?;
             let is_new = result["isNew"].as_bool().unwrap_or(false);
+            let tv_id_full = format!("tv_{}", config.tv_id);
+
+            // Store registration status
+            *self.registration_status.write().await = Some(RegistrationStatus {
+                is_new,
+                tv_id: tv_id_full.clone(),
+                ip_address: local_ip.clone(),
+            });
+
             if is_new {
                 println!("Successfully registered as new TV: {}", config.tv_id);
             } else {
@@ -717,7 +745,7 @@ impl SlideshowController {
             let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
             return Err(format!("Registration failed with status {}: {}", status, error_text).into());
         }
-        
+
         Ok(())
     }
 

@@ -96,6 +96,14 @@ struct Args {
     #[arg(long)]
     couchdb_password: Option<String>,
 
+    /// CouchDB database name for TVs
+    #[arg(long, default_value = "tvs_multilayer")]
+    couchdb_database: String,
+
+    /// CouchDB database name for images
+    #[arg(long, default_value = "images_multilayer")]
+    couchdb_images_database: String,
+
     /// TV ID (auto-generated if not provided)
     #[arg(long)]
     tv_id: Option<String>,
@@ -1285,6 +1293,8 @@ async fn run_with_mqtt_control(args: Args, tv_id: String) -> IoResult<()> {
         couchdb_url: args.couchdb_url.clone(),
         couchdb_username: args.couchdb_username.clone(),
         couchdb_password: args.couchdb_password.clone(),
+        couchdb_database: args.couchdb_database.clone(),
+        couchdb_images_database: args.couchdb_images_database.clone(),
         tv_id: tv_id.clone(),
         orientation: args.orientation.clone(),
         transition_effect: "fade".to_string(), // Default transition effect
@@ -1394,16 +1404,27 @@ async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoRe
     let mut has_displayed_placeholder = false;
     let mut last_image_count = controller.get_image_count().await;
     let mut last_displayed_image_path: Option<PathBuf> = None;
-    
+
+    // Check if this is a new registration
+    let registration_status = controller.get_registration_status().await;
+    let is_new_registration = registration_status.as_ref().map_or(false, |s| s.is_new);
+    let initial_image_count = controller.get_image_count().await;
+
     // Initial display check - show placeholder immediately if no images
-    if controller.get_image_count().await == 0 {
+    if initial_image_count == 0 {
         let tv_id = controller.get_tv_id().await;
         let local_ip = get_local_ip().unwrap_or_else(|| "Unknown IP".to_string());
-        let placeholder = create_info_placeholder_with_orientation(&tv_id, &local_ip, DEFAULT_LANDSCAPE_WIDTH, DEFAULT_LANDSCAPE_HEIGHT, &current_orientation);
-        
+
+        let placeholder = if is_new_registration {
+            println!("Displaying registration success placeholder for TV {}", tv_id);
+            create_registration_placeholder_with_orientation(&tv_id, &local_ip, DEFAULT_LANDSCAPE_WIDTH, DEFAULT_LANDSCAPE_HEIGHT, &current_orientation)
+        } else {
+            println!("Displaying 'no images' placeholder for TV {}", tv_id);
+            create_info_placeholder_with_orientation(&tv_id, &local_ip, DEFAULT_LANDSCAPE_WIDTH, DEFAULT_LANDSCAPE_HEIGHT, &current_orientation)
+        };
+
         let _ = fb.display_image(&placeholder);
         has_displayed_placeholder = true;
-        println!("Displayed 'No images available' placeholder on startup");
     }
     
     while running {
@@ -1549,11 +1570,17 @@ async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoRe
             if !has_displayed_placeholder {
                 let tv_id = controller.get_tv_id().await;
                 let local_ip = get_local_ip().unwrap_or_else(|| "Unknown IP".to_string());
-                let placeholder = create_info_placeholder_with_orientation(&tv_id, &local_ip, DEFAULT_LANDSCAPE_WIDTH, DEFAULT_LANDSCAPE_HEIGHT, &current_orientation);
-                
+
+                let placeholder = if is_new_registration {
+                    println!("Displayed 'REGISTERED SUCCESSFULLY' placeholder");
+                    create_registration_placeholder_with_orientation(&tv_id, &local_ip, DEFAULT_LANDSCAPE_WIDTH, DEFAULT_LANDSCAPE_HEIGHT, &current_orientation)
+                } else {
+                    println!("Displayed 'No images available' placeholder");
+                    create_info_placeholder_with_orientation(&tv_id, &local_ip, DEFAULT_LANDSCAPE_WIDTH, DEFAULT_LANDSCAPE_HEIGHT, &current_orientation)
+                };
+
                 let _ = fb.display_image(&placeholder);
                 has_displayed_placeholder = true;
-                println!("Displayed 'No images available' placeholder");
             }
         } else {
             // Reset placeholder flag when images become available
@@ -1683,7 +1710,52 @@ fn create_info_placeholder(tv_id: &str, ip_address: &str, width: u32, height: u3
     image
 }
 
-// Removed - no longer needed with unified rotation approach
+fn create_registration_placeholder_with_orientation(tv_id: &str, ip_address: &str, width: u32, height: u32, orientation: &Orientation) -> RgbaImage {
+    let placeholder = create_registration_placeholder(tv_id, ip_address, width, height);
+    orientation.rotate_image(&placeholder)
+}
+
+fn create_registration_placeholder(tv_id: &str, ip_address: &str, width: u32, height: u32) -> RgbaImage {
+    let mut image = RgbaImage::new(width, height);
+
+    // Fill with dark green background (success theme)
+    for pixel in image.pixels_mut() {
+        *pixel = Rgba([20, 50, 30, 255]);
+    }
+
+    let char_size = 8;
+    let small_char_size = 6;
+    let line_height = char_size * 7;
+    let center_x = width / 2;
+    let center_y = height / 2;
+
+    // Title - success message in bright green
+    let title = "REGISTERED SUCCESSFULLY";
+    let title_width = title.len() as u32 * (7 * char_size + char_size);
+    draw_text(&mut image, title, center_x - title_width / 2, center_y - line_height * 2, char_size, Rgba([100, 255, 100, 255]));
+
+    // TV ID label
+    let tv_label = "TV ID:";
+    let tv_label_width = tv_label.len() as u32 * (7 * char_size + char_size);
+    draw_text(&mut image, tv_label, center_x - tv_label_width / 2, center_y - line_height / 2, char_size, Rgba([255, 255, 0, 255]));
+
+    // TV ID value (smaller font, on next line)
+    let tv_id_width = tv_id.len() as u32 * (7 * small_char_size + small_char_size);
+    draw_text(&mut image, tv_id, center_x - tv_id_width / 2, center_y + line_height / 2, small_char_size, Rgba([255, 255, 0, 255]));
+
+    // Instructions (smaller font to fit on screen)
+    let instruction = "Waiting for images to be assigned...";
+    let instruction_width = instruction.len() as u32 * (7 * small_char_size + small_char_size);
+    draw_text(&mut image, instruction, center_x - instruction_width / 2, center_y + line_height * 2, small_char_size, Rgba([200, 200, 200, 255]));
+
+    // IP Address at bottom of screen (moved up one line)
+    let ip_line = format!("IP: {}", ip_address);
+    let ip_width = ip_line.len() as u32 * (7 * char_size + char_size);
+    let bottom_padding = char_size * 12;
+    draw_text(&mut image, &ip_line, center_x - ip_width / 2, height - bottom_padding, char_size, Rgba([0, 255, 255, 255]));
+
+    image
+}
 
 fn load_and_scale_image_with_orientation(path: &PathBuf, width: u32, height: u32, orientation: &Orientation) -> Result<RgbaImage, ImageError> {
     let img = image::open(path).map_err(|e| {
@@ -1745,15 +1817,20 @@ fn scale_and_center_image(original_img: &RgbaImage, target_width: u32, target_he
 }
 
 fn get_local_ip() -> Option<String> {
-    use std::net::TcpStream;
-    
-    // Try to connect to a remote address to determine local IP
-    if let Ok(stream) = TcpStream::connect("8.8.8.8:80") {
-        if let Ok(local_addr) = stream.local_addr() {
-            return Some(local_addr.ip().to_string());
+    use std::net::{TcpStream, ToSocketAddrs};
+    use std::time::Duration;
+
+    // Try to connect to a remote address to determine local IP (with 2s timeout)
+    if let Ok(mut addrs) = "8.8.8.8:80".to_socket_addrs() {
+        if let Some(addr) = addrs.next() {
+            if let Ok(stream) = TcpStream::connect_timeout(&addr, Duration::from_secs(2)) {
+                if let Ok(local_addr) = stream.local_addr() {
+                    return Some(local_addr.ip().to_string());
+                }
+            }
         }
     }
-    
+
     // Fallback: try to get IP from network interfaces
     use std::process::Command;
     if let Ok(output) = Command::new("hostname").arg("-I").output() {
@@ -1763,7 +1840,7 @@ fn get_local_ip() -> Option<String> {
             }
         }
     }
-    
+
     None
 }
 

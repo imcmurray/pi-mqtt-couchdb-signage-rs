@@ -1,7 +1,7 @@
 const sharp = require('sharp');
 const Image = require('../models/image');
-const TV = require('../models/tv');
-const mqttService = require('../services/mqttService');
+const TV = require('../models/tv.multilayer');
+const mqttService = require('../services/multilayer.mqttService');
 const Joi = require('joi');
 
 // Validation schemas

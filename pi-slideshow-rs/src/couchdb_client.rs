@@ -190,24 +190,39 @@ impl TypedCouchDocument for CouchTv {
 }
 
 pub struct CouchDbClient {
-    db: Database,
+    tv_db: Database,
+    images_db: Database,
     server_url: String,
+    tv_database_name: String,
+    images_database_name: String,
 }
 
 impl CouchDbClient {
-    pub async fn new(couchdb_url: &str, username: Option<&str>, password: Option<&str>) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn new(
+        couchdb_url: &str,
+        username: Option<&str>,
+        password: Option<&str>,
+        tv_database: &str,
+        images_database: &str,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let client = if let (Some(user), Some(pass)) = (username, password) {
             Client::new(&couchdb_url, user, pass).map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?
         } else {
             Client::new_no_auth(&couchdb_url).map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?
         };
 
-        // Connect to the single digital_signage database
-        let db = client.db("digital_signage").await.map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+        // Connect to the TV database (for TV documents)
+        let tv_db = client.db(tv_database).await.map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+
+        // Connect to the images database (for image documents)
+        let images_db = client.db(images_database).await.map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
 
         Ok(CouchDbClient {
-            db,
+            tv_db,
+            images_db,
             server_url: couchdb_url.to_string(),
+            tv_database_name: tv_database.to_string(),
+            images_database_name: images_database.to_string(),
         })
     }
 
@@ -217,7 +232,7 @@ impl CouchDbClient {
         // Get all documents and filter for images assigned to this TV with timeout
         let all_docs = tokio::time::timeout(
             std::time::Duration::from_secs(30),
-            self.db.get_all::<serde_json::Value>()
+            self.images_db.get_all::<serde_json::Value>()
         ).await
             .map_err(|_| "CouchDB get_all query timeout after 30 seconds")?
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
@@ -303,7 +318,7 @@ impl CouchDbClient {
         // First get the image document to find attachment info with timeout
         let doc_value: serde_json::Value = tokio::time::timeout(
             std::time::Duration::from_secs(10),
-            self.db.get(image_id)
+            self.images_db.get(image_id)
         ).await
             .map_err(|_| format!("Timeout getting image document {} after 10 seconds", image_id))?
             .map_err(|e| format!("Failed to get image document {}: {}", image_id, e))?;
@@ -317,9 +332,10 @@ impl CouchDbClient {
                 println!("Found attachment: {}", attachment_name);
                 
                 // Construct the attachment URL manually since couch_rs doesn't have direct attachment download
-                let db_url = format!("{}/digital_signage/{}/{}", 
-                    self.get_server_url(), 
-                    image_id, 
+                let db_url = format!("{}/{}/{}/{}",
+                    self.get_server_url(),
+                    self.images_database_name,
+                    image_id,
                     attachment_name);
                 
                 println!("Downloading attachment from URL: {}", db_url);
@@ -350,15 +366,15 @@ impl CouchDbClient {
         }
     }
 
-    pub async fn update_tv_status(&self, tv_id: &str, status: &str, current_image: Option<&str>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn update_tv_status(&self, tv_id: &str, status: &str, current_image: Option<&str>, ip_address: Option<&str>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         println!("Updating TV {} status to {} in CouchDB", tv_id, status);
-        
+
         // Try to get existing TV document with timeout
         let tv_doc_result = tokio::time::timeout(
             std::time::Duration::from_secs(10),
-            self.db.get::<serde_json::Value>(tv_id)
+            self.tv_db.get::<serde_json::Value>(tv_id)
         ).await;
-        
+
         let mut tv_doc = match tv_doc_result {
             Ok(Ok(doc)) => {
                 // Parse existing document
@@ -374,7 +390,7 @@ impl CouchDbClient {
                     doc_type: "tv".to_string(),
                     name: format!("TV {}", tv_id),
                     location: "Unknown".to_string(),
-                    ip_address: "0.0.0.0".to_string(), // Will be updated later
+                    ip_address: ip_address.unwrap_or("0.0.0.0").to_string(),
                     status: status.to_string(),
                     last_heartbeat: Some(chrono::Utc::now().to_rfc3339()),
                     config: create_default_tv_config(),
@@ -382,18 +398,21 @@ impl CouchDbClient {
                 }
             }
         };
-        
-        // Update the status and current image
+
+        // Update the status, current image, and IP address
         tv_doc.status = status.to_string();
         tv_doc.last_heartbeat = Some(chrono::Utc::now().to_rfc3339());
         if let Some(image) = current_image {
             tv_doc.current_image = Some(image.to_string());
         }
+        if let Some(ip) = ip_address {
+            tv_doc.ip_address = ip.to_string();
+        }
         
         // Save the document back to CouchDB with timeout
         tokio::time::timeout(
             std::time::Duration::from_secs(10),
-            self.db.save(&mut tv_doc)
+            self.tv_db.save(&mut tv_doc)
         ).await
             .map_err(|_| format!("Timeout saving TV document {} after 10 seconds", tv_id))?
             .map_err(|e| format!("Failed to save TV document {}: {}", tv_id, e))?;
@@ -408,7 +427,7 @@ impl CouchDbClient {
         // Try to get TV document from CouchDB with timeout
         match tokio::time::timeout(
             std::time::Duration::from_secs(10),
-            self.db.get::<serde_json::Value>(tv_id)
+            self.tv_db.get::<serde_json::Value>(tv_id)
         ).await {
             Ok(Ok(doc_value)) => {
                 // Parse the TV document

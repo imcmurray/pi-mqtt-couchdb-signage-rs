@@ -1,5 +1,5 @@
-const TV = require('../models/tv');
-const mqttService = require('../services/mqttService');
+const TV = require('../models/tv.multilayer');
+const mqttService = require('../services/multilayer.mqttService');
 const Joi = require('joi');
 
 // Validation schemas
@@ -28,7 +28,8 @@ const registrationSchema = Joi.object({
   ip_address: Joi.string().ip().required(),
   platform: Joi.string().default('raspberry-pi'),
   version: Joi.string().default('unknown'),
-  orientation: Joi.string().valid('landscape', 'portrait', 'inverted_landscape', 'inverted_portrait').default('landscape')
+  orientation: Joi.string().valid('landscape', 'portrait', 'inverted_landscape', 'inverted_portrait').default('landscape'),
+  layer_support: Joi.boolean().optional()
 });
 
 class TvController {
