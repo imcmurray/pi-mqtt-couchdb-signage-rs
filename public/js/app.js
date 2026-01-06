@@ -171,12 +171,24 @@ class DigitalSignageApp {
         try {
             const response = await fetch('/api/dashboard/overview');
             const data = await response.json();
-            
+
             this.updateDashboardStats(data.stats);
             this.updateTvOverview(data.tvs);
         } catch (error) {
             console.error('Error loading dashboard data:', error);
         }
+    }
+
+    updateDashboardStatsFromTvs() {
+        const online = this.tvs.filter(tv => tv.status === 'online').length;
+        const offline = this.tvs.filter(tv => tv.status !== 'online').length;
+
+        this.updateDashboardStats({
+            total_tvs: this.tvs.length,
+            online_tvs: online,
+            offline_tvs: offline,
+            total_images: this.images.length
+        });
     }
 
     async loadTvs() {
@@ -251,20 +263,34 @@ class DigitalSignageApp {
                     </div>
                 </div>
                 <div class="tv-system-metrics" id="system-metrics-${tv._id}">
-                    <div class="system-metric">
-                        <i class="fas fa-thermometer-half"></i>
-                        <span class="metric-label">Temp:</span>
-                        <span class="metric-value" id="temp-${tv._id}">${this.formatMetricValue(tv.system_metrics?.temperature, '°C', '--°C')}</span>
+                    <div class="metrics-left">
+                        <div class="system-metric">
+                            <i class="fas fa-thermometer-half"></i>
+                            <span class="metric-label">Temp:</span>
+                            <span class="metric-value" id="temp-${tv._id}">${this.formatMetricValue(tv.system_metrics?.temperature, '°C', '--°C')}</span>
+                        </div>
+                        <div class="system-metric">
+                            <i class="fas fa-microchip"></i>
+                            <span class="metric-label">CPU:</span>
+                            <span class="metric-value" id="cpu-${tv._id}">${this.formatMetricValue(tv.system_metrics?.cpu_usage, '%', '--%')}</span>
+                        </div>
+                        <div class="system-metric">
+                            <i class="fas fa-memory"></i>
+                            <span class="metric-label">RAM:</span>
+                            <span class="metric-value" id="memory-${tv._id}">${this.formatMetricValue(tv.system_metrics?.memory_usage, '%', '--%')}</span>
+                        </div>
                     </div>
-                    <div class="system-metric">
-                        <i class="fas fa-microchip"></i>
-                        <span class="metric-label">CPU:</span>
-                        <span class="metric-value" id="cpu-${tv._id}">${this.formatMetricValue(tv.system_metrics?.cpu_usage, '%', '--%')}</span>
-                    </div>
-                    <div class="system-metric">
-                        <i class="fas fa-memory"></i>
-                        <span class="metric-label">RAM:</span>
-                        <span class="metric-value" id="memory-${tv._id}">${this.formatMetricValue(tv.system_metrics?.memory_usage, '%', '--%')}</span>
+                    <div class="metrics-right">
+                        <div class="system-metric">
+                            <i class="fas fa-server"></i>
+                            <span class="metric-label">Device:</span>
+                            <span class="metric-value" id="device-uptime-${tv._id}">${this.formatUptime(tv.system_metrics?.device_uptime_seconds)}</span>
+                        </div>
+                        <div class="system-metric">
+                            <i class="fas fa-clock"></i>
+                            <span class="metric-label">App:</span>
+                            <span class="metric-value" id="app-uptime-${tv._id}">${this.formatUptime(tv.system_metrics?.app_uptime_seconds)}</span>
+                        </div>
                     </div>
                 </div>
                 <div class="tv-controls">
@@ -356,21 +382,50 @@ class DigitalSignageApp {
                     </div>
                     <div class="tv-system-info" id="system-info-${tv._id}">
                         <div class="system-info-grid">
-                            <div class="system-info-item">
-                                <span class="detail-label">Temperature:</span>
-                                <span class="detail-value" id="temp-detail-${tv._id}">${this.formatMetricValue(tv.system_metrics?.temperature, '°C', '--°C')}</span>
+                            <div class="system-info-column">
+                                <div class="system-info-item">
+                                    <i class="fas fa-thermometer-half metric-icon"></i>
+                                    <span class="detail-label">Temperature</span>
+                                    <span class="detail-value" id="temp-detail-${tv._id}">${this.formatMetricValue(tv.system_metrics?.temperature, '°C', '--°C')}</span>
+                                </div>
+                                <div class="system-info-item">
+                                    <i class="fas fa-microchip metric-icon"></i>
+                                    <span class="detail-label">CPU</span>
+                                    <span class="detail-value" id="cpu-detail-${tv._id}">${this.formatMetricValue(tv.system_metrics?.cpu_usage, '%', '--%')}</span>
+                                </div>
+                                <div class="system-info-item">
+                                    <i class="fas fa-memory metric-icon"></i>
+                                    <span class="detail-label">Memory</span>
+                                    <span class="detail-value" id="memory-detail-${tv._id}">${this.formatMetricValue(tv.system_metrics?.memory_usage, '%', '--%')}</span>
+                                </div>
+                                <div class="system-info-sub">
+                                    <span id="memory-bytes-${tv._id}">${this.formatBytes(tv.system_metrics?.memory_used)} / ${this.formatBytes(tv.system_metrics?.memory_total)}</span>
+                                </div>
+                                <div class="system-info-item">
+                                    <i class="fas fa-hdd metric-icon"></i>
+                                    <span class="detail-label">Disk</span>
+                                    <span class="detail-value" id="disk-detail-${tv._id}">${this.formatMetricValue(tv.system_metrics?.disk_usage, '%', '--%')}</span>
+                                </div>
+                                <div class="system-info-sub">
+                                    <span id="disk-bytes-${tv._id}">${this.formatBytes(tv.system_metrics?.disk_used)} / ${this.formatBytes(tv.system_metrics?.disk_total)}</span>
+                                </div>
                             </div>
-                            <div class="system-info-item">
-                                <span class="detail-label">CPU Usage:</span>
-                                <span class="detail-value" id="cpu-detail-${tv._id}">${this.formatMetricValue(tv.system_metrics?.cpu_usage, '%', '--%')}</span>
-                            </div>
-                            <div class="system-info-item">
-                                <span class="detail-label">Memory:</span>
-                                <span class="detail-value" id="memory-detail-${tv._id}">${this.formatMetricValue(tv.system_metrics?.memory_usage, '%', '--%')}</span>
-                            </div>
-                            <div class="system-info-item">
-                                <span class="detail-label">Disk Usage:</span>
-                                <span class="detail-value" id="disk-detail-${tv._id}">${this.formatMetricValue(tv.system_metrics?.disk_usage, '%', '--%')}</span>
+                            <div class="system-info-column">
+                                <div class="system-info-item">
+                                    <i class="fas fa-server metric-icon"></i>
+                                    <span class="detail-label">Device Uptime</span>
+                                    <span class="detail-value" id="device-uptime-detail-${tv._id}">${this.formatUptime(tv.system_metrics?.device_uptime_seconds)}</span>
+                                </div>
+                                <div class="system-info-item">
+                                    <i class="fas fa-clock metric-icon"></i>
+                                    <span class="detail-label">App Uptime</span>
+                                    <span class="detail-value" id="app-uptime-detail-${tv._id}">${this.formatUptime(tv.system_metrics?.app_uptime_seconds)}</span>
+                                </div>
+                                <div class="system-info-item">
+                                    <i class="fas fa-chart-line metric-icon"></i>
+                                    <span class="detail-label">Load Average</span>
+                                    <span class="detail-value" id="load-detail-${tv._id}">${tv.system_metrics?.load_average?.toFixed(2) ?? '--'}</span>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -577,19 +632,37 @@ class DigitalSignageApp {
     }
 
     async controlTv(tvId, action) {
+        const tv = this.tvs.find(t => t._id === tvId);
+
+        // Primary: MQTT via backend
         try {
             const response = await fetch(`/api/tvs/${tvId}/control/${action}`, { method: 'POST' });
-            
             if (response.ok) {
                 this.showToast(`TV ${action} command sent`, 'success');
-            } else {
-                const error = await response.json();
-                this.showToast(error.error || `Failed to ${action} TV`, 'error');
+                return;
             }
         } catch (error) {
-            console.error(`Error controlling TV (${action}):`, error);
-            this.showToast(`Failed to ${action} TV`, 'error');
+            console.warn('MQTT control failed:', error);
         }
+
+        // Backup: Direct HTTP to TV endpoint
+        if (tv?.ip_address && tv.ip_address !== 'Unknown') {
+            try {
+                const response = await fetch(`http://${tv.ip_address}:8080/api/control`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action })
+                });
+                if (response.ok) {
+                    this.showToast(`TV ${action} command sent (direct)`, 'success');
+                    return;
+                }
+            } catch (error) {
+                console.warn('Direct HTTP control also failed:', error);
+            }
+        }
+
+        this.showToast(`Failed to ${action} TV`, 'error');
     }
 
     async shuffleTvImages(tvId) {
@@ -860,29 +933,62 @@ class DigitalSignageApp {
         return orientationMap[orientation] || orientation;
     }
 
+    formatUptime(seconds) {
+        if (seconds === null || seconds === undefined) return '--';
+
+        const days = Math.floor(seconds / 86400);
+        const hours = Math.floor((seconds % 86400) / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+
+        if (days > 0) return `${days}d ${hours}h`;
+        if (hours > 0) return `${hours}h ${minutes}m`;
+        return `${minutes}m`;
+    }
+
+    formatBytes(bytes) {
+        if (bytes === null || bytes === undefined) return '--';
+        const gb = bytes / (1024 * 1024 * 1024);
+        return gb >= 1 ? `${gb.toFixed(1)} GB` : `${(bytes / (1024 * 1024)).toFixed(0)} MB`;
+    }
+
     updateTvStatus(topic, payload) {
-        // Update TV status in real-time based on MQTT messages
         const tvId = this.extractTvIdFromTopic(topic);
-        // Find TV by matching the _id field (without prefix) against the extracted MQTT topic ID
         const tv = this.tvs.find(t => t._id.replace('tv_', '') === tvId);
-        
-        if (tv) {
-            if (topic.includes('/status')) {
-                tv.status = payload.status;
-            } else if (topic.includes('/heartbeat')) {
-                tv.status = 'online';
-                tv.last_heartbeat = new Date().toISOString();
-                
-                // Store system metrics in TV object for persistence across DOM updates
-                if (payload.system_metrics) {
-                    tv.system_metrics = payload.system_metrics;
-                }
+
+        // Debug: log matching attempt
+        console.log('updateTvStatus:', {
+            tvId,
+            foundTv: tv ? tv._id : 'NOT FOUND',
+            tvIds: this.tvs.map(t => t._id)
+        });
+
+        if (!tv) {
+            console.warn(`TV ${tvId} not found in this.tvs, skipping update`);
+            return;
+        }
+
+        // Heartbeat contains everything we need - consolidate on this
+        if (topic.includes('/heartbeat')) {
+            tv.status = 'online';
+            tv.last_heartbeat = new Date().toISOString();
+
+            if (payload.system_metrics) {
+                tv.system_metrics = payload.system_metrics;
             }
-            
-            // Refresh displays (this will use the stored system_metrics)
+
             this.updateTvOverview(this.tvs);
             this.updateTvList();
-            this.loadDashboardData();
+            this.updateDashboardStatsFromTvs();
+        }
+        // Status messages update slideshow state only, not connection status
+        else if (topic.includes('/status')) {
+            tv.slideshow_state = payload.status;
+            tv.status = 'online';
+            tv.last_heartbeat = new Date().toISOString();
+
+            this.updateTvOverview(this.tvs);
+            this.updateTvList();
+            this.updateDashboardStatsFromTvs();
         }
     }
 

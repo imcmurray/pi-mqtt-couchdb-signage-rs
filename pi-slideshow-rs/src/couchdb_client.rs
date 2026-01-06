@@ -195,6 +195,8 @@ pub struct CouchDbClient {
     server_url: String,
     tv_database_name: String,
     images_database_name: String,
+    username: Option<String>,
+    password: Option<String>,
 }
 
 impl CouchDbClient {
@@ -223,6 +225,8 @@ impl CouchDbClient {
             server_url: couchdb_url.to_string(),
             tv_database_name: tv_database.to_string(),
             images_database_name: images_database.to_string(),
+            username: username.map(|s| s.to_string()),
+            password: password.map(|s| s.to_string()),
         })
     }
 
@@ -339,10 +343,16 @@ impl CouchDbClient {
                     attachment_name);
                 
                 println!("Downloading attachment from URL: {}", db_url);
-                
-                // Use reqwest to download the attachment
+
+                // Use reqwest to download the attachment with auth
                 let client = reqwest::Client::new();
-                let response = client.get(&db_url).send().await
+                let mut request = client.get(&db_url);
+
+                if let (Some(user), Some(pass)) = (&self.username, &self.password) {
+                    request = request.basic_auth(user, Some(pass));
+                }
+
+                let response = request.send().await
                     .map_err(|e| format!("Failed to download attachment: {}", e))?;
                 
                 if !response.status().is_success() {

@@ -505,6 +505,13 @@ body {
     background: #f8f9fa;
     border-radius: 6px;
     border: 1px solid #e9ecef;
+    display: flex;
+    gap: 1rem;
+}
+
+.metrics-left,
+.metrics-right {
+    flex: 1;
 }
 
 .system-metric {
@@ -540,16 +547,46 @@ body {
 }
 
 .system-info-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.5rem;
+    display: flex;
+    gap: 2rem;
+}
+
+.system-info-column {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
 }
 
 .system-info-item {
     display: flex;
-    justify-content: space-between;
     align-items: center;
+    gap: 0.5rem;
     font-size: 0.85rem;
+}
+
+.system-info-item .metric-icon {
+    width: 1rem;
+    text-align: center;
+    color: #adb5bd;
+}
+
+.system-info-item .detail-label {
+    flex: 1;
+    color: #dee2e6;
+}
+
+.system-info-item .detail-value {
+    font-weight: 500;
+    min-width: 4rem;
+    text-align: right;
+    color: #f8f9fa;
+}
+
+.system-info-sub {
+    margin-left: 1.5rem;
+    font-size: 0.75rem;
+    color: #adb5bd;
 }
 
 /* Color coding for metrics */

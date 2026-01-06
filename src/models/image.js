@@ -111,6 +111,8 @@ class Image extends BaseModel {
 
   async saveWithAttachment(imageBuffer, contentType) {
     const db = Image.getDb();
+    let documentCreated = false;
+
     try {
       this.updated_at = new Date().toISOString();
 
@@ -118,6 +120,7 @@ class Image extends BaseModel {
       const result = await db.insert(this.toJSON());
       this._id = result.id;
       this._rev = result.rev;
+      documentCreated = true;
 
       // Then attach the image data
       const attachmentName = `image${this.getFileExtension()}`;
@@ -130,6 +133,17 @@ class Image extends BaseModel {
       return this;
     } catch (error) {
       console.error('Error saving image with attachment:', error);
+
+      // Clean up document if it was created but attachment failed
+      if (documentCreated && this._id && this._rev) {
+        try {
+          await db.destroy(this._id, this._rev);
+          console.log(`Cleaned up orphan document ${this._id} after attachment failure`);
+        } catch (cleanupError) {
+          console.error(`Failed to clean up orphan document ${this._id}:`, cleanupError);
+        }
+      }
+
       throw error;
     }
   }
@@ -157,9 +171,24 @@ class Image extends BaseModel {
   async update(updates) {
     const db = Image.getDb();
     try {
+      // Fetch current document to preserve _attachments stubs
+      const current = await db.get(this._id);
+
       Object.assign(this, updates);
       this.updated_at = new Date().toISOString();
-      const result = await db.insert({ ...this.toJSON(), _id: this._id, _rev: this._rev });
+
+      // Include _attachments stubs to preserve attachments
+      const documentToSave = {
+        ...this.toJSON(),
+        _id: this._id,
+        _rev: current._rev,
+      };
+
+      if (current._attachments) {
+        documentToSave._attachments = current._attachments;
+      }
+
+      const result = await db.insert(documentToSave);
       this._rev = result.rev;
       return this;
     } catch (error) {
