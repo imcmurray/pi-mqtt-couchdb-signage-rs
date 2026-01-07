@@ -39,7 +39,7 @@ class AlertQueueService {
       queue_position: this.queue.length
     };
 
-    if (alert.type === 'CRITICAL') {
+    if (alert.alert_type === 'CRITICAL') {
       this.queue.unshift(queueItem);
       this.interruptCurrentAlerts(alert.alert_id);
       console.log(`🚨 CRITICAL alert "${alert.title}" added to front of queue (bypassing)`);
@@ -55,8 +55,8 @@ class AlertQueueService {
 
   interruptCurrentAlerts(criticalAlertId) {
     for (const [tvId, currentAlert] of this.currentAlerts.entries()) {
-      if (currentAlert.alert.type !== 'CRITICAL') {
-        console.log(`⏸️ Interrupting ${currentAlert.alert.type} alert on ${tvId} for CRITICAL alert`);
+      if (currentAlert.alert.alert_type !== 'CRITICAL') {
+        console.log(`⏸️ Interrupting ${currentAlert.alert.alert_type} alert on ${tvId} for CRITICAL alert`);
 
         currentAlert.interrupted_by = criticalAlertId;
 
@@ -170,7 +170,7 @@ class AlertQueueService {
       queue: this.queue.map(item => ({
         alert_id: item.alert.alert_id,
         title: item.alert.title,
-        type: item.alert.type,
+        alert_type: item.alert.alert_type,
         priority: item.alert.priority,
         target_tv_count: item.target_tv_ids.length,
         queued_at: item.queued_at,
@@ -180,7 +180,7 @@ class AlertQueueService {
         tv_id: tvId,
         alert_id: current.alert.alert_id,
         title: current.alert.title,
-        type: current.alert.type,
+        alert_type: current.alert.alert_type,
         started_at: current.started_at,
         interrupted_by: current.interrupted_by
       }))
@@ -253,7 +253,7 @@ class AlertQueueService {
     const now = new Date();
 
     this.queue.forEach(item => {
-      stats.by_type[item.alert.type]++;
+      stats.by_type[item.alert.alert_type]++;
 
       const queuedTime = now - new Date(item.queued_at);
       if (queuedTime > stats.longest_wait_time) {

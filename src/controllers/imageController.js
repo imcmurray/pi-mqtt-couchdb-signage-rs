@@ -1,7 +1,7 @@
 const sharp = require('sharp');
 const Image = require('../models/image');
 const TV = require('../models/tv.multilayer');
-const mqttService = require('../services/mqttService');
+const mqttService = require('../services/multilayer.mqttService');
 const Joi = require('joi');
 
 // Validation schemas
@@ -799,15 +799,19 @@ class ImageController {
         order: img.tv_orders[tvId] || 0,
         extension: img.getFileExtension()
       }));
-    
-    if (mqttService.isConnected) {
-      // Get TV document to extract TV ID for MQTT (remove tv_ prefix)
+
+    console.log(`📋 Updating TV ${tvId} image list: ${imageList.length} images`);
+
+    if (mqttService.connected) {
       const tv = await TV.findById(tvId);
       if (tv) {
-        await mqttService.updateImages(tv._id.replace('tv_', ''), imageList);
+        const mqttTvId = tv._id.replace('tv_', '');
+        await mqttService.updateImages(mqttTvId, imageList);
+      } else {
+        console.warn(`⚠️ TV ${tvId} not found in database`);
       }
     } else {
-      console.log(`MQTT not connected, skipping TV ${tvId} update`);
+      console.warn(`⚠️ MQTT not connected, skipping update for TV ${tvId}`);
     }
   }
 }

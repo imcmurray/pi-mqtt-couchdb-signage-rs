@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Digital Signage Management</title>
     <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/multilayer.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 </head>
 <body>
@@ -26,6 +27,12 @@
                 </a></li>
                 <li><a href="#upload" class="nav-link" data-section="upload">
                     <i class="fas fa-upload"></i> Upload Images
+                </a></li>
+                <li><a href="#layers" class="nav-link" data-section="layers">
+                    <i class="fas fa-layer-group"></i> Layer Control
+                </a></li>
+                <li><a href="#alert-templates" class="nav-link" data-section="alert-templates">
+                    <i class="fas fa-bell"></i> Alert Templates
                 </a></li>
                 <li><a href="#mqtt" class="nav-link" data-section="mqtt">
                     <i class="fas fa-broadcast-tower"></i> MQTT Activity
@@ -178,10 +185,478 @@
                     </div>
                 </div>
             </section>
+
+            <!-- Layer Control Section -->
+            <section id="layers-section" class="content-section">
+                <div class="layers-container">
+                    <div class="layers-header">
+                        <h2>🎨 Multi-Layer Digital Signage</h2>
+                        <p>Create, manage, and animate individual data row layers with real-time control</p>
+
+                        <div class="ml-status">
+                            <div class="ml-status-dot" id="connectionStatus"></div>
+                            <span id="connectionText">Connecting...</span>
+                            <span class="layer-count" id="layerCount">0 layers</span>
+                        </div>
+                    </div>
+
+                    <div class="alert-panel">
+                        <h3>🚨 Emergency Alert System</h3>
+
+                        <div style="margin-bottom: 16px; padding: 12px; background: #f8fafc; border-radius: 8px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                <strong style="font-size: 14px;">Quick-Send Templates:</strong>
+                                <a href="#alert-templates" onclick="app.switchSection('alert-templates'); return false;" style="color: #3498db; text-decoration: none; font-size: 13px;">Manage Templates →</a>
+                            </div>
+                            <div id="quick-send-templates" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;">
+                                <button class="btn btn-primary btn-sm" style="font-size: 12px;" onclick="quickSendTemplate('builtin_evacuation')">🚨 Evacuation</button>
+                                <button class="btn btn-primary btn-sm" style="font-size: 12px;" onclick="quickSendTemplate('builtin_fire_alarm')">🔥 Fire Alarm</button>
+                                <button class="btn btn-primary btn-sm" style="font-size: 12px;" onclick="quickSendTemplate('builtin_court_delay')">⚖️ Court Delay</button>
+                                <button class="btn btn-primary btn-sm" style="font-size: 12px;" onclick="quickSendTemplate('builtin_maintenance')">🔧 Maintenance</button>
+                            </div>
+                        </div>
+
+                        <div class="alert-type-selector">
+                            <div class="alert-type-button critical" onclick="selectAlertType('CRITICAL')">
+                                <div class="alert-type-icon">🚨</div>
+                                <div class="alert-type-name">CRITICAL</div>
+                                <div class="alert-type-desc">Full screen • 10 min</div>
+                            </div>
+                            <div class="alert-type-button urgent" onclick="selectAlertType('URGENT')">
+                                <div class="alert-type-icon">⚠️</div>
+                                <div class="alert-type-name">URGENT</div>
+                                <div class="alert-type-desc">Top banner • 5 min</div>
+                            </div>
+                            <div class="alert-type-button info selected" onclick="selectAlertType('INFO')">
+                                <div class="alert-type-icon">ℹ️</div>
+                                <div class="alert-type-name">INFO</div>
+                                <div class="alert-type-desc">Bottom ticker • 2 min</div>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="alertTitle">Alert Title:</label>
+                            <input type="text" id="alertTitle" class="form-input" placeholder="e.g., Building Evacuation" maxlength="100">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="alertMessage">Alert Message:</label>
+                            <textarea id="alertMessage" class="form-input" rows="3" placeholder="e.g., Evacuate immediately via nearest exit" maxlength="500"></textarea>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Broadcast To:</label>
+                            <div class="target-type-selector">
+                                <div class="target-type-option selected" onclick="selectTargetType('all')" id="targetAll">
+                                    <strong>All TVs</strong>
+                                </div>
+                                <div class="target-type-option" onclick="selectTargetType('location')" id="targetLocation">
+                                    <strong>By Location</strong>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-group" id="locationSelector" style="display: none;">
+                            <label for="targetLocationInput">Location:</label>
+                            <input type="text" id="targetLocationInput" class="form-input" placeholder="e.g., Building A">
+                        </div>
+
+                        <button class="btn btn-danger" onclick="broadcastAlert()" style="width: 100%;">
+                            📡 Broadcast Emergency Alert
+                        </button>
+
+                        <div class="active-alerts">
+                            <h4>Active Alerts <span class="layer-count" id="activeAlertCount">0</span></h4>
+                            <div id="activeAlertsList"></div>
+                        </div>
+
+                        <div class="active-alerts" style="margin-top: 16px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <h4>Alert Queue <span class="layer-count" id="queueCount">0</span></h4>
+                                <button class="btn btn-danger btn-sm" onclick="clearAlertQueue()" style="font-size: 12px;">Clear Queue</button>
+                            </div>
+                            <div id="queueList" style="margin-top: 8px;"></div>
+                        </div>
+
+                        <div class="active-alerts" style="margin-top: 16px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <h4>Scheduled Alerts <span class="layer-count" id="scheduledCount">0</span></h4>
+                                <button class="btn btn-primary btn-sm" onclick="toggleScheduleForm()" style="font-size: 12px;">➕ Schedule</button>
+                            </div>
+
+                            <div id="scheduleFormContainer" style="display: none; margin-top: 12px; padding: 12px; background: #f8fafc; border-radius: 6px;">
+                                <div style="margin-bottom: 10px;">
+                                    <label style="display: block; font-size: 13px; font-weight: 500; margin-bottom: 4px;">Schedule For:</label>
+                                    <input type="datetime-local" id="scheduleDateTime" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px;">
+                                </div>
+
+                                <div style="margin-bottom: 10px;">
+                                    <label style="display: block; font-size: 13px; font-weight: 500; margin-bottom: 4px;">Recurrence:</label>
+                                    <select id="scheduleRecurrence" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px;">
+                                        <option value="">None (one-time)</option>
+                                        <option value="hourly">Every Hour</option>
+                                        <option value="daily">Every Day</option>
+                                        <option value="weekly">Every Week</option>
+                                        <option value="monthly">Every Month</option>
+                                    </select>
+                                </div>
+
+                                <div id="recurrenceEndContainer" style="display: none; margin-bottom: 10px;">
+                                    <label style="display: block; font-size: 13px; font-weight: 500; margin-bottom: 4px;">Stop Recurring After:</label>
+                                    <input type="datetime-local" id="recurrenceEnd" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px;">
+                                </div>
+
+                                <div style="display: flex; gap: 8px;">
+                                    <button class="btn btn-success btn-sm" onclick="scheduleCurrentAlert()" style="flex: 1; font-size: 12px;">Schedule Alert</button>
+                                    <button class="btn btn-secondary btn-sm" onclick="toggleScheduleForm()" style="font-size: 12px;">Cancel</button>
+                                </div>
+                            </div>
+
+                            <div id="scheduledList" style="margin-top: 8px;"></div>
+                        </div>
+                    </div>
+
+                    <div class="quick-actions">
+                        <h3>Layer Quick Actions</h3>
+                        <div class="tv-selector">
+                            <div class="tv-selection-mode">
+                                <button class="tv-mode-btn active" id="singleTvMode" onclick="setTvMode('single')">Single TV</button>
+                                <button class="tv-mode-btn" id="multiTvMode" onclick="setTvMode('multi')">Multi-TV</button>
+                            </div>
+
+                            <div id="singleTvSelector">
+                                <label for="tvSelect">Select TV:</label>
+                                <select id="tvSelect" class="form-select">
+                                    <option value="">Loading TVs...</option>
+                                </select>
+                                <button class="btn btn-secondary btn-sm" onclick="loadTVs()">Refresh</button>
+                            </div>
+
+                            <div id="multiTvSelector" style="display: none;">
+                                <label>Select TVs:</label>
+                                <div class="tv-checkbox-list" id="tvCheckboxList"></div>
+                                <div class="tv-checkbox-actions">
+                                    <button class="btn btn-secondary btn-sm" onclick="selectAllTvs()">Select All</button>
+                                    <button class="btn btn-secondary btn-sm" onclick="deselectAllTvs()">Deselect All</button>
+                                    <span id="selectedTvCount" style="margin-left: 8px; font-size: 12px; color: #7f8c8d;">0 selected</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <button class="btn btn-primary" onclick="createSampleLayers()">Create Sample Layers</button>
+                        <button class="btn btn-warning" onclick="hideAllLayers()">Hide All</button>
+                        <button class="btn btn-success" onclick="showAllLayers()">Show All</button>
+                        <button class="btn btn-danger" onclick="deleteAllLayers()">Delete All</button>
+                    </div>
+
+                    <div class="controls">
+                        <div class="control-panel">
+                            <h3>Create Data Row Layer</h3>
+                            <form id="layerForm">
+                                <div class="form-group">
+                                    <label for="layerName">Layer Name:</label>
+                                    <input type="text" id="layerName" class="form-input" placeholder="e.g., Court Schedule Entry">
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="layerText">Text Content:</label>
+                                    <textarea id="layerText" class="form-input" rows="2" placeholder="e.g., 9:00 AM - Room 101 - Smith vs. Johnson"></textarea>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="layerY">Y Position:</label>
+                                    <input type="number" id="layerY" class="form-input" value="100" min="0" max="1080">
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="layerHeight">Height:</label>
+                                    <input type="number" id="layerHeight" class="form-input" value="50" min="20" max="200">
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="fontSize">Font Size:</label>
+                                    <input type="number" id="fontSize" class="form-input" value="24" min="12" max="48">
+                                </div>
+
+                                <button type="button" class="btn btn-primary" onclick="createLayer()">Create Layer</button>
+                            </form>
+                        </div>
+
+                        <div class="control-panel">
+                            <h3>Animation Controls</h3>
+                            <p style="margin-bottom: 16px; color: #7f8c8d;">Select a layer first, then choose animation:</p>
+
+                            <div class="animation-controls">
+                                <button class="btn btn-primary btn-sm" onclick="animateSelected('slide_up')">↑ Slide Up</button>
+                                <button class="btn btn-primary btn-sm" onclick="animateSelected('slide_down')">↓ Slide Down</button>
+                                <button class="btn btn-primary btn-sm" onclick="animateSelected('slide_left')">← Slide Left</button>
+                                <button class="btn btn-primary btn-sm" onclick="animateSelected('slide_right')">→ Slide Right</button>
+                                <button class="btn btn-primary btn-sm" onclick="animateSelected('fade_in')">Fade In</button>
+                                <button class="btn btn-primary btn-sm" onclick="animateSelected('fade_out')">Fade Out</button>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="animDuration">Duration (ms):</label>
+                                <input type="number" id="animDuration" class="form-input" value="500" min="100" max="3000">
+                            </div>
+
+                            <div class="position-controls">
+                                <input type="number" id="moveX" class="form-input" placeholder="X" value="0">
+                                <input type="number" id="moveY" class="form-input" placeholder="Y" value="0">
+                                <button class="btn btn-primary btn-sm" onclick="moveSelected(false)">Move</button>
+                                <button class="btn btn-primary btn-sm" onclick="moveSelected(true)">Animate Move</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="layers-display">
+                        <div class="layers-list">
+                            <h3>Active Layers <span class="layer-count" id="layerCountText">0</span></h3>
+                            <div id="layersList"></div>
+                        </div>
+
+                        <div class="preview-canvas">
+                            <h3>Screen Preview</h3>
+                            <div class="screen-mockup" id="screenPreview"></div>
+                        </div>
+                    </div>
+
+                    <div class="logs">
+                        <h3>Activity Log</h3>
+                        <div class="log-output" id="logOutput"></div>
+                    </div>
+                </div>
+
+                <!-- Template Sidebar -->
+                <div class="template-sidebar" id="templateSidebar">
+                    <div class="sidebar-header">
+                        <h3>📚 Layer Templates</h3>
+                        <button class="sidebar-close" onclick="toggleTemplateSidebar()">×</button>
+                    </div>
+
+                    <div class="template-filters">
+                        <select id="templateCategoryFilter" class="form-select" onchange="filterTemplates()">
+                            <option value="">All Categories</option>
+                            <option value="court">Court</option>
+                            <option value="emergency">Emergency</option>
+                            <option value="info">Info</option>
+                            <option value="layout">Layout</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                    </div>
+
+                    <div class="template-list" id="templateList">
+                        <div style="text-align: center; padding: 40px 20px; color: #7f8c8d;">
+                            Loading templates...
+                        </div>
+                    </div>
+
+                    <div class="template-apply-section" id="templateApplySection" style="display: none;">
+                        <h4>Apply Template: <span id="selectedTemplateName"></span></h4>
+                        <div class="apply-controls">
+                            <label>
+                                <input type="checkbox" id="overrideExistingLayers">
+                                Override existing preset layers
+                            </label>
+                            <div class="apply-buttons">
+                                <button class="btn btn-success btn-sm" onclick="applyTemplateToSelectedTvs()">
+                                    Apply to Selected TVs
+                                </button>
+                                <button class="btn btn-secondary btn-sm" onclick="clearTemplateSelection()">
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="sidebar-footer">
+                        <button class="btn btn-primary" onclick="openSaveTemplateModal()">+ Save Current Layer as Template</button>
+                        <a href="/preset-manager.html">Manage All Templates →</a>
+                    </div>
+                </div>
+
+                <!-- Template Toggle Button -->
+                <button class="template-toggle-btn" onclick="toggleTemplateSidebar()">
+                    📚 Templates
+                </button>
+
+                <!-- Save Template Modal -->
+                <div class="modal" id="saveTemplateModal">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h3>💾 Save Layer as Template</h3>
+                            <button class="modal-close" onclick="closeSaveTemplateModal()">&times;</button>
+                        </div>
+                        <form id="saveTemplateForm" onsubmit="saveLayerAsTemplate(event)">
+                            <div class="modal-body">
+                                <div class="form-group">
+                                    <label for="templateName">Template Name:</label>
+                                    <input type="text" id="templateName" class="form-input" required placeholder="e.g., Court Header Banner" minlength="3" maxlength="100">
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="templateDescription">Description:</label>
+                                    <textarea id="templateDescription" class="form-input" rows="2" placeholder="Optional description" maxlength="500"></textarea>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="templateCategory">Category:</label>
+                                    <select id="templateCategory" class="form-select">
+                                        <option value="custom">Custom</option>
+                                        <option value="court">Court</option>
+                                        <option value="emergency">Emergency</option>
+                                        <option value="info">Info</option>
+                                        <option value="layout">Layout</option>
+                                    </select>
+                                </div>
+
+                                <input type="hidden" id="templateLayerId">
+                            </div>
+
+                            <div class="modal-actions">
+                                <button type="button" class="btn btn-secondary" onclick="closeSaveTemplateModal()">Cancel</button>
+                                <button type="submit" class="btn btn-success">Save Template</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Alert Templates Section -->
+            <section id="alert-templates-section" class="content-section">
+                <div class="section-header">
+                    <h2>Alert Templates</h2>
+                    <button class="btn btn-primary" onclick="atOpenCreateModal()">
+                        <i class="fas fa-plus"></i> Create Template
+                    </button>
+                </div>
+
+                <div class="at-stats">
+                    <div class="at-stat-card">
+                        <h3>Total Templates</h3>
+                        <div class="at-stat-value" id="at-stat-total">-</div>
+                    </div>
+                    <div class="at-stat-card">
+                        <h3>Built-in</h3>
+                        <div class="at-stat-value" id="at-stat-builtin">-</div>
+                    </div>
+                    <div class="at-stat-card">
+                        <h3>Custom</h3>
+                        <div class="at-stat-value" id="at-stat-custom">-</div>
+                    </div>
+                </div>
+
+                <div class="at-filters">
+                    <div class="at-filter-group">
+                        <label>Category:</label>
+                        <select id="at-filter-category" onchange="atFilterTemplates()">
+                            <option value="">All</option>
+                            <option value="emergency">Emergency</option>
+                            <option value="court">Court</option>
+                            <option value="maintenance">Maintenance</option>
+                            <option value="weather">Weather</option>
+                            <option value="general">General</option>
+                        </select>
+                    </div>
+                    <div class="at-filter-group">
+                        <label>Type:</label>
+                        <select id="at-filter-type" onchange="atFilterTemplates()">
+                            <option value="">All</option>
+                            <option value="builtin">Built-in</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                    </div>
+                    <div class="at-filter-group">
+                        <label>Alert Level:</label>
+                        <select id="at-filter-alert-type" onchange="atFilterTemplates()">
+                            <option value="">All</option>
+                            <option value="CRITICAL">Critical</option>
+                            <option value="URGENT">Urgent</option>
+                            <option value="INFO">Info</option>
+                        </select>
+                    </div>
+                    <div class="at-filter-group at-search-group">
+                        <input type="text" id="at-search-input" placeholder="Search templates..." onkeyup="atSearchTemplates()">
+                    </div>
+                </div>
+
+                <div class="at-templates-grid" id="at-templates-grid">
+                    <div class="loading">Loading templates...</div>
+                </div>
+            </section>
         </main>
     </div>
 
     <!-- Modals -->
+    <!-- Alert Template Create/Edit Modal -->
+    <div class="modal" id="at-template-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="at-modal-title">Create Template</h3>
+                <button class="modal-close" onclick="atCloseModal()">&times;</button>
+            </div>
+            <form id="at-template-form" onsubmit="atSaveTemplate(event)">
+                <div class="form-group">
+                    <label>Template Name *</label>
+                    <input type="text" id="at-template-name" class="form-input" required maxlength="100">
+                </div>
+
+                <div class="form-group">
+                    <label>Category *</label>
+                    <select id="at-template-category" class="form-select" required>
+                        <option value="emergency">Emergency</option>
+                        <option value="court">Court</option>
+                        <option value="maintenance">Maintenance</option>
+                        <option value="weather">Weather</option>
+                        <option value="general">General</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Alert Type *</label>
+                    <select id="at-template-alert-type" class="form-select" required>
+                        <option value="CRITICAL">Critical (Full Screen, Red)</option>
+                        <option value="URGENT">Urgent (Top Banner, Orange)</option>
+                        <option value="INFO">Info (Bottom Ticker, Blue)</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Title Template *</label>
+                    <input type="text" id="at-template-title" class="form-input" required maxlength="200" placeholder="e.g., Alert in ${building}">
+                    <small>Use ${variable_name} for placeholders</small>
+                </div>
+
+                <div class="form-group">
+                    <label>Message Template *</label>
+                    <textarea id="at-template-message" class="form-input" required maxlength="1000" rows="3" placeholder="e.g., Evacuate ${building} via ${exit_route}"></textarea>
+                    <small>Use ${variable_name} for placeholders</small>
+                </div>
+
+                <div class="form-group">
+                    <label>Description</label>
+                    <textarea id="at-template-description" class="form-input" maxlength="500" rows="2" placeholder="Optional description for this template"></textarea>
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="atCloseModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Template</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Alert Template Quick-Send Modal -->
+    <div class="modal" id="at-quick-send-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="at-quick-send-title">Quick-Send Alert</h3>
+                <button class="modal-close" onclick="atCloseQuickSendModal()">&times;</button>
+            </div>
+            <div id="at-quick-send-content"></div>
+        </div>
+    </div>
+
     <!-- Add/Edit TV Modal -->
     <div id="tv-modal" class="modal">
         <div class="modal-content">
@@ -262,6 +737,8 @@
     <!-- Toast Notifications -->
     <div id="toast-container" class="toast-container"></div>
 
+    <script src="js/multilayer.js"></script>
+    <script src="js/alert-templates.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>

@@ -21,7 +21,7 @@ class AlertService {
     await alert.save();
 
     const targetTVs = await this.getTargetTVs(alert);
-    const targetTvIds = targetTVs.map(tv => tv.tv_id);
+    const targetTvIds = targetTVs.map(tv => tv._id);
 
     alert.queued_at = new Date().toISOString();
     await alert.save();
@@ -46,18 +46,18 @@ class AlertService {
 
     for (const tv of targetTVs) {
       try {
-        const layerData = alert.toLayer(tv.tv_id);
+        const layerData = alert.toLayer(tv._id);
         const layer = new Layer(layerData);
         await layer.save();
 
-        await this.publishAlertToTV(tv.tv_id, layer);
+        await this.publishAlertToTV(tv._id, layer);
 
-        await alert.markDelivered(tv.tv_id);
+        await alert.markDelivered(tv._id);
         createdLayers.push(layer);
 
-        console.log(`✅ Alert ${alert.alert_id} delivered to TV ${tv.tv_id}`);
+        console.log(`✅ Alert ${alert.alert_id} delivered to TV ${tv._id}`);
       } catch (error) {
-        console.error(`❌ Failed to deliver alert to TV ${tv.tv_id}:`, error.message);
+        console.error(`❌ Failed to deliver alert to TV ${tv._id}:`, error.message);
       }
     }
 
@@ -102,7 +102,8 @@ class AlertService {
   }
 
   async publishAlertToTV(tvId, layer) {
-    const topic = `signage_dev/tv/${tvId}/alert`;
+    const mqttTvId = tvId.replace(/^tv_/, '');
+    const topic = `signage/tv/${mqttTvId}/alert`;
     const message = {
       type: 'emergency_alert',
       alert_id: layer.group,

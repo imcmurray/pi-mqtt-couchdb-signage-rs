@@ -249,6 +249,8 @@ pub struct LayerManager {
     last_composite: Arc<RwLock<Option<RgbaImage>>>,
     composite_dirty: Arc<RwLock<bool>>,
     font_cache: Arc<RwLock<HashMap<String, Font>>>,
+    emoji_font_cache: Arc<RwLock<Option<Font>>>,
+    transition_frame: Arc<RwLock<Option<RgbaImage>>>,
 }
 
 impl LayerManager {
@@ -271,6 +273,8 @@ impl LayerManager {
             last_composite: Arc::new(RwLock::new(None)),
             composite_dirty: Arc::new(RwLock::new(true)),
             font_cache: Arc::new(RwLock::new(HashMap::new())),
+            emoji_font_cache: Arc::new(RwLock::new(None)),
+            transition_frame: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -380,7 +384,7 @@ impl LayerManager {
 
     pub async fn update_slideshow_content(&self, image_path: Option<String>) -> Result<(), String> {
         let mut config = self.config.write().await;
-        
+
         if let Some(slideshow_layer) = config.layers.get_mut("slideshow") {
             slideshow_layer.content = match image_path {
                 Some(path) => LayerContent::ImagePath(path),
@@ -391,6 +395,42 @@ impl LayerManager {
         } else {
             Err("Slideshow layer not found".to_string())
         }
+    }
+
+    pub async fn set_transition_frame(&self, frame: Option<RgbaImage>) {
+        *self.transition_frame.write().await = frame;
+        *self.composite_dirty.write().await = true;
+    }
+
+    pub async fn has_emergency_layers(&self) -> bool {
+        let config = self.config.read().await;
+        config.layers.values().any(|layer| {
+            layer.visible && layer.layer_type == LayerType::Emergency
+        })
+    }
+
+    pub async fn render_emergency_layers_only(&self) -> Result<RgbaImage, String> {
+        let config = self.config.read().await;
+        let (width, height) = config.output_resolution;
+
+        let mut overlay = RgbaImage::new(width, height);
+        for pixel in overlay.pixels_mut() {
+            *pixel = Rgba([0, 0, 0, 0]);
+        }
+
+        let emergency_layers: Vec<Layer> = config.layers
+            .values()
+            .filter(|layer| layer.visible && layer.layer_type == LayerType::Emergency)
+            .cloned()
+            .collect();
+
+        for layer in emergency_layers {
+            if let Err(e) = self.render_layer_onto_composite(&layer, &mut overlay).await {
+                eprintln!("Warning: Failed to render emergency layer '{}': {}", layer.id, e);
+            }
+        }
+
+        Ok(overlay)
     }
 
     pub async fn render_composite(&self) -> Result<RgbaImage, String> {
@@ -441,6 +481,15 @@ impl LayerManager {
     }
 
     async fn render_layer_onto_composite(&self, layer: &Layer, composite: &mut RgbaImage) -> Result<(), String> {
+        // Check if this is the slideshow layer and we have a transition frame
+        if layer.layer_type == LayerType::Slideshow {
+            let transition_frame = self.transition_frame.read().await;
+            if let Some(ref frame) = *transition_frame {
+                self.blend_layer_onto_composite(frame, layer, composite);
+                return Ok(());
+            }
+        }
+
         match &layer.content {
             LayerContent::ImagePath(path) => {
                 self.render_image_layer(layer, path, composite).await
@@ -589,6 +638,11 @@ impl LayerManager {
         self.config.read().await.clone()
     }
 
+    /// Get the last rendered composite image (for preview streaming)
+    pub async fn get_last_composite(&self) -> Option<RgbaImage> {
+        self.last_composite.read().await.clone()
+    }
+
     pub async fn update_config(&self, config: LayerConfig) -> Result<(), String> {
         // Validate config
         if config.layers.len() > config.max_layers as usize {
@@ -660,7 +714,60 @@ impl LayerManager {
         // This is a minimal fallback - in production, bundle a full font file
         Err("No system fonts found. Please install DejaVu Sans or another TrueType font.".to_string())
     }
-    
+
+    async fn get_or_load_emoji_font(&self) -> Option<Font> {
+        // Check cache first
+        {
+            let cache = self.emoji_font_cache.read().await;
+            if let Some(ref font) = *cache {
+                return Some(font.clone());
+            }
+        }
+
+        // Try to load emoji font
+        if let Ok(font_data) = self.load_emoji_font_data() {
+            if let Ok(font) = Font::from_bytes(font_data, FontSettings::default()) {
+                println!("Loaded emoji font successfully");
+                let mut cache = self.emoji_font_cache.write().await;
+                *cache = Some(font.clone());
+                return Some(font);
+            }
+        }
+
+        None
+    }
+
+    fn load_emoji_font_data(&self) -> Result<Vec<u8>, String> {
+        let emoji_font_paths = [
+            "/usr/share/fonts/truetype/noto/NotoEmoji-Regular.ttf",
+            "/usr/share/fonts/noto-emoji/NotoEmoji-Regular.ttf",
+            "/usr/share/fonts/google-noto-emoji/NotoEmoji-Regular.ttf",
+            "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",
+            "/usr/share/fonts/noto/NotoEmoji-Regular.ttf",
+            "/usr/share/fonts/opentype/noto/NotoEmoji-Regular.ttf",
+        ];
+
+        for path in &emoji_font_paths {
+            if let Ok(data) = std::fs::read(path) {
+                println!("Loaded emoji font from: {}", path);
+                return Ok(data);
+            }
+        }
+
+        Err("No emoji font found".to_string())
+    }
+
+    fn is_emoji_char(ch: char) -> bool {
+        let code = ch as u32;
+        // Common emoji ranges
+        (0x1F300..=0x1F9FF).contains(&code) ||  // Miscellaneous Symbols and Pictographs, Emoticons, etc.
+        (0x2600..=0x26FF).contains(&code) ||    // Miscellaneous Symbols
+        (0x2700..=0x27BF).contains(&code) ||    // Dingbats
+        (0x1F600..=0x1F64F).contains(&code) ||  // Emoticons
+        (0x1F680..=0x1F6FF).contains(&code) ||  // Transport and Map Symbols
+        (0x1F1E0..=0x1F1FF).contains(&code)     // Flags
+    }
+
     async fn update_all_animations(&self) {
         let mut config = self.config.write().await;
         let mut any_animation_active = false;
@@ -692,7 +799,7 @@ impl LayerManager {
             }
         }
 
-        // Load font
+        // Load fonts
         let font = match self.get_or_load_font().await {
             Ok(f) => f,
             Err(e) => {
@@ -700,66 +807,107 @@ impl LayerManager {
                 return Ok(());
             }
         };
+        let emoji_font = self.get_or_load_emoji_font().await;
 
-        // Calculate text metrics
         let scale = font_size as f32;
-        let mut total_width = 0.0f32;
-        let mut max_height = 0f32;
+        let line_spacing = (font_size as f32 * 0.3) as u32;
 
-        // Measure text to determine total width
-        for ch in text.chars() {
-            let (metrics, _) = font.rasterize(ch, scale);
-            total_width += metrics.advance_width;
-            max_height = max_height.max(metrics.height as f32);
-        }
+        // Split text into lines
+        let lines: Vec<&str> = text.split('\n').collect();
 
-        // Calculate starting x position based on alignment
-        let start_x = match alignment {
-            "center" => layer.position.x + ((layer.position.width as f32 - total_width) / 2.0) as u32,
-            "right" => layer.position.x + layer.position.width - total_width as u32,
-            _ => layer.position.x + 10, // left (with 10px padding)
+        // Helper to get metrics for a character (with emoji fallback)
+        let get_char_metrics = |ch: char, font: &Font, emoji_font: &Option<Font>| -> (fontdue::Metrics, Vec<u8>) {
+            // Try emoji font first for emoji characters
+            if Self::is_emoji_char(ch) {
+                if let Some(ref ef) = emoji_font {
+                    let (metrics, bitmap) = ef.rasterize(ch, scale);
+                    if !bitmap.is_empty() && metrics.width > 0 {
+                        return (metrics, bitmap);
+                    }
+                }
+            }
+            // Fall back to regular font
+            font.rasterize(ch, scale)
         };
 
-        // Calculate vertical centering
-        let start_y = layer.position.y + ((layer.position.height as f32 - max_height) / 2.0) as u32;
+        // Measure each line
+        struct LineMeasurement {
+            width: f32,
+            height: f32,
+        }
+        let mut line_measurements: Vec<LineMeasurement> = Vec::new();
+        let mut total_height = 0.0f32;
 
-        // Render each character
-        let mut current_x = start_x as f32;
+        for line in &lines {
+            let mut line_width = 0.0f32;
+            let mut line_height = 0.0f32;
+            for ch in line.chars() {
+                let (metrics, _) = get_char_metrics(ch, &font, &emoji_font);
+                line_width += metrics.advance_width;
+                line_height = line_height.max(metrics.height as f32);
+            }
+            if line_height < font_size as f32 {
+                line_height = font_size as f32;
+            }
+            total_height += line_height;
+            line_measurements.push(LineMeasurement { width: line_width, height: line_height });
+        }
 
-        for ch in text.chars() {
-            let (metrics, bitmap) = font.rasterize(ch, scale);
+        // Add line spacing between lines
+        if lines.len() > 1 {
+            total_height += (lines.len() as u32 - 1) as f32 * line_spacing as f32;
+        }
 
-            // Skip whitespace rendering (but still advance)
-            if !bitmap.is_empty() {
-                // Calculate glyph position
-                let glyph_x = (current_x + metrics.xmin as f32) as u32;
-                let glyph_y = start_y + font_size - metrics.ymin as u32 - metrics.height as u32;
+        // Calculate starting Y to vertically center the text block
+        let block_start_y = layer.position.y + ((layer.position.height as f32 - total_height) / 2.0).max(0.0) as u32;
+        let mut current_y = block_start_y;
 
-                // Render glyph bitmap
-                for (i, &coverage) in bitmap.iter().enumerate() {
-                    if coverage > 0 {
-                        let px = glyph_x + (i % metrics.width) as u32;
-                        let py = glyph_y + (i / metrics.width) as u32;
+        // Render each line
+        for (line_idx, line) in lines.iter().enumerate() {
+            let measurement = &line_measurements[line_idx];
 
-                        // Check bounds
-                        if px >= layer.position.x && px < layer.position.x + layer.position.width &&
-                           py >= layer.position.y && py < layer.position.y + layer.position.height &&
-                           px < composite.width() && py < composite.height() {
+            // Calculate starting X based on alignment
+            let start_x = match alignment {
+                "center" => layer.position.x + ((layer.position.width as f32 - measurement.width) / 2.0).max(0.0) as u32,
+                "right" => layer.position.x + (layer.position.width as f32 - measurement.width).max(0.0) as u32,
+                _ => layer.position.x + 10,
+            };
 
-                            // Apply text color with coverage as alpha
-                            let alpha = ((coverage as f32 / 255.0) * (text_color.3 as f32 / 255.0) * layer.opacity * 255.0) as u8;
-                            let text_pixel = Rgba([text_color.0, text_color.1, text_color.2, alpha]);
+            // Render each character in the line
+            let mut current_x = start_x as f32;
 
-                            if let Some(existing_pixel) = composite.get_pixel_mut_checked(px, py) {
-                                *existing_pixel = self.blend_pixels(*existing_pixel, text_pixel);
+            for ch in line.chars() {
+                let (metrics, bitmap) = get_char_metrics(ch, &font, &emoji_font);
+
+                if !bitmap.is_empty() {
+                    let glyph_x = (current_x + metrics.xmin as f32) as u32;
+                    let glyph_y = current_y + font_size - metrics.ymin as u32 - metrics.height as u32;
+
+                    for (i, &coverage) in bitmap.iter().enumerate() {
+                        if coverage > 0 {
+                            let px = glyph_x + (i % metrics.width) as u32;
+                            let py = glyph_y + (i / metrics.width) as u32;
+
+                            if px >= layer.position.x && px < layer.position.x + layer.position.width &&
+                               py >= layer.position.y && py < layer.position.y + layer.position.height &&
+                               px < composite.width() && py < composite.height() {
+
+                                let alpha = ((coverage as f32 / 255.0) * (text_color.3 as f32 / 255.0) * layer.opacity * 255.0) as u8;
+                                let text_pixel = Rgba([text_color.0, text_color.1, text_color.2, alpha]);
+
+                                if let Some(existing_pixel) = composite.get_pixel_mut_checked(px, py) {
+                                    *existing_pixel = self.blend_pixels(*existing_pixel, text_pixel);
+                                }
                             }
                         }
                     }
                 }
+
+                current_x += metrics.advance_width;
             }
 
-            // Advance to next character position
-            current_x += metrics.advance_width;
+            // Move to next line
+            current_y += measurement.height as u32 + line_spacing;
         }
 
         Ok(())

@@ -347,7 +347,7 @@ class AlertTemplateController {
             alert_id: result.alert.alert_id,
             title: result.alert.title,
             message: result.alert.message,
-            type: result.alert.type,
+            alert_type: result.alert.alert_type,
             template_id: templateId
           },
           delivered_count: result.delivered_count,

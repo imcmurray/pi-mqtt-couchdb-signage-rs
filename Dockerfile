@@ -14,6 +14,9 @@ COPY src/ ./src/
 COPY public/ ./public/
 COPY scripts/ ./scripts/
 
+# Fix CSS file permissions (git doesn't preserve Unix permissions)
+RUN chmod 644 /app/public/css/*.css
+
 # Create necessary directories
 RUN mkdir -p uploads logs temp
 

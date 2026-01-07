@@ -68,17 +68,20 @@ class MultiLayerManager {
     
     async loadLayers() {
         if (!this.selectedTvId) return;
-        
+
         try {
             const response = await fetch(`${this.apiBase}/tvs/${this.selectedTvId}/layers`);
-            this.layers = await response.json();
-            
+            const data = await response.json();
+
+            this.layers = Array.isArray(data) ? data : [];
+
             this.updateLayersList();
             this.updateScreenPreview();
             this.updateLayerCount();
-            
+
             this.log(`Loaded ${this.layers.length} layers for TV ${this.selectedTvId}`);
         } catch (error) {
+            this.layers = [];
             this.log(`Error loading layers: ${error.message}`, 'error');
         }
     }
@@ -703,14 +706,14 @@ class MultiLayerManager {
 
         activeAlertsList.innerHTML = this.activeAlerts.map(alert => {
             const createdDate = new Date(alert.created_at).toLocaleString();
-            const typeIcon = alert.type === 'CRITICAL' ? '🚨' : alert.type === 'URGENT' ? '⚠️' : 'ℹ️';
-            const typeClass = alert.type.toLowerCase();
+            const typeIcon = alert.alert_type === 'CRITICAL' ? '🚨' : alert.alert_type === 'URGENT' ? '⚠️' : 'ℹ️';
+            const typeClass = alert.alert_type.toLowerCase();
 
             return `
                 <div class="active-alert-item ${typeClass}">
                     <div class="alert-header">
                         <span class="alert-icon">${typeIcon}</span>
-                        <span class="alert-type-badge ${typeClass}">${alert.type}</span>
+                        <span class="alert-type-badge ${typeClass}">${alert.alert_type}</span>
                         <span class="alert-time">${createdDate}</span>
                     </div>
                     <div class="alert-title">${alert.title}</div>
@@ -1020,11 +1023,11 @@ class MultiLayerManager {
         document.getElementById('templateCategory').value = 'custom';
 
         // Open modal
-        document.getElementById('saveTemplateModal').classList.add('open');
+        document.getElementById('saveTemplateModal').classList.add('show');
     }
 
     closeSaveTemplateModal() {
-        document.getElementById('saveTemplateModal').classList.remove('open');
+        document.getElementById('saveTemplateModal').classList.remove('show');
     }
 
     async saveLayerAsTemplate(event) {
@@ -1075,9 +1078,9 @@ class MultiLayerManager {
 // Global functions for HTML onclick handlers
 let manager;
 
-window.onload = () => {
+document.addEventListener('DOMContentLoaded', () => {
     manager = new MultiLayerManager();
-};
+});
 
 function loadTVs() {
     manager.loadTVs();
@@ -1445,12 +1448,12 @@ async function loadScheduledAlerts() {
                     : '';
 
                 return `
-                    <div style="background: #f8fafc; padding: 10px; border-radius: 6px; margin-bottom: 6px; border-left: 3px solid ${getAlertColor(alert.type)};">
+                    <div style="background: #f8fafc; padding: 10px; border-radius: 6px; margin-bottom: 6px; border-left: 3px solid ${getAlertColor(alert.alert_type)};">
                         <div style="display: flex; justify-content: space-between; align-items: start;">
                             <div style="flex: 1;">
                                 <div style="font-weight: 500; font-size: 14px;">${alert.title}</div>
                                 <div style="font-size: 12px; color: ${isUrgent ? '#d97706' : '#64748b'}; margin-top: 2px; font-weight: ${isUrgent ? '500' : 'normal'};">
-                                    ${isUrgent ? '⏰ ' : ''}${timeUntil} • ${alert.type}${recurrenceLabel}
+                                    ${isUrgent ? '⏰ ' : ''}${timeUntil} • ${alert.alert_type}${recurrenceLabel}
                                 </div>
                                 <div style="font-size: 11px; color: #94a3b8; margin-top: 2px;">
                                     ${new Date(alert.scheduled_for).toLocaleString()}

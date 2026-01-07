@@ -195,7 +195,7 @@ class LayerAutomationService {
         if (!alertExists) {
           const alertLayer = new Layer({
             tv_id: tv._id,
-            name: `Emergency Alert: ${alert.type}`,
+            name: `Emergency Alert: ${alert.alert_type}`,
             layer_type: 'Emergency',
             content: {
               text: `🚨 ${alert.message}`,

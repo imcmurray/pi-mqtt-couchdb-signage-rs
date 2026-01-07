@@ -1,5 +1,5 @@
 const TV = require('../models/tv.multilayer');
-const mqttService = require('../services/mqttService');
+const mqttService = require('../services/multilayer.mqttService');
 const Joi = require('joi');
 
 // Validation schemas

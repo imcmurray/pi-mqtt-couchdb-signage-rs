@@ -134,14 +134,250 @@ body {
 /* TV Management Card Layout */
 .tv-card-layout {
     display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+/* Card Header */
+.tv-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+}
+
+.tv-card-title-section {
+    flex: 1;
+    min-width: 0;
+}
+
+.tv-card-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #1a202c;
+    margin-bottom: 0.25rem;
+}
+
+.tv-card-location {
+    font-size: 0.85rem;
+    color: #718096;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.tv-card-location i {
+    font-size: 0.75rem;
+}
+
+.tv-card-status-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-shrink: 0;
+}
+
+/* Status Badge (pill) */
+.status-badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    text-transform: capitalize;
+}
+
+.status-badge.online {
+    background: #c6f6d5;
+    color: #22543d;
+}
+
+.status-badge.offline {
+    background: #fed7d7;
+    color: #742a2a;
+}
+
+/* Last Seen Timer */
+.last-seen-container {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.8rem;
+    color: #718096;
+}
+
+.last-seen-container i {
+    font-size: 0.7rem;
+}
+
+.last-seen-value {
+    font-weight: 500;
+    font-family: 'Monaco', 'Menlo', monospace;
+    min-width: 3.5rem;
+}
+
+/* Quick Info Pills */
+.tv-quick-info {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.info-pill {
+    background: #edf2f7;
+    padding: 0.25rem 0.65rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.pill-label {
+    color: #718096;
+}
+
+.pill-value {
+    color: #2d3748;
+    font-weight: 500;
+}
+
+.version-loading {
+    color: #a0aec0;
+}
+
+.version-error {
+    color: #e53e3e;
+}
+
+/* Current Display Section */
+.tv-current-display {
+    display: flex;
     gap: 1rem;
     align-items: flex-start;
+    padding: 0.75rem;
+    background: #f7fafc;
+    border-radius: 6px;
+    border: 1px solid #e2e8f0;
+}
+
+.tv-display-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.tv-id-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+}
+
+.tv-id-display {
+    font-family: 'Monaco', 'Menlo', monospace;
+    font-size: 0.8rem;
+    color: #718096;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.copy-btn {
+    cursor: pointer;
+    opacity: 0.5;
+    padding: 0.125rem;
+    transition: opacity 0.15s;
+}
+
+.copy-btn:hover {
+    opacity: 1;
+    color: #4299e1;
 }
 
 .tv-thumbnail-container {
     flex-shrink: 0;
     width: 120px;
     height: 90px;
+    position: relative;
+}
+
+/* Live Preview Styles */
+.tv-preview-wrapper {
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+
+.tv-live-stream {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 4px;
+    border: 1px solid #4299e1;
+}
+
+.live-indicator {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    background: rgba(220, 38, 38, 0.9);
+    color: white;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 0.6rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    animation: pulse-live 2s infinite;
+}
+
+@keyframes pulse-live {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+.preview-toggle-btn {
+    position: absolute;
+    bottom: 4px;
+    right: 4px;
+    background: rgba(0, 0, 0, 0.6);
+    border: none;
+    border-radius: 4px;
+    color: white;
+    padding: 4px 8px;
+    cursor: pointer;
+    font-size: 0.7rem;
+    transition: all 0.15s ease;
+    z-index: 10;
+}
+
+.preview-toggle-btn:hover {
+    background: rgba(0, 0, 0, 0.8);
+}
+
+.preview-toggle-btn.active {
+    background: rgba(59, 130, 246, 0.9);
+}
+
+.preview-toggle-btn.active:hover {
+    background: rgba(37, 99, 235, 0.95);
+}
+
+.hidden {
+    display: none !important;
+}
+
+/* Dark theme support for live preview */
+.dark-theme .tv-live-stream {
+    border-color: #3182ce;
+}
+
+.dark-theme .preview-toggle-btn {
+    background: rgba(0, 0, 0, 0.7);
+}
+
+.dark-theme .preview-toggle-btn:hover {
+    background: rgba(0, 0, 0, 0.85);
 }
 
 .tv-thumbnail {
@@ -258,6 +494,53 @@ body {
 
 .dark-theme .version-error {
     color: #fc8181;
+}
+
+.dark-theme .tv-card-title {
+    color: #f7fafc;
+}
+
+.dark-theme .tv-card-location {
+    color: #a0aec0;
+}
+
+.dark-theme .status-badge.online {
+    background: #276749;
+    color: #9ae6b4;
+}
+
+.dark-theme .status-badge.offline {
+    background: #742a2a;
+    color: #feb2b2;
+}
+
+.dark-theme .last-seen-container {
+    color: #a0aec0;
+}
+
+.dark-theme .info-pill {
+    background: #2d3748;
+}
+
+.dark-theme .pill-label {
+    color: #a0aec0;
+}
+
+.dark-theme .pill-value {
+    color: #e2e8f0;
+}
+
+.dark-theme .tv-current-display {
+    background: #1a202c;
+    border-color: #4a5568;
+}
+
+.dark-theme .tv-id-display {
+    color: #a0aec0;
+}
+
+.dark-theme .copy-btn:hover {
+    color: #63b3ed;
 }
 
 /* Responsive - Single column on smaller screens */

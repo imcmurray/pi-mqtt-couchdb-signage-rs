@@ -180,6 +180,97 @@ class MultilayerMqttService extends EventEmitter {
     this.publish(topic, { images });
   }
 
+  // Send image updates to TV slideshow (uses base 'signage' prefix, not 'signage_dev')
+  // This is the command format the Rust slideshow client expects
+  async updateImages(tvId, imageList) {
+    const topic = `signage/tv/${tvId}/command`;
+    const message = JSON.stringify({
+      command: 'update_images',
+      payload: { images: imageList },
+      timestamp: new Date().toISOString()
+    });
+
+    console.log(`📤 MQTT: Sending update_images to ${topic} with ${imageList.length} images`);
+
+    if (!this.connected) {
+      console.warn(`⚠️ MQTT not connected, cannot send update_images to TV ${tvId}`);
+      return;
+    }
+
+    this.client.publish(topic, message, { qos: 1 }, (error) => {
+      if (error) {
+        console.error(`❌ MQTT: Failed to send update_images to ${topic}:`, error);
+      } else {
+        console.log(`✅ MQTT: update_images sent to ${topic}`);
+      }
+    });
+  }
+
+  // Generic command sender (uses base 'signage' prefix for Rust client compatibility)
+  async sendCommand(tvId, command, payload = {}) {
+    const topic = `signage/tv/${tvId}/command`;
+    const message = JSON.stringify({
+      command,
+      payload,
+      timestamp: new Date().toISOString()
+    });
+
+    if (!this.connected) {
+      console.warn(`⚠️ MQTT not connected, cannot send ${command} to TV ${tvId}`);
+      return;
+    }
+
+    this.client.publish(topic, message, { qos: 1 }, (error) => {
+      if (error) {
+        console.error(`❌ MQTT: Failed to send ${command} to ${topic}:`, error);
+      } else {
+        console.log(`✅ MQTT: ${command} sent to ${topic}`);
+      }
+    });
+  }
+
+  // TV Control Commands
+  async playSlideshow(tvId) {
+    return this.sendCommand(tvId, 'play');
+  }
+
+  async pauseSlideshow(tvId) {
+    return this.sendCommand(tvId, 'pause');
+  }
+
+  async nextImage(tvId) {
+    return this.sendCommand(tvId, 'next');
+  }
+
+  async previousImage(tvId) {
+    return this.sendCommand(tvId, 'previous');
+  }
+
+  async rebootTv(tvId) {
+    return this.sendCommand(tvId, 'reboot');
+  }
+
+  // Layer Management Commands
+  async updateLayerConfig(tvId, layerConfig) {
+    console.log(`🔄 SENDING LAYER CONFIG UPDATE to TV ${tvId}:`, layerConfig);
+    return this.sendCommand(tvId, 'update_layer_config', layerConfig);
+  }
+
+  async updateSpecificLayer(tvId, layerId, layerData) {
+    console.log(`🔄 SENDING LAYER UPDATE to TV ${tvId}, layer ${layerId}:`, layerData);
+    return this.sendCommand(tvId, 'update_layer', { layer_id: layerId, layer_data: layerData });
+  }
+
+  async removeLayer(tvId, layerId) {
+    console.log(`🔄 SENDING LAYER REMOVAL to TV ${tvId}, layer ${layerId}`);
+    return this.sendCommand(tvId, 'remove_layer', { layer_id: layerId });
+  }
+
+  async setLayerVisibility(tvId, layerId, visible) {
+    console.log(`🔄 SENDING LAYER VISIBILITY UPDATE to TV ${tvId}, layer ${layerId}: ${visible}`);
+    return this.sendCommand(tvId, 'set_layer_visibility', { layer_id: layerId, visible: visible });
+  }
+
   // Helper methods
   publish(topic, payload, qos = config.mqtt.qos) {
     if (!this.connected) {

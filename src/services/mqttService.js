@@ -181,6 +181,7 @@ class MQTTService {
   // Send commands to TVs
   async sendCommand(tvId, command, payload = {}) {
     if (!this.isConnected) {
+      console.warn(`⚠️ MQTT not connected, cannot send ${command} to TV ${tvId}`);
       throw new Error('MQTT client not connected');
     }
 
@@ -192,11 +193,12 @@ class MQTTService {
     });
 
     return new Promise((resolve, reject) => {
-      this.client.publish(topic, message, (error) => {
+      this.client.publish(topic, message, { qos: 1 }, (error) => {
         if (error) {
+          console.error(`❌ MQTT: Failed to send ${command} to ${topic}:`, error);
           reject(error);
         } else {
-          console.log(`Command sent to TV ${tvId}: ${command}`);
+          console.log(`✅ MQTT: ${command} sent to ${topic}`);
           resolve();
         }
       });
@@ -221,6 +223,7 @@ class MQTTService {
   }
 
   async updateImages(tvId, imageList) {
+    console.log(`📤 MQTT: Sending update_images to TV ${tvId} with ${imageList.length} images`);
     return this.sendCommand(tvId, 'update_images', { images: imageList });
   }
 

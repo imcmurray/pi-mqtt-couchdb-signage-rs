@@ -147,7 +147,7 @@ class CourtDisplayService {
    * @param {Object} layer - Layer object
    */
   async publishLayerUpdate(tvId, layer) {
-    const topic = `signage_dev/tv/${tvId}/layer/add`;
+    const topic = `signage/tv/${tvId}/layer/add`;
     const message = {
       type: 'layer_add',
       layer: {

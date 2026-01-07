@@ -843,9 +843,282 @@
             justify-content: flex-end;
             margin-top: 20px;
         }
+
+        /* Dark Theme Support */
+        body.dark-theme {
+            --background: #1a1a1a;
+            --surface: #2d2d2d;
+            --border: #404040;
+            --text: #e0e0e0;
+            --text-muted: #9ca3af;
+            --primary: #3b82f6;
+            --primary-dark: #2563eb;
+        }
+
+        body.dark-theme .header,
+        body.dark-theme .control-panel,
+        body.dark-theme .layers-list,
+        body.dark-theme .preview-canvas,
+        body.dark-theme .quick-actions,
+        body.dark-theme .logs {
+            background: var(--surface);
+            border-color: var(--border);
+        }
+
+        body.dark-theme .layer-item {
+            background: #374151;
+            border-color: var(--border);
+        }
+
+        body.dark-theme .layer-item:hover {
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        body.dark-theme .layer-item.animating {
+            border-color: var(--warning);
+            background: #44403c;
+        }
+
+        body.dark-theme .layer-text {
+            background: #1f2937;
+            color: #d1d5db;
+        }
+
+        body.dark-theme .form-group input,
+        body.dark-theme .form-group select,
+        body.dark-theme .form-group textarea {
+            background: #374151;
+            border-color: var(--border);
+            color: var(--text);
+        }
+
+        body.dark-theme .form-group input::placeholder,
+        body.dark-theme .form-group textarea::placeholder {
+            color: #6b7280;
+        }
+
+        body.dark-theme .form-group input:focus,
+        body.dark-theme .form-group select:focus,
+        body.dark-theme .form-group textarea:focus {
+            border-color: var(--primary);
+        }
+
+        body.dark-theme .alert-panel {
+            background: var(--surface);
+            border-color: var(--warning);
+        }
+
+        body.dark-theme .alert-panel > div[style*="background: #f8fafc"] {
+            background: #374151 !important;
+        }
+
+        body.dark-theme .alert-type-button {
+            background: #374151;
+            border-color: var(--border);
+        }
+
+        body.dark-theme .alert-type-button:hover {
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        body.dark-theme .alert-type-button.critical {
+            border-color: var(--danger);
+            background: rgba(220, 38, 38, 0.15);
+        }
+
+        body.dark-theme .alert-type-button.critical.selected {
+            background: rgba(220, 38, 38, 0.25);
+        }
+
+        body.dark-theme .alert-type-button.urgent {
+            border-color: var(--warning);
+            background: rgba(217, 119, 6, 0.15);
+        }
+
+        body.dark-theme .alert-type-button.urgent.selected {
+            background: rgba(217, 119, 6, 0.25);
+        }
+
+        body.dark-theme .alert-type-button.info {
+            border-color: var(--primary);
+            background: rgba(37, 99, 235, 0.15);
+        }
+
+        body.dark-theme .alert-type-button.info.selected {
+            background: rgba(37, 99, 235, 0.25);
+        }
+
+        body.dark-theme .active-alert-item {
+            background: #374151;
+        }
+
+        body.dark-theme .active-alert-item.critical {
+            background: rgba(220, 38, 38, 0.15);
+        }
+
+        body.dark-theme .active-alert-item.urgent {
+            background: rgba(217, 119, 6, 0.15);
+        }
+
+        body.dark-theme .active-alert-item.info {
+            background: rgba(37, 99, 235, 0.15);
+        }
+
+        body.dark-theme .target-type-option {
+            background: #374151;
+            border-color: var(--border);
+        }
+
+        body.dark-theme .target-type-option:hover {
+            background: #4b5563;
+        }
+
+        body.dark-theme .target-type-option.selected {
+            border-color: var(--primary);
+            background: rgba(37, 99, 235, 0.2);
+        }
+
+        body.dark-theme #scheduleFormContainer {
+            background: #374151 !important;
+        }
+
+        body.dark-theme #scheduleFormContainer input,
+        body.dark-theme #scheduleFormContainer select {
+            background: #1f2937 !important;
+            border-color: var(--border) !important;
+            color: var(--text) !important;
+        }
+
+        body.dark-theme .tv-mode-btn {
+            background: #374151;
+            border-color: var(--border);
+            color: var(--text);
+        }
+
+        body.dark-theme .tv-mode-btn.active {
+            border-color: var(--primary);
+            background: rgba(37, 99, 235, 0.2);
+            color: var(--primary);
+        }
+
+        body.dark-theme .tv-checkbox-list {
+            background: #374151;
+            border-color: var(--border);
+        }
+
+        body.dark-theme .tv-checkbox-item:hover {
+            background: rgba(37, 99, 235, 0.1);
+        }
+
+        body.dark-theme .template-sidebar {
+            background: var(--surface);
+            box-shadow: -4px 0 20px rgba(0, 0, 0, 0.4);
+        }
+
+        body.dark-theme .sidebar-header {
+            border-color: var(--border);
+        }
+
+        body.dark-theme .sidebar-close {
+            color: var(--text-muted);
+        }
+
+        body.dark-theme .sidebar-close:hover {
+            color: var(--text);
+        }
+
+        body.dark-theme .template-filters {
+            border-color: var(--border);
+        }
+
+        body.dark-theme .template-filters select {
+            background: #374151;
+            border-color: var(--border);
+            color: var(--text);
+        }
+
+        body.dark-theme .template-card {
+            background: #374151;
+            border-color: var(--border);
+        }
+
+        body.dark-theme .template-card:hover {
+            border-color: var(--primary);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        body.dark-theme .template-card.selected {
+            border-color: var(--primary);
+            background: rgba(37, 99, 235, 0.15);
+        }
+
+        body.dark-theme .template-card-name {
+            color: var(--text);
+        }
+
+        body.dark-theme .template-apply-section {
+            background: rgba(37, 99, 235, 0.1);
+            border-color: var(--primary);
+        }
+
+        body.dark-theme .sidebar-footer {
+            border-color: var(--border);
+        }
+
+        body.dark-theme .modal-overlay {
+            background: rgba(0, 0, 0, 0.7);
+        }
+
+        body.dark-theme .modal {
+            background: var(--surface);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        }
+
+        body.dark-theme .position-controls input {
+            background: #374151;
+            border-color: var(--border);
+            color: var(--text);
+        }
+
+        /* Theme toggle button */
+        .theme-toggle {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 50%;
+            width: 44px;
+            height: 44px;
+            cursor: pointer;
+            font-size: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1001;
+            transition: all 0.2s;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .theme-toggle:hover {
+            transform: scale(1.1);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        body.dark-theme .theme-toggle {
+            background: var(--surface);
+            border-color: var(--border);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
     </style>
 </head>
 <body>
+    <script>
+        if (localStorage.getItem('darkTheme') === 'true') {
+            document.body.classList.add('dark-theme');
+        }
+    </script>
+    <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme" id="themeToggle"></button>
     <div class="container">
         <div class="header">
             <h1>🎨 Multi-Layer Digital Signage</h1>
@@ -1182,5 +1455,21 @@
     </div>
 
     <script src="js/multilayer.js"></script>
+    <script>
+        function toggleTheme() {
+            const isDark = document.body.classList.toggle('dark-theme');
+            localStorage.setItem('darkTheme', isDark);
+            updateThemeIcon();
+        }
+
+        function updateThemeIcon() {
+            const btn = document.getElementById('themeToggle');
+            const isDark = document.body.classList.contains('dark-theme');
+            btn.textContent = isDark ? '☀️' : '🌙';
+            btn.title = isDark ? 'Switch to light theme' : 'Switch to dark theme';
+        }
+
+        updateThemeIcon();
+    </script>
 </body>
 </html>

@@ -152,13 +152,14 @@ class DigitalSignageApp {
 
     async loadInitialData() {
         this.showLoading(true);
-        
+
         try {
             await Promise.all([
                 this.loadDashboardData(),
                 this.loadTvs(),
                 this.loadImages()
             ]);
+            this.startLastSeenTimer();
         } catch (error) {
             console.error('Error loading initial data:', error);
             this.showToast('Error loading data', 'error');
@@ -330,106 +331,115 @@ class DigitalSignageApp {
     createTvListItem(tv) {
         const item = document.createElement('div');
         item.className = 'tv-list-item';
-        
+
         const statusClass = tv.status === 'online' ? 'online' : 'offline';
-        
-        // Get current image for thumbnail - check both field names for compatibility
+
         const currentImageId = tv.current_image_id || tv.current_image;
         const currentImage = currentImageId ? this.images.find(img => img._id === currentImageId) : null;
-        const thumbnailHtml = currentImage ? 
+        const thumbnailHtml = currentImage ?
             `<img src="/api/images/${currentImage._id}/attachment" alt="${currentImage.original_name}" class="tv-thumbnail">` :
             `<div class="tv-thumbnail-placeholder"><i class="fas fa-image"></i><span>No Image</span></div>`;
-        
+
+        const tvIdShort = tv._id.replace('tv_', '');
+        const tvIdTruncated = tvIdShort.substring(0, 8);
+
         item.innerHTML = `
             <div class="tv-card-layout">
-                <div class="tv-thumbnail-container">
-                    ${thumbnailHtml}
-                </div>
-                <div class="tv-info">
-                    <div class="tv-name">${tv.name}</div>
-                    <div class="tv-details-grid">
-                        <div class="tv-detail-item">
-                            <span class="detail-label">Location:</span>
-                            <span class="detail-value">${tv.location}</span>
-                        </div>
-                        <div class="tv-detail-item">
-                            <span class="detail-label">IP Address:</span>
-                            <span class="detail-value">${tv.ip_address}</span>
-                        </div>
-                        <div class="tv-detail-item">
-                            <span class="detail-label">TV ID:</span>
-                            <span class="detail-value">${tv._id.replace('tv_', '')}</span>
-                        </div>
-                        <div class="tv-detail-item">
-                            <span class="detail-label">Orientation:</span>
-                            <span class="detail-value">${this.formatOrientation(tv.config?.orientation || 'landscape')}</span>
-                        </div>
-                        <div class="tv-detail-item">
-                            <span class="detail-label">Status:</span>
-                            <span class="detail-value">
-                                <span class="status-dot ${statusClass}"></span>
-                                ${tv.status}
-                            </span>
-                        </div>
+                <div class="tv-card-header">
+                    <div class="tv-card-title-section">
+                        <div class="tv-card-title">${tv.name}</div>
+                        <div class="tv-card-location"><i class="fas fa-map-marker-alt"></i> ${tv.location}</div>
                     </div>
-                    <div class="tv-version-info" id="tv-version-${tv._id}">
-                        <span class="detail-label">Version:</span>
-                        <span class="version-loading">Loading...</span>
-                    </div>
-                    <div class="tv-current-image" id="tv-current-${tv._id}">
-                        <span class="detail-label">Current Image:</span>
-                        <span class="detail-value">${currentImage ? currentImage.original_name : 'None'}</span>
-                    </div>
-                    <div class="tv-system-info" id="system-info-${tv._id}">
-                        <div class="system-info-grid">
-                            <div class="system-info-column">
-                                <div class="system-info-item">
-                                    <i class="fas fa-thermometer-half metric-icon"></i>
-                                    <span class="detail-label">Temperature</span>
-                                    <span class="detail-value" id="temp-detail-${tv._id}">${this.formatMetricValue(tv.system_metrics?.temperature, '°C', '--°C')}</span>
-                                </div>
-                                <div class="system-info-item">
-                                    <i class="fas fa-microchip metric-icon"></i>
-                                    <span class="detail-label">CPU</span>
-                                    <span class="detail-value" id="cpu-detail-${tv._id}">${this.formatMetricValue(tv.system_metrics?.cpu_usage, '%', '--%')}</span>
-                                </div>
-                                <div class="system-info-item">
-                                    <i class="fas fa-memory metric-icon"></i>
-                                    <span class="detail-label">Memory</span>
-                                    <span class="detail-value" id="memory-detail-${tv._id}">${this.formatMetricValue(tv.system_metrics?.memory_usage, '%', '--%')}</span>
-                                </div>
-                                <div class="system-info-sub">
-                                    <span id="memory-bytes-${tv._id}">${this.formatBytes(tv.system_metrics?.memory_used)} / ${this.formatBytes(tv.system_metrics?.memory_total)}</span>
-                                </div>
-                                <div class="system-info-item">
-                                    <i class="fas fa-hdd metric-icon"></i>
-                                    <span class="detail-label">Disk</span>
-                                    <span class="detail-value" id="disk-detail-${tv._id}">${this.formatMetricValue(tv.system_metrics?.disk_usage, '%', '--%')}</span>
-                                </div>
-                                <div class="system-info-sub">
-                                    <span id="disk-bytes-${tv._id}">${this.formatBytes(tv.system_metrics?.disk_used)} / ${this.formatBytes(tv.system_metrics?.disk_total)}</span>
-                                </div>
-                            </div>
-                            <div class="system-info-column">
-                                <div class="system-info-item">
-                                    <i class="fas fa-server metric-icon"></i>
-                                    <span class="detail-label">Device Uptime</span>
-                                    <span class="detail-value" id="device-uptime-detail-${tv._id}">${this.formatUptime(tv.system_metrics?.device_uptime_seconds)}</span>
-                                </div>
-                                <div class="system-info-item">
-                                    <i class="fas fa-clock metric-icon"></i>
-                                    <span class="detail-label">App Uptime</span>
-                                    <span class="detail-value" id="app-uptime-detail-${tv._id}">${this.formatUptime(tv.system_metrics?.app_uptime_seconds)}</span>
-                                </div>
-                                <div class="system-info-item">
-                                    <i class="fas fa-chart-line metric-icon"></i>
-                                    <span class="detail-label">Load Average</span>
-                                    <span class="detail-value" id="load-detail-${tv._id}">${tv.system_metrics?.load_average?.toFixed(2) ?? '--'}</span>
-                                </div>
-                            </div>
+                    <div class="tv-card-status-row">
+                        <span class="status-badge ${statusClass}">${tv.status}</span>
+                        <div class="last-seen-container">
+                            <i class="fas fa-signal"></i>
+                            <span class="last-seen-value" id="last-seen-${tv._id}">${this.formatTimeSince(tv.last_heartbeat)}</span>
                         </div>
                     </div>
                 </div>
+
+                <div class="tv-quick-info">
+                    <span class="info-pill"><span class="pill-label">IP:</span> <span class="pill-value">${tv.ip_address}</span></span>
+                    <span class="info-pill" id="tv-version-pill-${tv._id}"><span class="pill-label">v</span><span class="pill-value version-loading">...</span></span>
+                    <span class="info-pill"><span class="pill-label"></span><span class="pill-value">${this.formatOrientation(tv.config?.orientation || 'landscape')}</span></span>
+                </div>
+
+                <div class="tv-current-display">
+                    <div class="tv-thumbnail-container">
+                        <div class="tv-preview-wrapper">
+                            ${thumbnailHtml}
+                            <img src="" class="tv-live-stream hidden" id="live-stream-${tv._id}" alt="Live preview">
+                            <span class="live-indicator hidden" id="live-indicator-${tv._id}">● LIVE</span>
+                        </div>
+                        <button class="preview-toggle-btn" id="preview-toggle-${tv._id}"
+                                onclick="app.toggleLivePreview('${tv._id}', '${tv.ip_address}')"
+                                title="Toggle live preview">
+                            <i class="fas fa-video"></i>
+                        </button>
+                    </div>
+                    <div class="tv-display-info">
+                        <div class="tv-current-image" id="tv-current-${tv._id}">
+                            <span class="detail-label">Currently Showing</span>
+                            <span class="detail-value">${currentImage ? currentImage.original_name : 'None'}</span>
+                        </div>
+                        <div class="tv-id-row">
+                            <span class="detail-label">TV ID</span>
+                            <span class="tv-id-display" title="${tvIdShort}">${tvIdTruncated}... <i class="fas fa-copy copy-btn" onclick="app.copyToClipboard('${tvIdShort}')"></i></span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tv-system-info" id="system-info-${tv._id}">
+                    <div class="system-info-grid">
+                        <div class="system-info-column">
+                            <div class="system-info-item">
+                                <i class="fas fa-thermometer-half metric-icon"></i>
+                                <span class="detail-label">Temperature</span>
+                                <span class="detail-value" id="temp-detail-${tv._id}">${this.formatMetricValue(tv.system_metrics?.temperature, '°C', '--°C')}</span>
+                            </div>
+                            <div class="system-info-item">
+                                <i class="fas fa-microchip metric-icon"></i>
+                                <span class="detail-label">CPU</span>
+                                <span class="detail-value" id="cpu-detail-${tv._id}">${this.formatMetricValue(tv.system_metrics?.cpu_usage, '%', '--%')}</span>
+                            </div>
+                            <div class="system-info-item">
+                                <i class="fas fa-memory metric-icon"></i>
+                                <span class="detail-label">Memory</span>
+                                <span class="detail-value" id="memory-detail-${tv._id}">${this.formatMetricValue(tv.system_metrics?.memory_usage, '%', '--%')}</span>
+                            </div>
+                            <div class="system-info-sub">
+                                <span id="memory-bytes-${tv._id}">${this.formatBytes(tv.system_metrics?.memory_used)} / ${this.formatBytes(tv.system_metrics?.memory_total)}</span>
+                            </div>
+                            <div class="system-info-item">
+                                <i class="fas fa-hdd metric-icon"></i>
+                                <span class="detail-label">Disk</span>
+                                <span class="detail-value" id="disk-detail-${tv._id}">${this.formatMetricValue(tv.system_metrics?.disk_usage, '%', '--%')}</span>
+                            </div>
+                            <div class="system-info-sub">
+                                <span id="disk-bytes-${tv._id}">${this.formatBytes(tv.system_metrics?.disk_used)} / ${this.formatBytes(tv.system_metrics?.disk_total)}</span>
+                            </div>
+                        </div>
+                        <div class="system-info-column">
+                            <div class="system-info-item">
+                                <i class="fas fa-server metric-icon"></i>
+                                <span class="detail-label">Device Uptime</span>
+                                <span class="detail-value" id="device-uptime-detail-${tv._id}">${this.formatUptime(tv.system_metrics?.device_uptime_seconds)}</span>
+                            </div>
+                            <div class="system-info-item">
+                                <i class="fas fa-clock metric-icon"></i>
+                                <span class="detail-label">App Uptime</span>
+                                <span class="detail-value" id="app-uptime-detail-${tv._id}">${this.formatUptime(tv.system_metrics?.app_uptime_seconds)}</span>
+                            </div>
+                            <div class="system-info-item">
+                                <i class="fas fa-chart-line metric-icon"></i>
+                                <span class="detail-label">Load Average</span>
+                                <span class="detail-value" id="load-detail-${tv._id}">${tv.system_metrics?.load_average?.toFixed(2) ?? '--'}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="tv-actions">
                     <button class="btn btn-sm btn-primary" onclick="app.editTv('${tv._id}')">
                         <i class="fas fa-edit"></i> Edit
@@ -449,7 +459,7 @@ class DigitalSignageApp {
                 </div>
             </div>
         `;
-        
+
         return item;
     }
 
@@ -525,11 +535,18 @@ class DigitalSignageApp {
             tvs: 'TV Management',
             images: 'Image Library',
             upload: 'Upload Images',
+            layers: 'Layer Control',
+            'alert-templates': 'Alert Templates',
             mqtt: 'MQTT Activity'
         };
         document.getElementById('page-title').textContent = titles[section];
 
         this.currentSection = section;
+
+        // Initialize alert templates section on first visit
+        if (section === 'alert-templates' && typeof atInitTemplates === 'function') {
+            atInitTemplates();
+        }
     }
 
     // TV Management
@@ -951,6 +968,65 @@ class DigitalSignageApp {
         return gb >= 1 ? `${gb.toFixed(1)} GB` : `${(bytes / (1024 * 1024)).toFixed(0)} MB`;
     }
 
+    formatTimeSince(timestamp) {
+        if (!timestamp) return 'Never';
+        const seconds = Math.floor((Date.now() - new Date(timestamp)) / 1000);
+        if (seconds < 60) return `${seconds}s`;
+        const minutes = Math.floor(seconds / 60);
+        if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
+        const hours = Math.floor(minutes / 60);
+        if (hours < 24) return `${hours}h ${minutes % 60}m`;
+        const days = Math.floor(hours / 24);
+        return `${days}d ${hours % 24}h`;
+    }
+
+    startLastSeenTimer() {
+        setInterval(() => {
+            this.tvs.forEach(tv => {
+                const el = document.getElementById(`last-seen-${tv._id}`);
+                if (el) {
+                    el.textContent = this.formatTimeSince(tv.last_heartbeat);
+                }
+            });
+        }, 1000);
+    }
+
+    copyToClipboard(text) {
+        navigator.clipboard.writeText(text).then(() => {
+            this.showToast('Copied to clipboard', 'success');
+        }).catch(() => {
+            this.showToast('Failed to copy', 'error');
+        });
+    }
+
+    toggleLivePreview(tvId, ipAddress) {
+        const staticImg = document.querySelector(`#live-stream-${tvId}`)?.parentElement?.querySelector('.tv-thumbnail');
+        const staticPlaceholder = document.querySelector(`#live-stream-${tvId}`)?.parentElement?.querySelector('.tv-thumbnail-placeholder');
+        const liveStream = document.getElementById(`live-stream-${tvId}`);
+        const indicator = document.getElementById(`live-indicator-${tvId}`);
+        const btn = document.getElementById(`preview-toggle-${tvId}`);
+
+        if (!liveStream) return;
+
+        if (liveStream.classList.contains('hidden')) {
+            staticImg?.classList.add('hidden');
+            staticPlaceholder?.classList.add('hidden');
+            liveStream.classList.remove('hidden');
+            indicator?.classList.remove('hidden');
+            btn?.classList.add('active');
+            liveStream.src = `http://${ipAddress}:8080/api/stream`;
+            this.showToast('Live preview enabled', 'success');
+        } else {
+            liveStream.classList.add('hidden');
+            staticImg?.classList.remove('hidden');
+            staticPlaceholder?.classList.remove('hidden');
+            indicator?.classList.add('hidden');
+            btn?.classList.remove('active');
+            liveStream.src = '';
+            this.showToast('Live preview disabled', 'info');
+        }
+    }
+
     updateTvStatus(topic, payload) {
         const tvId = this.extractTvIdFromTopic(topic);
         const tv = this.tvs.find(t => t._id.replace('tv_', '') === tvId);
@@ -1085,7 +1161,7 @@ class DigitalSignageApp {
             }
             
             // Update thumbnail using same logic as dashboard
-            const thumbnailContainer = document.querySelector(`#tv-version-${tv._id}`).closest('.tv-card-layout').querySelector('.tv-thumbnail-container');
+            const thumbnailContainer = document.querySelector(`#tv-version-pill-${tv._id}`)?.closest('.tv-card-layout')?.querySelector('.tv-thumbnail-container');
             if (thumbnailContainer) {
                 const currentImage = payload.image_id ? this.images.find(img => img._id === payload.image_id) : null;
                 thumbnailContainer.innerHTML = currentImage ? 
@@ -1460,14 +1536,13 @@ class DigitalSignageApp {
 
     // Load version info for individual TV in the TV Management section
     async loadTvVersionInfo(tv) {
-        const versionElement = document.getElementById(`tv-version-${tv._id}`);
+        const versionElement = document.getElementById(`tv-version-pill-${tv._id}`);
         if (!versionElement) return;
 
         try {
-            // Use a proper timeout implementation with AbortController
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 5000);
-            
+
             const response = await fetch(`http://${tv.ip_address}:8080/api/version`, {
                 method: 'GET',
                 signal: controller.signal,
@@ -1475,24 +1550,23 @@ class DigitalSignageApp {
                     'Accept': 'application/json',
                 }
             });
-            
+
             clearTimeout(timeoutId);
-            
+
             if (response.ok) {
                 const versionData = await response.json();
                 const version = versionData.data;
-                versionElement.innerHTML = `<span class="detail-label">Version:</span> <span class="detail-value">${version.version} (${version.commit_short})</span>`;
-                
-                // Store version data for detailed view
+                versionElement.innerHTML = `<span class="pill-label">v</span><span class="pill-value">${version.version}</span>`;
+                versionElement.title = `${version.version} (${version.commit_short})`;
                 tv.versionInfo = version;
             } else {
-                versionElement.innerHTML = `<span class="detail-label">Version:</span> <span class="detail-value version-error">Offline</span>`;
+                versionElement.innerHTML = `<span class="pill-label">v</span><span class="pill-value version-error">--</span>`;
             }
         } catch (error) {
             if (error.name === 'AbortError') {
-                versionElement.innerHTML = `<span class="detail-label">Version:</span> <span class="detail-value version-error">Timeout</span>`;
+                versionElement.innerHTML = `<span class="pill-label">v</span><span class="pill-value version-error">--</span>`;
             } else {
-                versionElement.innerHTML = `<span class="detail-label">Version:</span> <span class="detail-value version-error">Unavailable</span>`;
+                versionElement.innerHTML = `<span class="pill-label">v</span><span class="pill-value version-error">--</span>`;
             }
             console.log(`Version fetch failed for TV ${tv.name} (${tv.ip_address}):`, error.message);
         }

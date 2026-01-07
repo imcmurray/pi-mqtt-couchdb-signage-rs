@@ -47,6 +47,7 @@ pub struct SlideshowController {
     layer_manager: Arc<RwLock<LayerManager>>,
     registration_status: Arc<RwLock<Option<RegistrationStatus>>>,
     pub start_time: Instant,
+    current_frame: Arc<RwLock<Option<image::RgbaImage>>>,
 }
 
 impl Clone for SlideshowController {
@@ -63,6 +64,7 @@ impl Clone for SlideshowController {
             layer_manager: self.layer_manager.clone(),
             registration_status: self.registration_status.clone(),
             start_time: self.start_time,
+            current_frame: self.current_frame.clone(),
         }
     }
 }
@@ -91,6 +93,7 @@ impl SlideshowController {
             layer_manager: Arc::new(RwLock::new(layer_manager)),
             registration_status: Arc::new(RwLock::new(None)),
             start_time: Instant::now(),
+            current_frame: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -835,8 +838,36 @@ impl SlideshowController {
         self.layer_manager.read().await.render_composite().await
     }
 
+    /// Get the current composite image for preview streaming
+    /// This returns the current_frame which is updated during transitions and compositing
+    pub async fn get_current_composite(&self) -> Option<image::RgbaImage> {
+        self.current_frame.read().await.clone()
+    }
+
+    /// Get the current frame buffer Arc for external updates (e.g., during transitions)
+    pub fn get_current_frame(&self) -> Arc<RwLock<Option<image::RgbaImage>>> {
+        self.current_frame.clone()
+    }
+
+    /// Update the current frame buffer with a new image
+    pub async fn set_current_frame(&self, frame: image::RgbaImage) {
+        *self.current_frame.write().await = Some(frame);
+    }
+
     pub async fn update_slideshow_layer(&self, image_path: Option<String>) -> Result<(), String> {
         self.layer_manager.write().await.update_slideshow_content(image_path).await
+    }
+
+    pub async fn has_emergency_layers(&self) -> bool {
+        self.layer_manager.read().await.has_emergency_layers().await
+    }
+
+    pub async fn set_transition_frame(&self, frame: Option<image::RgbaImage>) {
+        self.layer_manager.write().await.set_transition_frame(frame).await
+    }
+
+    pub async fn render_emergency_layers_only(&self) -> Result<image::RgbaImage, String> {
+        self.layer_manager.read().await.render_emergency_layers_only().await
     }
 
     /// Add static overlay layer (for future HTTP API)

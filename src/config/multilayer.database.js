@@ -159,7 +159,7 @@ async function createMultilayerDesignDocuments() {
         by_type: {
           map: function(doc) {
             if (doc.type === 'alert') {
-              emit(doc.type, doc);
+              emit(doc.alert_type, doc);
             }
           }.toString()
         },
@@ -174,11 +174,66 @@ async function createMultilayerDesignDocuments() {
     }
   ];
 
+  // Presets design documents (stored in layers database)
+  const presetsDesignDocs = [
+    {
+      _id: '_design/presets',
+      views: {
+        all: {
+          map: function(doc) {
+            if (doc.type === 'preset') {
+              emit(doc._id, doc);
+            }
+          }.toString()
+        },
+        by_category: {
+          map: function(doc) {
+            if (doc.type === 'preset') {
+              emit(doc.category, doc);
+            }
+          }.toString()
+        },
+        builtin: {
+          map: function(doc) {
+            if (doc.type === 'preset' && doc.is_builtin === true) {
+              emit(doc._id, doc);
+            }
+          }.toString()
+        }
+      }
+    }
+  ];
+
+  // Alert templates design documents
+  const alertTemplateDesignDocs = [
+    {
+      _id: '_design/alert_templates',
+      views: {
+        all: {
+          map: function(doc) {
+            if (doc.type === 'alert_template') {
+              emit(doc._id, doc);
+            }
+          }.toString()
+        },
+        by_category: {
+          map: function(doc) {
+            if (doc.type === 'alert_template') {
+              emit(doc.category, doc);
+            }
+          }.toString()
+        }
+      }
+    }
+  ];
+
   // Apply design documents to respective databases
   await applyDesignDocs(databases.tvs, tvDesignDocs);
   await applyDesignDocs(databases.layers, layerDesignDocs);
+  await applyDesignDocs(databases.layers, presetsDesignDocs);
   await applyDesignDocs(databases.images, imageDesignDocs);
   await applyDesignDocs(databases.alerts, alertDesignDocs);
+  await applyDesignDocs(databases.alert_templates, alertTemplateDesignDocs);
 }
 
 async function applyDesignDocs(db, designDocs) {

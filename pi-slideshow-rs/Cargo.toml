@@ -22,6 +22,8 @@ reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-feature
 uuid = { version = "1.0", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 warp = "0.3"
+async-stream = "0.3"
+futures = "0.3"
 couch_rs = { version = "0.10", default-features = false }
 url = "2.0"
 sysinfo = "0.29"

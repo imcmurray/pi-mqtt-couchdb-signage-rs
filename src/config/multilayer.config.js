@@ -29,7 +29,7 @@ const multilayerConfig = {
     clientId: 'signage-management-multilayer',
     topics: {
       ...baseConfig.mqtt.topics,
-      prefix: 'signage_dev', // New prefix to avoid conflicts
+      prefix: 'signage',
       // Layer-specific topics
       layer: 'layer',
       layerCommand: 'layer/command',

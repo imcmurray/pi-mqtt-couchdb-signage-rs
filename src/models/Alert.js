@@ -11,10 +11,10 @@ class Alert extends BaseModel {
     this.message = data.message || '';
 
     // Alert type determines priority and visual treatment
-    this.type = data.type || 'INFO'; // CRITICAL, URGENT, INFO
+    this.alert_type = data.alert_type || data.type || 'INFO'; // CRITICAL, URGENT, INFO
 
-    // Priority and auto-dismiss based on type
-    const typeDefaults = this.getTypeDefaults(this.type);
+    // Priority and auto-dismiss based on alert_type
+    const typeDefaults = this.getTypeDefaults(this.alert_type);
     this.priority = data.priority !== undefined ? data.priority : typeDefaults.priority;
     this.auto_dismiss_ms = data.auto_dismiss_ms !== undefined ? data.auto_dismiss_ms : typeDefaults.auto_dismiss_ms;
     this.background_color = data.background_color || typeDefaults.background_color;
@@ -54,19 +54,19 @@ class Alert extends BaseModel {
         priority: 250,
         auto_dismiss_ms: 600000, // 10 minutes
         background_color: 'rgba(220, 38, 38, 0.95)', // Red
-        icon: '🚨'
+        icon: '⚠'  // U+26A0 WARNING SIGN (DejaVu compatible)
       },
       URGENT: {
         priority: 200,
         auto_dismiss_ms: 300000, // 5 minutes
         background_color: 'rgba(217, 119, 6, 0.9)', // Orange
-        icon: '⚠️'
+        icon: '⚠'  // U+26A0 WARNING SIGN (DejaVu compatible)
       },
       INFO: {
         priority: 150,
         auto_dismiss_ms: 120000, // 2 minutes
         background_color: 'rgba(37, 99, 235, 0.85)', // Blue
-        icon: 'ℹ️'
+        icon: 'ℹ'  // U+2139 INFORMATION SOURCE (DejaVu compatible)
       }
     };
 
@@ -91,7 +91,7 @@ class Alert extends BaseModel {
     }
 
     const validTypes = ['CRITICAL', 'URGENT', 'INFO'];
-    if (!validTypes.includes(this.type)) {
+    if (!validTypes.includes(this.alert_type)) {
       throw new Error('Invalid alert type. Must be CRITICAL, URGENT, or INFO');
     }
 
@@ -99,7 +99,7 @@ class Alert extends BaseModel {
   }
 
   toLayer(tvId) {
-    const layerDefaults = this.getLayerDefaults(this.type);
+    const layerDefaults = this.getLayerDefaults(this.alert_type);
 
     const layerText = this.formatAlertText();
 
@@ -127,8 +127,8 @@ class Alert extends BaseModel {
         hide_at: null,
         auto_hide_after_ms: this.auto_dismiss_ms
       },
-      tags: ['alert', this.type.toLowerCase(), this.alert_id],
-      group: `alert_${this.alert_id}`
+      tags: ['alert', this.alert_type.toLowerCase(), this.alert_id],
+      group: this.alert_id
     };
   }
 
@@ -158,8 +158,15 @@ class Alert extends BaseModel {
   }
 
   formatAlertText() {
-    const typeName = this.type === 'CRITICAL' ? 'CRITICAL ALERT' : this.type;
-    return `${this.icon} ${typeName}\n\n${this.title}\n\n${this.message}`;
+    const typeName = this.alert_type === 'CRITICAL' ? 'CRITICAL ALERT' : this.alert_type;
+
+    if (this.alert_type === 'CRITICAL') {
+      const cleanTitle = this.title.replace(/[\r\n]+/g, ' ').trim();
+      return `${this.icon} ${typeName}\n${cleanTitle}\n${this.message.trim()}`;
+    }
+    const cleanTitle = this.title.replace(/[\r\n]+/g, ' ').trim();
+    const cleanMessage = this.message.replace(/[\r\n]+/g, ' ').trim();
+    return `${this.icon} ${typeName}  •  ${cleanTitle}  •  ${cleanMessage}`;
   }
 
   isActive() {

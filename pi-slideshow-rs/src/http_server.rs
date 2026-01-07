@@ -1,8 +1,14 @@
-use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
+use std::io::Cursor;
 use std::sync::Arc;
+use std::time::Duration;
+
+use image::codecs::jpeg::JpegEncoder;
+use image::ImageEncoder;
+use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
-use warp::{reply, Filter, Rejection};
+use warp::hyper::Body;
+use warp::{reply, Filter, Rejection, Reply};
 
 use crate::mqtt_client::SlideshowCommand;
 use crate::slideshow_controller::SlideshowController;
@@ -128,9 +134,31 @@ pub async fn run_http_server(
             }
         });
 
+    // Preview endpoint - single JPEG snapshot of current display
+    let preview_controller = controller.clone();
+    let preview = warp::path("preview")
+        .and(warp::get())
+        .and_then(move || {
+            let controller = preview_controller.clone();
+            async move {
+                get_preview_image(&controller).await
+            }
+        });
+
+    // Stream endpoint - MJPEG stream of current display at 5 FPS
+    let stream_controller = controller.clone();
+    let stream = warp::path("stream")
+        .and(warp::get())
+        .and_then(move || {
+            let controller = stream_controller.clone();
+            async move {
+                get_mjpeg_stream(controller).await
+            }
+        });
+
     // Combine all routes
     let api = warp::path("api")
-        .and(health.or(version).or(status).or(control).or(config).or(images))
+        .and(health.or(version).or(status).or(control).or(config).or(images).or(preview).or(stream))
         .with(warp::cors().allow_any_origin().allow_headers(vec!["content-type"]).allow_methods(vec!["GET", "POST", "PUT"]));
 
     // Root endpoint
@@ -150,7 +178,10 @@ pub async fn run_http_server(
                 <li>POST /api/control - Control slideshow (play, pause, next, previous)</li>
                 <li>PUT /api/config - Update configuration</li>
                 <li>GET /api/images - Get image list</li>
+                <li>GET /api/preview - Single JPEG snapshot of current display</li>
+                <li>GET /api/stream - MJPEG stream of current display (5 FPS)</li>
                 </ul>
+                <p>Live preview: <img src="/api/stream" width="320" height="180"></p>
                 </body>
                 </html>
                 "#
@@ -230,4 +261,79 @@ async fn handle_config_request(
         .map_err(|e| format!("Failed to send config update: {}", e))?;
 
     Ok("Configuration updated successfully".to_string())
+}
+
+/// Encode an RGBA image to JPEG bytes
+fn encode_to_jpeg(image: &image::RgbaImage, quality: u8) -> Vec<u8> {
+    let mut jpeg_bytes = Vec::new();
+    let mut cursor = Cursor::new(&mut jpeg_bytes);
+    let encoder = JpegEncoder::new_with_quality(&mut cursor, quality);
+    encoder.write_image(
+        image.as_raw(),
+        image.width(),
+        image.height(),
+        image::ColorType::Rgba8.into(),
+    ).ok();
+    jpeg_bytes
+}
+
+/// Get a single JPEG snapshot of the current display
+async fn get_preview_image(controller: &SlideshowController) -> Result<impl Reply, Infallible> {
+    match controller.get_current_composite().await {
+        Some(image) => {
+            let jpeg_bytes = encode_to_jpeg(&image, 75);
+            Ok(warp::reply::with_header(
+                warp::reply::with_header(
+                    jpeg_bytes,
+                    "Content-Type",
+                    "image/jpeg"
+                ),
+                "Cache-Control",
+                "no-cache, no-store, must-revalidate"
+            ))
+        }
+        None => {
+            Ok(warp::reply::with_header(
+                warp::reply::with_header(
+                    Vec::new(),
+                    "Content-Type",
+                    "image/jpeg"
+                ),
+                "Cache-Control",
+                "no-cache"
+            ))
+        }
+    }
+}
+
+/// Get an MJPEG stream of the current display at 5 FPS
+async fn get_mjpeg_stream(controller: Arc<SlideshowController>) -> Result<impl Reply, Infallible> {
+    let stream = async_stream::stream! {
+        loop {
+            if let Some(image) = controller.get_current_composite().await {
+                let jpeg_bytes = encode_to_jpeg(&image, 70);
+
+                // MJPEG frame format
+                let header = format!(
+                    "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: {}\r\n\r\n",
+                    jpeg_bytes.len()
+                );
+                yield Ok::<_, std::convert::Infallible>(header.into_bytes());
+                yield Ok(jpeg_bytes);
+                yield Ok(b"\r\n".to_vec());
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await; // 5 FPS
+        }
+    };
+
+    let body = Body::wrap_stream(stream);
+
+    let response = warp::http::Response::builder()
+        .header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
+        .header("Cache-Control", "no-cache, no-store, must-revalidate")
+        .header("Connection", "keep-alive")
+        .body(body)
+        .unwrap();
+
+    Ok(response)
 }

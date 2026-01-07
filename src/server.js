@@ -37,7 +37,7 @@ app.use(helmet({
       styleSrc: ["'self'", "'unsafe-inline'", "https://cdnjs.cloudflare.com"],
       scriptSrc: ["'self'", "'unsafe-inline'"],
       scriptSrcAttr: ["'unsafe-inline'"],
-      imgSrc: ["'self'", "data:", "blob:"],
+      imgSrc: ["'self'", "data:", "blob:", "http:", "https:"],
       connectSrc: ["'self'", "ws:", "wss:", "http:", "https:"],
       fontSrc: ["'self'", "https://cdnjs.cloudflare.com"],
       upgradeInsecureRequests: null,

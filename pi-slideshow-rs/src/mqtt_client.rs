@@ -90,6 +90,29 @@ pub struct MqttClient {
     status_receiver: Arc<tokio::sync::Mutex<mpsc::Receiver<TvStatus>>>,
 }
 
+fn parse_rgba_string(rgba: &str) -> (u8, u8, u8, u8) {
+    let default = (220, 38, 38, 242);
+
+    let trimmed = rgba.trim();
+    if !trimmed.starts_with("rgba(") || !trimmed.ends_with(')') {
+        return default;
+    }
+
+    let inner = &trimmed[5..trimmed.len() - 1];
+    let parts: Vec<&str> = inner.split(',').map(|s| s.trim()).collect();
+
+    if parts.len() != 4 {
+        return default;
+    }
+
+    let r = parts[0].parse::<u8>().unwrap_or(default.0);
+    let g = parts[1].parse::<u8>().unwrap_or(default.1);
+    let b = parts[2].parse::<u8>().unwrap_or(default.2);
+    let a = parts[3].parse::<f32>().map(|v| (v * 255.0) as u8).unwrap_or(default.3);
+
+    (r, g, b, a)
+}
+
 impl MqttClient {
     pub async fn new(
         broker_url: &str,
@@ -126,10 +149,12 @@ impl MqttClient {
         client.subscribe(&command_topic, QoS::AtLeastOnce).await?;
 
         // Subscribe to alert topic for emergency alerts
-        let alert_topic = format!("signage_dev/tv/{}/alert", tv_id);
+        let alert_topic = format!("signage/tv/{}/alert", tv_id);
         client.subscribe(&alert_topic, QoS::AtLeastOnce).await?;
 
-        println!("MQTT client connected, subscribed to {} and {}", command_topic, alert_topic);
+        println!("📡 MQTT: Connected and subscribed to:");
+        println!("   → Commands: {}", command_topic);
+        println!("   → Alerts:   {}", alert_topic);
 
         let mqtt_client = Self {
             client,
@@ -168,7 +193,7 @@ impl MqttClient {
         tv_id: &str,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let expected_command_topic = format!("signage/tv/{}/command", tv_id);
-        let expected_alert_topic = format!("signage_dev/tv/{}/alert", tv_id);
+        let expected_alert_topic = format!("signage/tv/{}/alert", tv_id);
 
         // Handle alert messages
         if topic == expected_alert_topic {
@@ -194,6 +219,7 @@ impl MqttClient {
             "shutdown" => SlideshowCommand::Shutdown,
             "update_images" => {
                 let images: Vec<ImageInfo> = serde_json::from_value(mqtt_command.payload["images"].clone())?;
+                println!("📥 MQTT: Received update_images with {} images", images.len());
                 SlideshowCommand::UpdateImages { images }
             },
             "update_config" => {
@@ -281,37 +307,47 @@ impl MqttClient {
 
         println!("🚨 Received emergency alert: {:?}", alert.get("alert_id"));
 
-        // Extract alert data
         let alert_id = alert["alert_id"].as_str().unwrap_or("unknown");
         let layer_data = &alert["layer"];
+        let content = &layer_data["content"];
 
-        // Extract background color from alert, defaulting to red for emergencies
-        let bg_r = layer_data["content"]["backgroundColor"][0].as_u64().unwrap_or(220) as u8;
-        let bg_g = layer_data["content"]["backgroundColor"][1].as_u64().unwrap_or(38) as u8;
-        let bg_b = layer_data["content"]["backgroundColor"][2].as_u64().unwrap_or(38) as u8;
-        let bg_a = layer_data["content"]["backgroundColor"][3].as_u64().unwrap_or(242) as u8;
+        // Parse background color from CSS rgba() string
+        let bg_color_str = content["backgroundColor"].as_str().unwrap_or("rgba(220, 38, 38, 0.95)");
+        let bg_color = parse_rgba_string(bg_color_str);
 
-        // Extract position if provided, otherwise use default banner position
+        // Parse text color from CSS rgba() string
+        let text_color_str = content["textColor"].as_str().unwrap_or("rgba(255, 255, 255, 1)");
+        let text_color = parse_rgba_string(text_color_str);
+
+        // Extract text content
+        let text = content["text"].as_str().unwrap_or("EMERGENCY ALERT");
+
+        // Extract font size and alignment
+        let font_size = content["fontSize"].as_u64().unwrap_or(32) as u32;
+        let alignment = content["alignment"].as_str().unwrap_or("center").to_string();
+
+        // Extract position
         let x = layer_data["position"]["x"].as_u64().unwrap_or(0) as u32;
         let y = layer_data["position"]["y"].as_u64().unwrap_or(0) as u32;
         let width = layer_data["position"]["width"].as_u64().unwrap_or(1920) as u32;
         let height = layer_data["position"]["height"].as_u64().unwrap_or(120) as u32;
 
-        // Create the emergency layer
-        let layer = Layer::new(format!("alert_{}", alert_id), LayerType::Emergency)
+        // Create the emergency layer with DataRow content for text rendering
+        let layer = Layer::new(alert_id.to_string(), LayerType::Emergency)
             .with_position(x, y, width, height)
-            .with_color(bg_r, bg_g, bg_b, bg_a);
+            .with_data_row(text.to_string(), bg_color, text_color, font_size, alignment);
 
-        // Send command to add the layer
+        println!("📺 Creating alert layer: {} with text: {}", alert_id, text);
+
         if let Err(e) = command_sender.send(SlideshowCommand::AddLayer { layer }) {
             eprintln!("Failed to send add layer command: {}", e);
             return Err(e.into());
         }
 
         // Schedule auto-dismiss if specified
-        let auto_hide_ms = alert["layer"]["schedule"]["autoHideAfterMs"].as_u64().unwrap_or(0);
+        let auto_hide_ms = layer_data["schedule"]["auto_hide_after_ms"].as_u64().unwrap_or(0);
         if auto_hide_ms > 0 {
-            let layer_id = format!("alert_{}", alert_id);
+            let layer_id = alert_id.to_string();
             let sender = command_sender.clone();
             tokio::spawn(async move {
                 tokio::time::sleep(Duration::from_millis(auto_hide_ms)).await;

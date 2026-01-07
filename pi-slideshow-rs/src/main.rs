@@ -11,12 +11,13 @@ use std::os::unix::io::AsRawFd;
 use std::os::unix::fs::{FileTypeExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, mpsc as async_mpsc};
 
 #[derive(Debug, Clone, PartialEq)]
-enum Orientation {
+pub enum Orientation {
     Landscape,           // 0 degrees - standard orientation
     Portrait,            // 90 degrees clockwise
     InvertedLandscape,   // 180 degrees
@@ -52,6 +53,9 @@ mod http_server;
 mod couchdb_client;
 mod layer_manager;
 mod layer_animation;
+mod transition_precompute;
+
+use transition_precompute::TransitionPrecomputer;
 
 use mqtt_client::{MqttClient, SlideshowCommand, TvStatus};
 use slideshow_controller::{ControllerConfig, SlideshowController};
@@ -251,6 +255,47 @@ enum SlideshowEvent {
     Shutdown,
 }
 
+fn blend_rgba_overlay_onto_bgra(base_bgra: &[u8], overlay_rgba: &RgbaImage, output: &mut Vec<u8>) {
+    output.clear();
+    output.reserve(base_bgra.len());
+
+    for (i, pixel) in overlay_rgba.pixels().enumerate() {
+        let offset = i * 4;
+        if offset + 3 >= base_bgra.len() {
+            break;
+        }
+
+        let overlay_a = pixel[3] as f32 / 255.0;
+
+        if overlay_a < 0.01 {
+            output.push(base_bgra[offset]);
+            output.push(base_bgra[offset + 1]);
+            output.push(base_bgra[offset + 2]);
+            output.push(base_bgra[offset + 3]);
+        } else {
+            let base_a = 1.0;
+            let out_a = overlay_a + base_a * (1.0 - overlay_a);
+
+            let base_b = base_bgra[offset] as f32 / 255.0;
+            let base_g = base_bgra[offset + 1] as f32 / 255.0;
+            let base_r = base_bgra[offset + 2] as f32 / 255.0;
+
+            let overlay_r = pixel[0] as f32 / 255.0;
+            let overlay_g = pixel[1] as f32 / 255.0;
+            let overlay_b = pixel[2] as f32 / 255.0;
+
+            let out_r = (overlay_r * overlay_a + base_r * base_a * (1.0 - overlay_a)) / out_a;
+            let out_g = (overlay_g * overlay_a + base_g * base_a * (1.0 - overlay_a)) / out_a;
+            let out_b = (overlay_b * overlay_a + base_b * base_a * (1.0 - overlay_a)) / out_a;
+
+            output.push((out_b * 255.0) as u8);
+            output.push((out_g * 255.0) as u8);
+            output.push((out_r * 255.0) as u8);
+            output.push((out_a * 255.0) as u8);
+        }
+    }
+}
+
 struct Framebuffer {
     file: Option<File>,
     mmap: Option<MmapMut>,
@@ -343,9 +388,7 @@ impl Framebuffer {
 
     fn display_buffer(&mut self, buffer: &[u8]) -> IoResult<()> {
         let expected_size = (self.width * self.height * 4) as usize;
-        println!("📺 Displaying buffer: {} bytes (expected: {} bytes for {}x{})", 
-                 buffer.len(), expected_size, self.width, self.height);
-        
+
         if buffer.len() != expected_size {
             println!("⚠️  WARNING: Buffer size {} doesn't match expected size {} for framebuffer dimensions", 
                      buffer.len(), expected_size);
@@ -411,9 +454,6 @@ impl Framebuffer {
     }
 
     fn image_to_bgra_buffer(&self, image: &RgbaImage) -> Vec<u8> {
-        println!("🔄 Converting {}x{} image to BGRA buffer for {}x{} framebuffer", 
-                 image.width(), image.height(), self.width, self.height);
-        
         // If image dimensions don't match framebuffer exactly, this could cause garbled display
         if image.width() != self.width || image.height() != self.height {
             println!("❌ ERROR: Image dimensions {}x{} don't match framebuffer {}x{} - this WILL cause garbled display!", 
@@ -640,6 +680,16 @@ impl ImageManager {
         self.add_transition_text(&mut result, transition_name);
 
         result
+    }
+
+    fn create_transition_frame_static(
+        img1: &RgbaImage,
+        img2: &RgbaImage,
+        progress: f32,
+        transition_type: &TransitionType,
+    ) -> RgbaImage {
+        let manager = ImageManager::new();
+        manager.create_transition_frame(img1, img2, progress, transition_type, transition_type.name())
     }
 
     fn blend_images_simple(
@@ -921,6 +971,7 @@ impl ImageManager {
         transition_duration: Duration,
         transition_type: TransitionType,
         orientation: &Orientation,
+        frame_buffer: Option<Arc<tokio::sync::RwLock<Option<RgbaImage>>>>,
     ) -> IoResult<()> {
         let transition_name = transition_type.name();
 
@@ -958,6 +1009,18 @@ impl ImageManager {
                 &transition_type,
                 transition_name,
             );
+
+            // Update shared frame buffer for preview streaming
+            if let Some(ref fb_arc) = frame_buffer {
+                let frame_clone = transition_frame.clone();
+                let fb_arc_clone = fb_arc.clone();
+                tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current().block_on(async {
+                        *fb_arc_clone.write().await = Some(frame_clone);
+                    });
+                });
+            }
+
             let buffer = fb.image_to_bgra_buffer(&transition_frame);
 
             fb.display_buffer(&buffer)?;
@@ -978,6 +1041,75 @@ impl ImageManager {
         }
 
         println!("{} transition completed", transition_name);
+        Ok(())
+    }
+
+    fn play_precomputed_transition(
+        &self,
+        buffers: &[Vec<u8>],  // Pre-converted BGRA buffers
+        fb: &mut Framebuffer,
+        transition_duration: Duration,
+        transition_name: &str,
+        controller: Option<&SlideshowController>,
+    ) -> IoResult<()> {
+        let frame_count = buffers.len();
+        if frame_count == 0 {
+            return Ok(());
+        }
+
+        let frame_duration = transition_duration / frame_count as u32;
+
+        // Pre-render emergency overlay ONCE at the start (if needed)
+        let emergency_overlay: Option<RgbaImage> = if let Some(ctrl) = controller {
+            tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current().block_on(async {
+                    ctrl.render_emergency_layers_only().await.ok()
+                })
+            })
+        } else {
+            None
+        };
+
+        let has_overlay = emergency_overlay.is_some();
+
+        println!(
+            "🎬 Playing {} pre-computed BGRA frames at {}ms per frame{}",
+            frame_count,
+            frame_duration.as_millis(),
+            if has_overlay { " (with cached emergency overlay)" } else { "" }
+        );
+
+        // Reusable output buffer to avoid allocations per frame
+        let mut output_buffer = Vec::with_capacity(buffers.first().map(|b| b.len()).unwrap_or(0));
+
+        for (i, buffer) in buffers.iter().enumerate() {
+            let start = Instant::now();
+
+            if let Some(ref overlay) = emergency_overlay {
+                // Fast path: blend pre-rendered overlay onto transition frame
+                blend_rgba_overlay_onto_bgra(buffer, overlay, &mut output_buffer);
+                fb.display_buffer(&output_buffer)?;
+            } else {
+                // Fastest path - no emergency layers, direct buffer display
+                fb.display_buffer(buffer)?;
+            }
+
+            if i % 10 == 0 {
+                println!(
+                    "🎬 Played pre-computed {} frame {}/{}",
+                    transition_name,
+                    i + 1,
+                    frame_count
+                );
+            }
+
+            let elapsed = start.elapsed();
+            if elapsed < frame_duration {
+                thread::sleep(frame_duration - elapsed);
+            }
+        }
+
+        println!("🎬 {} pre-computed transition completed", transition_name);
         Ok(())
     }
 
@@ -1264,7 +1396,7 @@ async fn main() -> IoResult<()> {
             tokio::runtime::Handle::current().block_on(mqtt_client::generate_tv_id())
         })
     });
-    
+
     println!("Raspberry Pi Image Slideshow with MQTT Control");
     println!("TV ID: {}", tv_id);
     println!("Image directory: {}", args.image_dir.display());
@@ -1393,7 +1525,10 @@ async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoRe
     // Orientation is handled through image processing, not framebuffer resizing
     let mut fb = Framebuffer::new(DEFAULT_LANDSCAPE_WIDTH, DEFAULT_LANDSCAPE_HEIGHT, &args.framebuffer)?;
     let mut image_manager = ImageManager::new();
-    
+
+    // Initialize transition precomputer for smoother playback
+    let precomputer = TransitionPrecomputer::new(DEFAULT_LANDSCAPE_WIDTH, DEFAULT_LANDSCAPE_HEIGHT);
+
     // Setup event handling for filesystem and signals
     let (tx, rx): (Sender<SlideshowEvent>, Receiver<SlideshowEvent>) = mpsc::channel();
     let _watcher = setup_filesystem_watcher(tx.clone(), &args.image_dir)
@@ -1487,27 +1622,57 @@ async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoRe
             
             // Play transition if we have enough images
             if image_manager.images.len() > 1 {
-                if let Err(e) = image_manager.play_transition(
-                    previous_index, 
-                    current_index, 
-                    &mut fb, 
-                    controller.get_transition_duration().await,
-                    transition_type,
-                    &current_orientation
-                ) {
-                    println!("Failed to play transition: {}", e);
+                let transition_duration = controller.get_transition_duration().await;
+                let transition_name = transition_type.name();
+                let from_path = &image_manager.images[previous_index];
+                let to_path = &image_manager.images[current_index];
+
+                // Check if precomputed BGRA buffers are available for this transition
+                if let Some(buffers) = precomputer.try_get_frames(from_path, to_path, transition_name).await {
+                    println!("✨ Using pre-computed transition ({} BGRA buffers)", buffers.len());
+                    // Check if emergency layers need to be composited during transition
+                    let emergency_controller = if controller.has_emergency_layers().await {
+                        Some(&controller)
+                    } else {
+                        None
+                    };
+                    if let Err(e) = image_manager.play_precomputed_transition(
+                        &buffers,
+                        &mut fb,
+                        transition_duration,
+                        transition_name,
+                        emergency_controller,
+                    ) {
+                        println!("Failed to play precomputed transition: {}", e);
+                    }
+                } else {
+                    // Fall back to real-time transition computation
+                    println!("⏳ No precomputed frames available, computing in real-time");
+                    if let Err(e) = image_manager.play_transition(
+                        previous_index,
+                        current_index,
+                        &mut fb,
+                        transition_duration,
+                        transition_type.clone(),
+                        &current_orientation,
+                        Some(controller.get_current_frame())
+                    ) {
+                        println!("Failed to play transition: {}", e);
+                    }
                 }
-                
+
                 // After transition, update layers and display composite
                 if let Some(current_image_path) = controller.get_current_image_path().await {
                     // Update slideshow layer with new image
                     if let Err(e) = controller.update_slideshow_layer(Some(current_image_path.to_string_lossy().to_string())).await {
                         eprintln!("Failed to update slideshow layer after transition: {}", e);
                     }
-                    
+
                     // Render and display composite to ensure overlays are visible
                     match controller.render_composite_image().await {
                         Ok(composite_image) => {
+                            // Update current_frame for preview streaming
+                            controller.set_current_frame(composite_image.clone()).await;
                             if let Err(e) = fb.display_image(&composite_image) {
                                 eprintln!("Failed to display composite after transition: {}", e);
                             } else {
@@ -1518,8 +1683,38 @@ async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoRe
                             eprintln!("Failed to render composite after transition: {}", e);
                         }
                     }
+
+                    // Pre-compute the NEXT transition while image is displayed
+                    let image_count = controller.get_image_count().await;
+                    if image_count > 1 {
+                        let next_index = (current_index + 1) % image_count;
+                        let next_path = image_manager.images[next_index].clone();
+                        let next_transition_effect = controller.get_transition_effect().await;
+                        let next_transition_type = TransitionType::from_string(&next_transition_effect)
+                            .unwrap_or(TransitionType::get_random());
+                        let next_transition_name = next_transition_type.name().to_string();
+                        let next_duration = controller.get_transition_duration().await;
+                        let orientation = current_orientation.clone();
+
+                        // Create frame generator closure that captures transition type
+                        let transition_type_for_closure = next_transition_type.clone();
+                        let frame_generator = move |from: &RgbaImage, to: &RgbaImage, progress: f32| {
+                            ImageManager::create_transition_frame_static(
+                                from, to, progress, &transition_type_for_closure
+                            )
+                        };
+
+                        precomputer.start_precompute(
+                            current_image_path.clone(),
+                            next_path,
+                            next_transition_name,
+                            next_duration,
+                            orientation,
+                            frame_generator,
+                        ).await;
+                    }
                 }
-                
+
                 last_displayed_image_path = controller.get_current_image_path().await;
             }
         } else if let Some(current_image_path) = controller.get_current_image_path().await {
@@ -1535,15 +1730,49 @@ async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoRe
                     if let Err(e) = controller.update_slideshow_layer(Some(current_image_path.to_string_lossy().to_string())).await {
                         eprintln!("Failed to update slideshow layer: {}", e);
                     }
-                    
+
                     // Render composite with all layers
                     match controller.render_composite_image().await {
                         Ok(composite_image) => {
+                            // Update current_frame for preview streaming
+                            controller.set_current_frame(composite_image.clone()).await;
                             if let Err(e) = fb.display_image(&composite_image) {
                                 eprintln!("Failed to display composite image: {}", e);
                             } else {
                                 last_displayed_image_path = Some(current_image_path.clone());
                                 println!("🎨 Displayed composite image with layers");
+
+                                // Pre-compute the NEXT transition while image is displayed
+                                let current_index = *controller.current_index.read().await;
+                                let image_count = controller.get_image_count().await;
+                                let controller_images = controller.get_image_list().await;
+
+                                if image_count > 1 && controller_images.len() > 1 {
+                                    let next_index = (current_index + 1) % image_count;
+                                    let next_path = PathBuf::from(&controller_images[next_index].path);
+                                    let next_transition_effect = controller.get_transition_effect().await;
+                                    let next_transition_type = TransitionType::from_string(&next_transition_effect)
+                                        .unwrap_or(TransitionType::get_random());
+                                    let next_transition_name = next_transition_type.name().to_string();
+                                    let next_duration = controller.get_transition_duration().await;
+                                    let orientation = current_orientation.clone();
+
+                                    let transition_type_for_closure = next_transition_type.clone();
+                                    let frame_generator = move |from: &RgbaImage, to: &RgbaImage, progress: f32| {
+                                        ImageManager::create_transition_frame_static(
+                                            from, to, progress, &transition_type_for_closure
+                                        )
+                                    };
+
+                                    precomputer.start_precompute(
+                                        current_image_path.clone(),
+                                        next_path,
+                                        next_transition_name,
+                                        next_duration,
+                                        orientation,
+                                        frame_generator,
+                                    ).await;
+                                }
                             }
                         }
                         Err(e) => {
@@ -1551,6 +1780,8 @@ async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoRe
                             // Fallback to original behavior
                             match load_and_scale_image_with_orientation(&current_image_path, DEFAULT_LANDSCAPE_WIDTH, DEFAULT_LANDSCAPE_HEIGHT, &current_orientation) {
                                 Ok(image) => {
+                                    // Update current_frame for preview streaming
+                                    controller.set_current_frame(image.clone()).await;
                                     if let Err(e) = fb.display_image(&image) {
                                         eprintln!("Failed to display fallback image: {}", e);
                                     } else {
@@ -1758,21 +1989,32 @@ fn create_registration_placeholder(tv_id: &str, ip_address: &str, width: u32, he
     image
 }
 
-fn load_and_scale_image_with_orientation(path: &PathBuf, width: u32, height: u32, orientation: &Orientation) -> Result<RgbaImage, ImageError> {
+pub fn load_and_scale_image_with_orientation(path: &PathBuf, width: u32, height: u32, orientation: &Orientation) -> Result<RgbaImage, ImageError> {
     let img = image::open(path).map_err(|e| {
         eprintln!("Failed to load image {}: {}", path.display(), e);
         e
     })?;
     let original_img = img.to_rgba8();
-    
+
     // Apply rotation based on orientation
     let rotated_img = orientation.rotate_image(&original_img);
-    
+
     // Scale and center the rotated image for the framebuffer dimensions
     Ok(scale_and_center_image(&rotated_img, width, height))
 }
 
-// Removed - no longer needed with unified rotation approach
+/// Simple image loading without orientation (for pre-compute module)
+/// Used when the precomputer needs to load images without knowing the orientation
+pub fn load_and_scale_image_with_orientation_simple(path: &PathBuf, width: u32, height: u32) -> Result<RgbaImage, ImageError> {
+    let img = image::open(path).map_err(|e| {
+        eprintln!("Failed to load image {}: {}", path.display(), e);
+        e
+    })?;
+    let original_img = img.to_rgba8();
+
+    // Scale and center without rotation (rotation is applied at playback time if needed)
+    Ok(scale_and_center_image(&original_img, width, height))
+}
 
 fn scale_and_center_image(original_img: &RgbaImage, target_width: u32, target_height: u32) -> RgbaImage {
     // Calculate scaling factor to fit within target dimensions while preserving aspect ratio
@@ -1947,7 +2189,7 @@ fn run_original_slideshow(config: Config) -> IoResult<()> {
 
         // Play transition from the current image to next
         let transition_type = TransitionType::get_random(); // Use random in standalone mode
-        if let Err(e) = image_manager.play_transition(actual_current_idx, next_idx, &mut fb, config.transition_duration, transition_type, &config.orientation) {
+        if let Err(e) = image_manager.play_transition(actual_current_idx, next_idx, &mut fb, config.transition_duration, transition_type, &config.orientation, None) {
             println!("Failed to play transition: {}", e);
         }
 
