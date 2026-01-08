@@ -3,6 +3,7 @@ const Layer = require('../models/Layer');
 const TV = require('../models/tv.multilayer');
 const mqtt = require('./multilayer.mqttService');
 const queueService = require('./alertQueueService');
+const { broadcastToClients } = require('./websocketService');
 
 class AlertService {
   async broadcastAlert(alertData, options = {}) {
@@ -125,6 +126,9 @@ class AlertService {
         for (const tv of targetTVs) {
           await this.publishAlertsState(tv._id);
         }
+
+        // Notify web UI clients
+        broadcastToClients('alerts_updated', { type: 'active' });
       } catch (error) {
         console.error(`Failed to auto-dismiss alert ${alert.alert_id}:`, error.message);
       }
