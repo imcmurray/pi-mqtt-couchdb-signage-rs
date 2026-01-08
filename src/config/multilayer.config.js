@@ -67,17 +67,20 @@ const multilayerConfig = {
   }
 };
 
+// Helper to strip tv_ prefix for MQTT topics (database IDs have prefix, MQTT topics don't)
+const stripTvPrefix = (tvId) => tvId.replace(/^tv_/, '');
+
 // Override helper functions for multi-layer topics
 multilayerConfig.getMqttTopic = (tvId, topicType) => {
-  return `${multilayerConfig.mqtt.topics.prefix}/tv/${tvId}/${topicType}`;
+  return `${multilayerConfig.mqtt.topics.prefix}/tv/${stripTvPrefix(tvId)}/${topicType}`;
 };
 
 multilayerConfig.getLayerMqttTopic = (tvId, layerId, topicType) => {
-  return `${multilayerConfig.mqtt.topics.prefix}/tv/${tvId}/layer/${layerId}/${topicType}`;
+  return `${multilayerConfig.mqtt.topics.prefix}/tv/${stripTvPrefix(tvId)}/layer/${layerId}/${topicType}`;
 };
 
 multilayerConfig.getLayersBatchMqttTopic = (tvId) => {
-  return `${multilayerConfig.mqtt.topics.prefix}/tv/${tvId}/layers/batch`;
+  return `${multilayerConfig.mqtt.topics.prefix}/tv/${stripTvPrefix(tvId)}/layers/batch`;
 };
 
 // Database URL helpers for each isolated database

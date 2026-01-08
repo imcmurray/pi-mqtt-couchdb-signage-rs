@@ -147,7 +147,8 @@ class CourtDisplayService {
    * @param {Object} layer - Layer object
    */
   async publishLayerUpdate(tvId, layer) {
-    const topic = `signage/tv/${tvId}/layer/add`;
+    const mqttTvId = tvId.replace(/^tv_/, '');
+    const topic = `signage/tv/${mqttTvId}/layer/add`;
     const message = {
       type: 'layer_add',
       layer: {
