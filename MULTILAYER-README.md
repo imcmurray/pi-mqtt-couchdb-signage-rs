@@ -193,12 +193,15 @@ layerAutomationService.scheduleLayerUpdate(
   '2024-01-15T09:00:00Z'
 );
 
-// Trigger emergency alert
-layerAutomationService.triggerEmergencyAlert(
-  'tv_123',
-  'Building evacuation in progress',
-  600000 // 10 minutes
-);
+// Trigger emergency alert (use alertService directly)
+const alertService = require('./services/alertService');
+await alertService.broadcastAlert({
+  title: 'Emergency',
+  message: 'Building evacuation in progress',
+  type: 'CRITICAL',
+  target_type: 'all',  // or 'tv' with target_id: 'tv_123'
+  auto_dismiss_ms: 600000  // 10 minutes
+});
 ```
 
 ## 🎮 Demo Scenarios

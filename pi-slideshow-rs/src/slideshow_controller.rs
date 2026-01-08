@@ -2,7 +2,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, mpsc, RwLock};
-use crate::mqtt_client::{ImageInfo, MqttClient, SlideshowCommand, SlideshowConfig, TvStatus};
+use crate::mqtt_client::{AlertData, ImageInfo, MqttClient, SlideshowCommand, SlideshowConfig, TvStatus, parse_rgba_string};
+use std::collections::HashSet;
 use crate::couchdb_client::CouchDbClient;
 use crate::layer_manager::{LayerManager, LayerConfig, Layer, LayerType};
 
@@ -373,6 +374,11 @@ impl SlideshowController {
                     }
                 } else {
                     eprintln!("Layer not found for animation: {}", layer_id);
+                }
+            }
+            SlideshowCommand::SyncAlerts { alerts } => {
+                if let Err(e) = self.sync_alerts(alerts).await {
+                    eprintln!("Failed to sync alerts: {}", e);
                 }
             }
         }
@@ -832,6 +838,79 @@ impl SlideshowController {
     #[allow(dead_code)]
     pub async fn update_layer_config(&self, config: LayerConfig) -> Result<(), String> {
         self.layer_manager.write().await.update_config(config).await
+    }
+
+    /// Sync alerts from server state - adds new alerts, removes dismissed ones
+    pub async fn sync_alerts(&self, alerts: Vec<AlertData>) -> Result<(), String> {
+        let layer_manager = self.layer_manager.write().await;
+
+        // Get current emergency layer IDs
+        let current_ids: HashSet<String> = layer_manager
+            .get_emergency_layer_ids()
+            .await;
+
+        // Get incoming alert IDs
+        let incoming_ids: HashSet<String> = alerts
+            .iter()
+            .map(|a| a.alert_id.clone())
+            .collect();
+
+        // Remove layers no longer in active list
+        for id in current_ids.difference(&incoming_ids) {
+            println!("🗑️ Removing stale alert layer: {}", id);
+            layer_manager.remove_layer(id).await?;
+        }
+
+        // Add new alerts (auto-stacked by layer_manager)
+        for alert in alerts {
+            if !current_ids.contains(&alert.alert_id) {
+                let layer = self.alert_data_to_layer(&alert);
+                println!("➕ Adding new alert layer: {} ({})", alert.alert_id, alert.alert_type);
+                layer_manager.add_layer(layer).await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Convert AlertData to Layer
+    fn alert_data_to_layer(&self, alert: &AlertData) -> Layer {
+        let content = &alert.layer.content;
+        let position = &alert.layer.position;
+
+        // Parse colors from CSS rgba() strings
+        let bg_color_str = content["backgroundColor"]
+            .as_str()
+            .unwrap_or("rgba(220, 38, 38, 0.95)");
+        let bg_color = parse_rgba_string(bg_color_str);
+
+        let text_color_str = content["textColor"]
+            .as_str()
+            .unwrap_or("rgba(255, 255, 255, 1)");
+        let text_color = parse_rgba_string(text_color_str);
+
+        // Extract text content
+        let text = content["text"]
+            .as_str()
+            .unwrap_or("EMERGENCY ALERT")
+            .to_string();
+
+        // Extract font size and alignment
+        let font_size = content["fontSize"].as_u64().unwrap_or(32) as u32;
+        let alignment = content["alignment"]
+            .as_str()
+            .unwrap_or("center")
+            .to_string();
+
+        // Extract position (Y will be overridden by auto-stacking)
+        let x = position["x"].as_u64().unwrap_or(0) as u32;
+        let y = position["y"].as_u64().unwrap_or(0) as u32;
+        let width = position["width"].as_u64().unwrap_or(1920) as u32;
+        let height = position["height"].as_u64().unwrap_or(120) as u32;
+
+        Layer::new(alert.alert_id.clone(), LayerType::Emergency)
+            .with_position(x, y, width, height)
+            .with_data_row(text, bg_color, text_color, font_size, alignment)
     }
 
     pub async fn render_composite_image(&self) -> Result<image::RgbaImage, String> {

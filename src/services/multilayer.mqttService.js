@@ -288,6 +288,22 @@ class MultilayerMqttService extends EventEmitter {
     });
   }
 
+  publishRetained(topic, payload, qos = config.mqtt.qos) {
+    if (!this.connected) {
+      console.error('MQTT not connected, cannot publish retained to', topic);
+      return;
+    }
+
+    const message = JSON.stringify(payload);
+    this.client.publish(topic, message, { qos, retain: true }, (err) => {
+      if (err) {
+        console.error(`Failed to publish retained to ${topic}:`, err);
+      } else {
+        console.log(`📌 Published retained to ${topic}`);
+      }
+    });
+  }
+
   isConnected() {
     return this.connected;
   }

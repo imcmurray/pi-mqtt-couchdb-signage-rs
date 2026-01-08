@@ -50,8 +50,6 @@ class AlertService {
         const layer = new Layer(layerData);
         await layer.save();
 
-        await this.publishAlertToTV(tv._id, layer);
-
         await alert.markDelivered(tv._id);
         createdLayers.push(layer);
 
@@ -63,7 +61,12 @@ class AlertService {
 
     // Schedule auto-dismiss
     if (alert.auto_dismiss_ms > 0) {
-      this.scheduleAutoDismiss(alert, createdLayers);
+      this.scheduleAutoDismiss(alert, createdLayers, targetTVs);
+    }
+
+    // Publish updated alerts state for all target TVs
+    for (const tv of targetTVs) {
+      await this.publishAlertsState(tv._id);
     }
 
     return {
@@ -101,49 +104,14 @@ class AlertService {
     }
   }
 
-  async publishAlertToTV(tvId, layer) {
-    const mqttTvId = tvId.replace(/^tv_/, '');
-    const topic = `signage/tv/${mqttTvId}/alert`;
-    const message = {
-      type: 'emergency_alert',
-      alert_id: layer.group,
-      layer: {
-        layer_id: layer.layer_id,
-        priority: layer.priority,
-        content: layer.content,
-        position: layer.position,
-        schedule: layer.schedule
-      },
-      timestamp: new Date().toISOString()
-    };
-
-    mqtt.publish(topic, message);
-    console.log(`📡 Published alert to ${topic}`);
-  }
-
-  async publishAlertDismissToTV(tvId, alertId) {
-    const mqttTvId = tvId.replace(/^tv_/, '');
-    const topic = `signage/tv/${mqttTvId}/alert`;
-    const message = {
-      type: 'dismiss_alert',
-      alert_id: alertId,
-      timestamp: new Date().toISOString()
-    };
-
-    mqtt.publish(topic, message);
-    console.log(`📡 Published alert dismiss to ${topic}`);
-  }
-
-  scheduleAutoDismiss(alert, layers) {
+  scheduleAutoDismiss(alert, layers, targetTVs) {
     setTimeout(async () => {
       try {
         for (const layer of layers) {
-          // Find and delete the layer
           const existingLayer = await Layer.findById(layer._id);
           if (existingLayer && existingLayer.visible) {
             await existingLayer.setVisibility(false, { duration: 500 });
 
-            // Wait for fade out, then delete
             setTimeout(async () => {
               await existingLayer.delete();
             }, 600);
@@ -152,6 +120,11 @@ class AlertService {
 
         await alert.expire();
         console.log(`⏰ Auto-dismissed alert ${alert.alert_id}`);
+
+        // Publish updated alerts state for all target TVs
+        for (const tv of targetTVs) {
+          await this.publishAlertsState(tv._id);
+        }
       } catch (error) {
         console.error(`Failed to auto-dismiss alert ${alert.alert_id}:`, error.message);
       }
@@ -170,13 +143,9 @@ class AlertService {
 
     const layers = await Layer.findByGroup(alertId);
 
-    const notifiedTvs = new Set();
+    const affectedTvs = new Set();
     for (const layer of layers) {
-      if (!notifiedTvs.has(layer.tv_id)) {
-        await this.publishAlertDismissToTV(layer.tv_id, alertId);
-        notifiedTvs.add(layer.tv_id);
-      }
-
+      affectedTvs.add(layer.tv_id);
       await layer.setVisibility(false, { duration: 500 });
 
       setTimeout(async () => {
@@ -189,6 +158,11 @@ class AlertService {
     }
 
     await alert.dismiss(reason);
+
+    // Publish updated alerts state for all affected TVs
+    for (const tvId of affectedTvs) {
+      await this.publishAlertsState(tvId);
+    }
 
     return {
       alert,
@@ -228,6 +202,48 @@ class AlertService {
       expired: expiredAlerts.length,
       by_type: byType
     };
+  }
+
+  async getActiveAlertsForTV(tvId) {
+    const activeAlerts = await Alert.findActive();
+
+    return activeAlerts.filter(alert => {
+      if (alert.target_type === 'all') {
+        return true;
+      }
+      if (alert.target_type === 'specific' && alert.target_ids) {
+        return alert.target_ids.includes(tvId);
+      }
+      if (alert.target_type === 'location' && alert.target_location) {
+        return alert.delivered_to && alert.delivered_to.includes(tvId);
+      }
+      return false;
+    });
+  }
+
+  async publishAlertsState(tvId) {
+    const activeAlerts = await this.getActiveAlertsForTV(tvId);
+    const mqttTvId = tvId.replace(/^tv_/, '');
+    const topic = `signage/tv/${mqttTvId}/alerts`;
+
+    const payload = {
+      active_alerts: activeAlerts.map(alert => ({
+        alert_id: alert.alert_id,
+        type: alert.alert_type,
+        layer: alert.toLayer(tvId)
+      })),
+      timestamp: new Date().toISOString()
+    };
+
+    mqtt.publishRetained(topic, payload);
+    console.log(`📌 Published alerts state to ${topic} (${activeAlerts.length} active)`);
+  }
+
+  async publishAlertsStateForAllTVs() {
+    const tvs = await TV.findAll();
+    for (const tv of tvs) {
+      await this.publishAlertsState(tv._id);
+    }
   }
 }
 

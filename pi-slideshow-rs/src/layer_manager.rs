@@ -278,18 +278,27 @@ impl LayerManager {
         }
     }
 
-    pub async fn add_layer(&self, layer: Layer) -> Result<(), String> {
+    pub async fn add_layer(&self, mut layer: Layer) -> Result<(), String> {
+        // Auto-position emergency layers to stack without overlap
+        if layer.layer_type == LayerType::Emergency {
+            let next_y = self.get_next_emergency_y().await;
+            layer.position.y = next_y;
+            println!("📍 Auto-positioned emergency layer {} at Y={}", layer.id, next_y);
+        }
+
         let mut config = self.config.write().await;
-        
+
         if config.layers.len() >= config.max_layers as usize {
             return Err(format!("Maximum number of layers ({}) reached", config.max_layers));
         }
 
-        // Validate layer position is within bounds
+        // Validate layer position is within bounds (skip for emergency layers that may extend)
         let (width, height) = config.output_resolution;
-        if layer.position.x + layer.position.width > width || 
-           layer.position.y + layer.position.height > height {
-            return Err("Layer position exceeds output resolution bounds".to_string());
+        if layer.layer_type != LayerType::Emergency {
+            if layer.position.x + layer.position.width > width ||
+               layer.position.y + layer.position.height > height {
+                return Err("Layer position exceeds output resolution bounds".to_string());
+            }
         }
 
         config.layers.insert(layer.id.clone(), layer);
@@ -298,19 +307,28 @@ impl LayerManager {
     }
 
     pub async fn remove_layer(&self, id: &str) -> Result<(), String> {
-        let mut config = self.config.write().await;
-        
-        // Don't allow removal of the slideshow layer
-        if id == "slideshow" {
-            return Err("Cannot remove the slideshow layer".to_string());
+        let was_emergency = {
+            let mut config = self.config.write().await;
+
+            // Don't allow removal of the slideshow layer
+            if id == "slideshow" {
+                return Err("Cannot remove the slideshow layer".to_string());
+            }
+
+            if let Some(removed_layer) = config.layers.remove(id) {
+                *self.composite_dirty.write().await = true;
+                removed_layer.layer_type == LayerType::Emergency
+            } else {
+                return Err(format!("Layer '{}' not found", id));
+            }
+        };
+
+        // Restack remaining emergency layers if we removed one
+        if was_emergency {
+            self.restack_emergency_layers().await;
         }
 
-        if config.layers.remove(id).is_some() {
-            *self.composite_dirty.write().await = true;
-            Ok(())
-        } else {
-            Err(format!("Layer '{}' not found", id))
-        }
+        Ok(())
     }
 
     pub async fn update_layer(&self, id: &str, layer: Layer) -> Result<(), String> {
@@ -407,6 +425,55 @@ impl LayerManager {
         config.layers.values().any(|layer| {
             layer.visible && layer.layer_type == LayerType::Emergency
         })
+    }
+
+    /// Get IDs of all emergency layers
+    pub async fn get_emergency_layer_ids(&self) -> std::collections::HashSet<String> {
+        let config = self.config.read().await;
+        config.layers
+            .values()
+            .filter(|layer| layer.layer_type == LayerType::Emergency)
+            .map(|layer| layer.id.clone())
+            .collect()
+    }
+
+    /// Calculate the next available Y position for emergency layers (auto-stacking)
+    async fn get_next_emergency_y(&self) -> u32 {
+        let config = self.config.read().await;
+        config.layers
+            .values()
+            .filter(|l| l.visible && l.layer_type == LayerType::Emergency)
+            .map(|l| l.position.y + l.position.height)
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// Restack emergency layers to collapse gaps after removal
+    pub async fn restack_emergency_layers(&self) {
+        let mut config = self.config.write().await;
+
+        // Collect mutable references to emergency layers sorted by Y position
+        let mut emergency_ids: Vec<(String, u32)> = config.layers
+            .iter()
+            .filter(|(_, l)| l.visible && l.layer_type == LayerType::Emergency)
+            .map(|(id, l)| (id.clone(), l.position.y))
+            .collect();
+
+        // Sort by current Y position to preserve relative order
+        emergency_ids.sort_by_key(|(_, y)| *y);
+
+        // Reposition sequentially from top
+        let mut current_y: u32 = 0;
+        for (id, _) in emergency_ids {
+            if let Some(layer) = config.layers.get_mut(&id) {
+                if layer.position.y != current_y {
+                    layer.position.y = current_y;
+                }
+                current_y += layer.position.height;
+            }
+        }
+
+        *self.composite_dirty.write().await = true;
     }
 
     pub async fn render_emergency_layers_only(&self) -> Result<RgbaImage, String> {

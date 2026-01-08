@@ -3,7 +3,7 @@ const queueService = require('../services/alertQueueService');
 const scheduleService = require('../services/alertScheduleService');
 const Alert = require('../models/Alert');
 const Joi = require('joi');
-const { broadcastToClients } = require('../server');
+const { broadcastToClients } = require('../services/websocketService');
 
 const alertSchema = Joi.object({
   title: Joi.string().required().max(100),

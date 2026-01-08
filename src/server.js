@@ -15,6 +15,7 @@ const mqttService = require('./services/multilayer.mqttService');
 const layerAutomationService = require('./services/layerAutomation');
 const batchScheduler = require('./services/batchScheduler');
 const { errorHandler } = require('./middleware/errorHandler');
+const websocketService = require('./services/websocketService');
 
 // Routes
 const tvRoutes = require('./routes/tvRoutes');
@@ -28,6 +29,7 @@ const bulkRoutes = require('./routes/bulkRoutes');
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
+websocketService.initialize(wss);
 
 // Security middleware
 app.use(helmet({
@@ -272,18 +274,6 @@ mqttService.on('message', ({ topic, payload }) => {
     }
   });
 });
-
-// Broadcast to all WebSocket clients (for UI updates)
-function broadcastToClients(type, data) {
-  wss.clients.forEach(client => {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(JSON.stringify({ type, data, timestamp: new Date().toISOString() }));
-    }
-  });
-}
-
-// Export for use in controllers
-module.exports = { broadcastToClients };
 
 // 404 handler
 app.use((req, res) => {

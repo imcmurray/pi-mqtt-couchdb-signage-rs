@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const layerController = require('../controllers/layerController');
 const { asyncHandler } = require('../middleware/errorHandler');
+const layerAutomation = require('../services/layerAutomation');
 
 // Layer management routes
 router.get('/tvs/:tv_id/layers', asyncHandler(layerController.getLayersByTv));
@@ -24,5 +25,17 @@ router.get('/tvs/:tv_id/layers/animations/active', asyncHandler(layerController.
 
 // Save layer as template
 router.post('/tvs/:tv_id/layers/:layer_id/save-as-template', asyncHandler(layerController.saveLayerAsTemplate));
+
+// Test alert configuration endpoints
+router.get('/test/alert-config', (req, res) => {
+  const config = layerAutomation.getTestAlertConfig();
+  res.json(config);
+});
+
+router.put('/test/alert-config', (req, res) => {
+  const { enabled, chance, interval } = req.body;
+  const updatedConfig = layerAutomation.setTestAlertConfig({ enabled, chance, interval });
+  res.json(updatedConfig);
+});
 
 module.exports = router;

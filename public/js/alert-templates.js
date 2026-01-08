@@ -9,6 +9,7 @@ function atInitTemplates() {
     atInitialized = true;
     atLoadTemplates();
     atLoadStats();
+    atLoadTestAlertConfig();
 }
 
 async function atLoadTemplates() {
@@ -460,3 +461,80 @@ document.addEventListener('keydown', (e) => {
         atCloseQuickSendModal();
     }
 });
+
+// ============ Test Alert Generator Configuration ============
+
+async function atLoadTestAlertConfig() {
+    try {
+        const response = await fetch('/api/layers/test/alert-config');
+        const config = await response.json();
+
+        // Update UI elements
+        const enabledCheckbox = document.getElementById('testAlertEnabled');
+        const chanceSlider = document.getElementById('testAlertChance');
+        const intervalSlider = document.getElementById('testAlertInterval');
+        const chanceValue = document.getElementById('testAlertChanceValue');
+        const intervalValue = document.getElementById('testAlertIntervalValue');
+        const statusBadge = document.getElementById('testAlertStatus');
+
+        if (enabledCheckbox) enabledCheckbox.checked = config.enabled;
+        if (chanceSlider) chanceSlider.value = config.chance;
+        if (intervalSlider) intervalSlider.value = config.interval;
+        if (chanceValue) chanceValue.textContent = config.chance;
+        if (intervalValue) intervalValue.textContent = config.interval;
+
+        // Update status badge
+        if (statusBadge) {
+            if (config.enabled) {
+                statusBadge.textContent = 'Enabled';
+                statusBadge.style.background = 'var(--success-color)';
+            } else {
+                statusBadge.textContent = 'Disabled';
+                statusBadge.style.background = 'var(--text-muted)';
+            }
+        }
+
+        console.log(`Test alert config loaded: ${config.enabled ? 'enabled' : 'disabled'}, ${config.chance}% chance, ${config.interval}s interval`);
+    } catch (error) {
+        console.error('Error loading test alert config:', error);
+    }
+}
+
+async function atUpdateTestAlertConfig() {
+    const enabled = document.getElementById('testAlertEnabled')?.checked || false;
+    const chance = parseInt(document.getElementById('testAlertChance')?.value || '10');
+    const interval = parseInt(document.getElementById('testAlertInterval')?.value || '30');
+
+    try {
+        const response = await fetch('/api/layers/test/alert-config', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled, chance, interval })
+        });
+
+        const config = await response.json();
+
+        // Update status badge
+        const statusBadge = document.getElementById('testAlertStatus');
+        if (statusBadge) {
+            if (config.enabled) {
+                statusBadge.textContent = 'Enabled';
+                statusBadge.style.background = 'var(--success-color)';
+            } else {
+                statusBadge.textContent = 'Disabled';
+                statusBadge.style.background = 'var(--text-muted)';
+            }
+        }
+
+        console.log(`Test alert config updated: ${config.enabled ? 'enabled' : 'disabled'}, ${config.chance}% chance, ${config.interval}s interval`);
+
+        if (typeof app !== 'undefined' && app.showToast) {
+            app.showToast(`Test alerts ${config.enabled ? 'enabled' : 'disabled'}`, 'success');
+        }
+    } catch (error) {
+        console.error('Error updating test alert config:', error);
+        if (typeof app !== 'undefined' && app.showToast) {
+            app.showToast('Error updating test alert config', 'error');
+        }
+    }
+}

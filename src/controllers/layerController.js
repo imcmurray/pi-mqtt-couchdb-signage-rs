@@ -3,7 +3,7 @@ const TVMultilayer = require('../models/tv.multilayer');
 const Preset = require('../models/Preset');
 const mqttService = require('../services/multilayer.mqttService');
 const Joi = require('joi');
-const { broadcastToClients } = require('../server');
+const { broadcastToClients } = require('../services/websocketService');
 
 // Validation schemas
 const layerSchema = Joi.object({

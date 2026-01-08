@@ -47,6 +47,30 @@ pub struct HeartbeatMessage {
     pub system_metrics: Option<SystemMetrics>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AlertsState {
+    pub active_alerts: Vec<AlertData>,
+    pub timestamp: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AlertData {
+    pub alert_id: String,
+    #[serde(rename = "type")]
+    pub alert_type: String,
+    pub layer: AlertLayerData,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AlertLayerData {
+    pub layer_id: String,
+    pub priority: u32,
+    pub content: serde_json::Value,
+    pub position: serde_json::Value,
+    #[serde(default)]
+    pub schedule: Option<serde_json::Value>,
+}
+
 #[derive(Debug, Clone)]
 pub enum SlideshowCommand {
     Play,
@@ -63,6 +87,7 @@ pub enum SlideshowCommand {
     SetLayerVisibility { layer_id: String, visible: bool },
     SetLayerOpacity { layer_id: String, opacity: f32 },
     AnimateLayer { layer_id: String, animation_type: String, duration_ms: u64, distance: Option<f32> },
+    SyncAlerts { alerts: Vec<AlertData> },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -90,7 +115,7 @@ pub struct MqttClient {
     status_receiver: Arc<tokio::sync::Mutex<mpsc::Receiver<TvStatus>>>,
 }
 
-fn parse_rgba_string(rgba: &str) -> (u8, u8, u8, u8) {
+pub fn parse_rgba_string(rgba: &str) -> (u8, u8, u8, u8) {
     let default = (220, 38, 38, 242);
 
     let trimmed = rgba.trim();
@@ -148,13 +173,13 @@ impl MqttClient {
         let command_topic = format!("signage/tv/{}/command", tv_id);
         client.subscribe(&command_topic, QoS::AtLeastOnce).await?;
 
-        // Subscribe to alert topic for emergency alerts
-        let alert_topic = format!("signage/tv/{}/alert", tv_id);
-        client.subscribe(&alert_topic, QoS::AtLeastOnce).await?;
+        // Subscribe to alerts state topic (array of active alerts)
+        let alerts_topic = format!("signage/tv/{}/alerts", tv_id);
+        client.subscribe(&alerts_topic, QoS::AtLeastOnce).await?;
 
         println!("📡 MQTT: Connected and subscribed to:");
         println!("   → Commands: {}", command_topic);
-        println!("   → Alerts:   {}", alert_topic);
+        println!("   → Alerts:   {}", alerts_topic);
 
         let mqtt_client = Self {
             client,
@@ -193,11 +218,11 @@ impl MqttClient {
         tv_id: &str,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let expected_command_topic = format!("signage/tv/{}/command", tv_id);
-        let expected_alert_topic = format!("signage/tv/{}/alert", tv_id);
+        let expected_alerts_topic = format!("signage/tv/{}/alerts", tv_id);
 
-        // Handle alert messages
-        if topic == expected_alert_topic {
-            return Self::handle_alert_message(payload, command_sender).await;
+        // Handle alerts state messages (array of active alerts)
+        if topic == expected_alerts_topic {
+            return Self::handle_alerts_state_message(payload, command_sender).await;
         }
 
         // Handle command messages
@@ -298,78 +323,24 @@ impl MqttClient {
         Ok(())
     }
 
-    async fn handle_alert_message(
+    async fn handle_alerts_state_message(
         payload: &[u8],
         command_sender: &broadcast::Sender<SlideshowCommand>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let payload_str = String::from_utf8(payload.to_vec())?;
-        let alert: serde_json::Value = serde_json::from_str(&payload_str)?;
+        let alerts_state: AlertsState = serde_json::from_str(&payload_str)?;
 
-        let message_type = alert["type"].as_str().unwrap_or("emergency_alert");
-        let alert_id = alert["alert_id"].as_str().unwrap_or("unknown");
+        println!(
+            "📋 Received alerts state: {} active alerts ({})",
+            alerts_state.active_alerts.len(),
+            alerts_state.timestamp
+        );
 
-        match message_type {
-            "dismiss_alert" => {
-                println!("🔕 Received dismiss for alert: {}", alert_id);
-
-                if let Err(e) = command_sender.send(SlideshowCommand::RemoveLayer {
-                    layer_id: alert_id.to_string(),
-                }) {
-                    eprintln!("Failed to send remove layer command: {}", e);
-                    return Err(e.into());
-                }
-            }
-            _ => {
-                println!("🚨 Received emergency alert: {:?}", alert.get("alert_id"));
-
-                let layer_data = &alert["layer"];
-                let content = &layer_data["content"];
-
-                // Parse background color from CSS rgba() string
-                let bg_color_str = content["backgroundColor"].as_str().unwrap_or("rgba(220, 38, 38, 0.95)");
-                let bg_color = parse_rgba_string(bg_color_str);
-
-                // Parse text color from CSS rgba() string
-                let text_color_str = content["textColor"].as_str().unwrap_or("rgba(255, 255, 255, 1)");
-                let text_color = parse_rgba_string(text_color_str);
-
-                // Extract text content
-                let text = content["text"].as_str().unwrap_or("EMERGENCY ALERT");
-
-                // Extract font size and alignment
-                let font_size = content["fontSize"].as_u64().unwrap_or(32) as u32;
-                let alignment = content["alignment"].as_str().unwrap_or("center").to_string();
-
-                // Extract position
-                let x = layer_data["position"]["x"].as_u64().unwrap_or(0) as u32;
-                let y = layer_data["position"]["y"].as_u64().unwrap_or(0) as u32;
-                let width = layer_data["position"]["width"].as_u64().unwrap_or(1920) as u32;
-                let height = layer_data["position"]["height"].as_u64().unwrap_or(120) as u32;
-
-                // Create the emergency layer with DataRow content for text rendering
-                let layer = Layer::new(alert_id.to_string(), LayerType::Emergency)
-                    .with_position(x, y, width, height)
-                    .with_data_row(text.to_string(), bg_color, text_color, font_size, alignment);
-
-                println!("📺 Creating alert layer: {} with text: {}", alert_id, text);
-
-                if let Err(e) = command_sender.send(SlideshowCommand::AddLayer { layer }) {
-                    eprintln!("Failed to send add layer command: {}", e);
-                    return Err(e.into());
-                }
-
-                // Schedule auto-dismiss if specified
-                let auto_hide_ms = layer_data["schedule"]["auto_hide_after_ms"].as_u64().unwrap_or(0);
-                if auto_hide_ms > 0 {
-                    let layer_id = alert_id.to_string();
-                    let sender = command_sender.clone();
-                    tokio::spawn(async move {
-                        tokio::time::sleep(Duration::from_millis(auto_hide_ms)).await;
-                        println!("🔕 Auto-dismissing alert: {}", layer_id);
-                        let _ = sender.send(SlideshowCommand::RemoveLayer { layer_id });
-                    });
-                }
-            }
+        if let Err(e) = command_sender.send(SlideshowCommand::SyncAlerts {
+            alerts: alerts_state.active_alerts,
+        }) {
+            eprintln!("Failed to send sync alerts command: {}", e);
+            return Err(e.into());
         }
 
         Ok(())
@@ -378,7 +349,7 @@ impl MqttClient {
     pub async fn publish_status(&self, status: &TvStatus) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let topic = format!("signage/tv/{}/status", self.tv_id);
         let payload = serde_json::to_string(status)?;
-        
+
         self.client.publish(&topic, QoS::AtLeastOnce, false, payload).await?;
         Ok(())
     }

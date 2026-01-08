@@ -2,6 +2,7 @@ const Layer = require('../models/Layer');
 const TVMultilayer = require('../models/tv.multilayer');
 const mqttService = require('./multilayer.mqttService');
 const courtDisplayService = require('./courtDisplayService');
+const alertService = require('./alertService');
 const cron = require('node-cron');
 
 class LayerAutomationService {
@@ -9,6 +10,51 @@ class LayerAutomationService {
     this.scheduledTasks = new Map();
     this.automationRules = new Map();
     this.isRunning = false;
+
+    // Test alert configuration - disabled by default
+    this.testAlertConfig = {
+      enabled: false,
+      chance: 10,      // percentage (1-50)
+      interval: 30     // seconds (10-120)
+    };
+    this.dataPollingInterval = null;
+  }
+
+  /**
+   * Get current test alert configuration
+   * @returns {Object} Test alert config
+   */
+  getTestAlertConfig() {
+    return { ...this.testAlertConfig };
+  }
+
+  /**
+   * Update test alert configuration
+   * @param {Object} config - New configuration
+   * @returns {Object} Updated config
+   */
+  setTestAlertConfig(config) {
+    if (typeof config.enabled === 'boolean') {
+      this.testAlertConfig.enabled = config.enabled;
+    }
+
+    if (typeof config.chance === 'number') {
+      // Clamp to 1-50%
+      this.testAlertConfig.chance = Math.max(1, Math.min(50, config.chance));
+    }
+
+    if (typeof config.interval === 'number') {
+      // Clamp to 10-120 seconds
+      this.testAlertConfig.interval = Math.max(10, Math.min(120, config.interval));
+    }
+
+    // Restart polling with new interval if running
+    if (this.isRunning && this.dataPollingInterval) {
+      this.restartDataPolling();
+    }
+
+    console.log(`Test alert config updated: enabled=${this.testAlertConfig.enabled}, chance=${this.testAlertConfig.chance}%, interval=${this.testAlertConfig.interval}s`);
+    return this.getTestAlertConfig();
   }
 
   start() {
@@ -58,14 +104,6 @@ class LayerAutomationService {
     courtCleanup.start();
     this.scheduledTasks.set('court_cleanup', courtCleanup);
 
-    // Clear emergency alerts every hour
-    const emergencyCleanup = cron.schedule('0 * * * *', async () => {
-      await this.cleanupExpiredEmergencyLayers();
-    }, { scheduled: false });
-
-    emergencyCleanup.start();
-    this.scheduledTasks.set('emergency_cleanup', emergencyCleanup);
-
     // Refresh data layers every 5 minutes
     const dataRefresh = cron.schedule('*/5 * * * *', async () => {
       await this.refreshDataLayers();
@@ -76,12 +114,22 @@ class LayerAutomationService {
   }
 
   startDataPolling() {
-    // Poll for external data changes every 30 seconds
-    setInterval(async () => {
+    // Poll for external data changes using configurable interval
+    const intervalMs = this.testAlertConfig.interval * 1000;
+    this.dataPollingInterval = setInterval(async () => {
       if (this.isRunning) {
         await this.checkForDataUpdates();
       }
-    }, 30000);
+    }, intervalMs);
+  }
+
+  restartDataPolling() {
+    if (this.dataPollingInterval) {
+      clearInterval(this.dataPollingInterval);
+      this.dataPollingInterval = null;
+    }
+    this.startDataPolling();
+    console.log(`Data polling restarted with ${this.testAlertConfig.interval}s interval`);
   }
 
   async updateCourtScheduleLayers() {
@@ -92,40 +140,6 @@ class LayerAutomationService {
     } catch (error) {
       console.error('Error updating court schedule layers:', error);
       return { error: error.message };
-    }
-  }
-
-  async cleanupExpiredEmergencyLayers() {
-    try {
-      const tvs = await TVMultilayer.findWithLayerSupport();
-      
-      for (const tv of tvs) {
-        const layers = await Layer.findByTv(tv._id);
-        const emergencyLayers = layers.filter(layer => 
-          layer.layer_type === 'Emergency' || 
-          (layer.name && layer.name.toLowerCase().includes('alert'))
-        );
-
-        for (const layer of emergencyLayers) {
-          // Check if layer has auto-hide schedule
-          if (layer.schedule && layer.schedule.auto_hide_after_ms) {
-            const createdTime = new Date(layer.created_at || layer.updated_at);
-            const expiryTime = new Date(createdTime.getTime() + layer.schedule.auto_hide_after_ms);
-            
-            if (new Date() > expiryTime) {
-              // Fade out and delete expired emergency layer
-              await layer.startAnimation('fade_out', 1000);
-              
-              setTimeout(async () => {
-                await layer.delete();
-                console.log(`Cleaned up expired emergency layer: ${layer.name}`);
-              }, 1000);
-            }
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Error cleaning up emergency layers:', error);
     }
   }
 
@@ -163,11 +177,18 @@ class LayerAutomationService {
     // This could integrate with webhooks, APIs, or database change streams
     
     try {
-      // Example: Check for emergency alerts
-      const emergencyAlerts = await this.fetchEmergencyAlerts();
-      
-      if (emergencyAlerts.length > 0) {
-        await this.createEmergencyLayers(emergencyAlerts);
+      // Check for test alerts (when enabled via UI)
+      const testAlerts = await this.fetchEmergencyAlerts();
+
+      for (const alert of testAlerts) {
+        await alertService.broadcastAlert({
+          title: alert.message.split(' - ')[0] || 'Test Alert',
+          message: alert.message,
+          type: 'INFO',
+          target_type: 'all',
+          auto_dismiss_ms: alert.duration || 60000,
+          created_by: 'test-generator'
+        });
       }
       
       // Example: Check for schedule changes
@@ -178,61 +199,6 @@ class LayerAutomationService {
       }
     } catch (error) {
       console.error('Error checking for data updates:', error);
-    }
-  }
-
-  async createEmergencyLayers(alerts) {
-    const tvs = await TVMultilayer.findWithLayerSupport();
-    
-    for (const alert of alerts) {
-      for (const tv of tvs) {
-        // Check if alert already exists
-        const existingLayers = await Layer.findByTv(tv._id);
-        const alertExists = existingLayers.some(layer => 
-          layer.content.text === alert.message
-        );
-        
-        if (!alertExists) {
-          const alertLayer = new Layer({
-            tv_id: tv._id,
-            name: `Emergency Alert: ${alert.alert_type}`,
-            layer_type: 'Emergency',
-            content: {
-              text: `🚨 ${alert.message}`,
-              backgroundColor: 'rgba(255, 0, 0, 0.95)',
-              textColor: 'rgba(255, 255, 255, 1)',
-              fontSize: 32,
-              alignment: 'center'
-            },
-            position: {
-              x: 0,
-              y: 50,
-              width: 1920,
-              height: 80
-            },
-            visible: true,
-            opacity: 1.0,
-            priority: 200, // Highest priority
-            schedule: {
-              enabled: true,
-              auto_hide_after_ms: alert.duration || 300000 // 5 minutes default
-            },
-            tags: ['emergency', 'auto-generated']
-          });
-          
-          await alertLayer.save();
-          
-          // Animate in
-          await alertLayer.startAnimation('slide_down', 800);
-          
-          console.log(`Created emergency alert layer for TV ${tv._id}: ${alert.message}`);
-          
-          // Publish MQTT notification
-          if (mqttService.isConnected()) {
-            await mqttService.publishLayerUpdate(tv._id, alertLayer.layer_id, 'emergency_created', alertLayer);
-          }
-        }
-      }
     }
   }
 
@@ -266,18 +232,32 @@ class LayerAutomationService {
   }
 
   async fetchEmergencyAlerts() {
-    // Simulate checking emergency alert system
-    // In production, this would connect to emergency notification APIs
-    const random = Math.random();
-    
-    if (random < 0.1) { // 10% chance of emergency alert
+    // Only generate test alerts if enabled via UI
+    if (!this.testAlertConfig.enabled) {
+      return [];
+    }
+
+    // Generate random test alerts based on configured chance
+    const random = Math.random() * 100;
+
+    if (random < this.testAlertConfig.chance) {
+      const testMessages = [
+        'Security alert in Building A - Please remain calm',
+        'Fire drill in progress - Please proceed to nearest exit',
+        'Weather advisory: Severe thunderstorm warning',
+        'System maintenance scheduled in 30 minutes',
+        'Visitor announcement: John Smith to main lobby'
+      ];
+      const message = testMessages[Math.floor(Math.random() * testMessages.length)];
+
+      console.log(`🧪 Test alert generated (${this.testAlertConfig.chance}% chance): ${message}`);
       return [{
-        type: 'security',
-        message: 'Security alert in Building A - Please remain calm',
-        duration: 600000 // 10 minutes
+        type: 'test',
+        message: `[TEST] ${message}`,
+        duration: 60000 // 1 minute for test alerts
       }];
     }
-    
+
     return [];
   }
 
@@ -303,15 +283,6 @@ class LayerAutomationService {
     }
     
     return null;
-  }
-
-  // API methods for manual triggers
-  async triggerEmergencyAlert(tvId, message, duration = 300000) {
-    await this.createEmergencyLayers([{
-      type: 'manual',
-      message,
-      duration
-    }]);
   }
 
   async updateLayerContent(tvId, layerId, content, transition = null) {

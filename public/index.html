@@ -597,6 +597,57 @@
                 <div class="at-templates-grid" id="at-templates-grid">
                     <div class="loading">Loading templates...</div>
                 </div>
+
+                <!-- Test Alert Generator Section -->
+                <div class="section-header" style="margin-top: 32px;">
+                    <h2>🧪 Test Alert Generator</h2>
+                    <span id="testAlertStatus" style="font-size: 12px; padding: 4px 12px; border-radius: 4px; background: var(--text-muted); color: white;">Disabled</span>
+                </div>
+
+                <p style="margin-bottom: 16px; color: var(--text-muted);">
+                    Generate random test alerts to all TVs for testing purposes. Alerts will be prefixed with [TEST].
+                </p>
+
+                <div class="card">
+                    <div class="card-body">
+                        <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 16px;">
+                            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                <input type="checkbox" id="testAlertEnabled" onchange="atUpdateTestAlertConfig()" style="width: 18px; height: 18px;">
+                                <span style="font-weight: 500;">Enable Test Alerts</span>
+                            </label>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="testAlertChance">
+                                Random Chance: <span id="testAlertChanceValue">10</span>%
+                            </label>
+                            <input type="range" id="testAlertChance" min="1" max="50" value="10"
+                                   onchange="document.getElementById('testAlertChanceValue').textContent = this.value; atUpdateTestAlertConfig();"
+                                   class="form-input" style="width: 100%;">
+                            <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted);">
+                                <span>1% (rare)</span>
+                                <span>50% (frequent)</span>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="testAlertInterval">
+                                Check Interval: <span id="testAlertIntervalValue">30</span> seconds
+                            </label>
+                            <input type="range" id="testAlertInterval" min="10" max="120" value="30" step="5"
+                                   onchange="document.getElementById('testAlertIntervalValue').textContent = this.value; atUpdateTestAlertConfig();"
+                                   class="form-input" style="width: 100%;">
+                            <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted);">
+                                <span>10s (aggressive)</span>
+                                <span>120s (relaxed)</span>
+                            </div>
+                        </div>
+
+                        <div style="display: flex; gap: 8px;">
+                            <button class="btn btn-secondary" onclick="atLoadTestAlertConfig()">🔄 Refresh Config</button>
+                        </div>
+                    </div>
+                </div>
             </section>
         </main>
     </div>
