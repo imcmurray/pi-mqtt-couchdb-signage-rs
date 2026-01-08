@@ -1618,10 +1618,59 @@ body.dark-theme {
     margin-bottom: 0.25rem;
 }
 
+.mqtt-header-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.mqtt-filter-select {
+    padding: 4px 8px;
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.15);
+    color: white;
+    font-size: 12px;
+    cursor: pointer;
+    min-width: 120px;
+}
+
+.mqtt-filter-select:hover {
+    background: rgba(255, 255, 255, 0.25);
+}
+
+.mqtt-filter-select:focus {
+    outline: none;
+    border-color: rgba(255, 255, 255, 0.5);
+}
+
+.mqtt-filter-select option {
+    background: #34495e;
+    color: white;
+}
+
+.mqtt-topic-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 0.25rem;
+    flex-wrap: wrap;
+}
+
+.mqtt-tv-pill {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    background: #667eea;
+    color: white;
+    white-space: nowrap;
+}
+
 .mqtt-topic {
     font-weight: 600;
     color: #2c3e50;
-    margin-bottom: 0.25rem;
     word-break: break-all;
 }
 
@@ -1716,6 +1765,236 @@ body.dark-theme {
 
 .dark-theme .no-messages {
     color: #95a5a6;
+}
+
+.dark-theme .mqtt-filter-select {
+    background: rgba(0, 0, 0, 0.3);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.dark-theme .mqtt-filter-select:hover {
+    background: rgba(0, 0, 0, 0.4);
+}
+
+.dark-theme .mqtt-tv-pill {
+    background: #4a5568;
+}
+
+/* Topic Tree Styles */
+.mqtt-tree-toggle {
+    background: rgba(255, 255, 255, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.2s ease;
+}
+
+.mqtt-tree-toggle:hover {
+    background: rgba(255, 255, 255, 0.25);
+}
+
+.mqtt-tree-toggle.active {
+    background: rgba(255, 255, 255, 0.3);
+    border-color: rgba(255, 255, 255, 0.5);
+}
+
+.mqtt-topic-tree {
+    background: #f8f9fa;
+    border-bottom: 1px solid #e9ecef;
+    padding: 12px;
+    max-height: 250px;
+    overflow-y: auto;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 12px;
+}
+
+.mqtt-topic-tree.hidden {
+    display: none;
+}
+
+.topic-tree-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.topic-all {
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    color: #495057;
+    transition: all 0.2s ease;
+}
+
+.topic-all:hover {
+    background: #e9ecef;
+}
+
+.topic-all.selected {
+    background: #667eea;
+    color: white;
+}
+
+.topic-clear-btn {
+    background: #dc3545;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 2px 8px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.topic-clear-btn:hover {
+    background: #c82333;
+}
+
+.topic-tree-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.topic-tree-list .topic-tree-list {
+    margin-left: 16px;
+    border-left: 1px dashed #dee2e6;
+    padding-left: 8px;
+}
+
+.topic-node {
+    margin: 2px 0;
+}
+
+.topic-node-content {
+    display: flex;
+    align-items: center;
+    padding: 4px 6px;
+    border-radius: 4px;
+    transition: background 0.2s ease;
+}
+
+.topic-node-content:hover {
+    background: #e9ecef;
+}
+
+.topic-node.selected > .topic-node-content {
+    background: #667eea;
+    color: white;
+}
+
+.topic-node.selected > .topic-node-content .topic-count {
+    background: rgba(255, 255, 255, 0.3);
+    color: white;
+}
+
+.topic-expand {
+    width: 16px;
+    cursor: pointer;
+    user-select: none;
+    color: #6c757d;
+    font-size: 10px;
+}
+
+.topic-expand-placeholder {
+    width: 16px;
+}
+
+.topic-name {
+    flex: 1;
+    cursor: pointer;
+    font-weight: 500;
+    color: #212529;
+}
+
+.topic-node.selected > .topic-node-content .topic-name {
+    color: white;
+}
+
+.topic-count {
+    background: #e9ecef;
+    color: #495057;
+    padding: 1px 6px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 600;
+    margin-left: 8px;
+}
+
+.mqtt-filter-status {
+    background: #fff3cd;
+    color: #856404;
+    padding: 6px 12px;
+    font-size: 12px;
+    border-bottom: 1px solid #ffeeba;
+    display: none;
+}
+
+.mqtt-filter-status.active {
+    display: block;
+}
+
+/* Dark theme topic tree */
+.dark-theme .mqtt-topic-tree {
+    background: #1a1a1a;
+    border-bottom-color: #333;
+}
+
+.dark-theme .topic-tree-header {
+    border-bottom-color: #444;
+}
+
+.dark-theme .topic-all {
+    color: #e0e0e0;
+}
+
+.dark-theme .topic-all:hover {
+    background: #333;
+}
+
+.dark-theme .topic-tree-list .topic-tree-list {
+    border-left-color: #444;
+}
+
+.dark-theme .topic-node-content:hover {
+    background: #333;
+}
+
+.dark-theme .topic-name {
+    color: #e0e0e0;
+}
+
+.dark-theme .topic-expand {
+    color: #888;
+}
+
+.dark-theme .topic-count {
+    background: #333;
+    color: #aaa;
+}
+
+.dark-theme .mqtt-filter-status {
+    background: #3a3000;
+    color: #ffc107;
+    border-bottom-color: #665500;
+}
+
+.dark-theme .mqtt-tree-toggle {
+    background: rgba(0, 0, 0, 0.3);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.dark-theme .mqtt-tree-toggle:hover {
+    background: rgba(0, 0, 0, 0.4);
+}
+
+.dark-theme .mqtt-tree-toggle.active {
+    background: rgba(0, 0, 0, 0.5);
 }
 
 /* Responsive MQTT layout */

@@ -549,24 +549,49 @@ impl LayerManager {
     }
 
     async fn load_and_process_image(&self, image_path: &str, position: &Position) -> Result<RgbaImage, String> {
-        // Load image
         let img = image::open(image_path)
             .map_err(|e| format!("Failed to load image '{}': {}", image_path, e))?
             .to_rgba8();
 
-        // Scale to fit layer position if needed
-        let scaled_img = if img.width() != position.width || img.height() != position.height {
-            image::imageops::resize(
-                &img,
-                position.width,
-                position.height,
-                image::imageops::FilterType::Lanczos3,
-            )
-        } else {
-            img
-        };
+        // Calculate scaling factor to preserve aspect ratio (letterboxing)
+        let original_width = img.width() as f32;
+        let original_height = img.height() as f32;
+        let target_width = position.width as f32;
+        let target_height = position.height as f32;
 
-        Ok(scaled_img)
+        let scale_x = target_width / original_width;
+        let scale_y = target_height / original_height;
+        let scale = scale_x.min(scale_y);
+
+        let scaled_width = (original_width * scale) as u32;
+        let scaled_height = (original_height * scale) as u32;
+
+        // Scale while preserving aspect ratio
+        let scaled_img = image::imageops::resize(
+            &img,
+            scaled_width,
+            scaled_height,
+            image::imageops::FilterType::Lanczos3,
+        );
+
+        // Create transparent background at target dimensions
+        let mut result = RgbaImage::new(position.width, position.height);
+        for pixel in result.pixels_mut() {
+            *pixel = Rgba([0, 0, 0, 0]);
+        }
+
+        // Center the scaled image
+        let x_offset = (position.width - scaled_width) / 2;
+        let y_offset = (position.height - scaled_height) / 2;
+
+        for y in 0..scaled_height {
+            for x in 0..scaled_width {
+                let pixel = *scaled_img.get_pixel(x, y);
+                result.put_pixel(x + x_offset, y + y_offset, pixel);
+            }
+        }
+
+        Ok(result)
     }
 
     fn blend_layer_onto_composite(&self, layer_image: &RgbaImage, layer: &Layer, composite: &mut RgbaImage) {

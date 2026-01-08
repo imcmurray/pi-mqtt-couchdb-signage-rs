@@ -73,6 +73,13 @@ async function createMultilayerDesignDocuments() {
     {
       _id: '_design/layers',
       views: {
+        all: {
+          map: function(doc) {
+            if (doc.type === 'layer') {
+              emit(doc._id, doc);
+            }
+          }.toString()
+        },
         by_tv: {
           map: function(doc) {
             if (doc.type === 'layer') {

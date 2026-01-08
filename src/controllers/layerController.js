@@ -3,6 +3,7 @@ const TVMultilayer = require('../models/tv.multilayer');
 const Preset = require('../models/Preset');
 const mqttService = require('../services/multilayer.mqttService');
 const Joi = require('joi');
+const { broadcastToClients } = require('../server');
 
 // Validation schemas
 const layerSchema = Joi.object({
@@ -307,8 +308,10 @@ class LayerController {
     if (mqttService.isConnected()) {
       await mqttService.publishLayerUpdate(tv_id, layer.layer_id, 'created', layer);
     }
-    
+
     res.status(201).json(layer);
+
+    broadcastToClients('layers_updated', { tv_id });
   }
 
   /**
@@ -375,13 +378,15 @@ class LayerController {
     
     // Update layer
     await layer.update(req.body);
-    
+
     // Publish MQTT event
     if (mqttService.isConnected()) {
       await mqttService.publishLayerUpdate(tv_id, layer_id, 'updated', layer);
     }
-    
+
     res.json(layer);
+
+    broadcastToClients('layers_updated', { tv_id });
   }
 
   /**
@@ -432,13 +437,15 @@ class LayerController {
     }
     
     await layer.delete();
-    
+
     // Publish MQTT event
     if (mqttService.isConnected()) {
       await mqttService.publishLayerUpdate(tv_id, layer_id, 'deleted');
     }
-    
+
     res.json({ message: 'Layer deleted successfully' });
+
+    broadcastToClients('layers_updated', { tv_id });
   }
 
   /**

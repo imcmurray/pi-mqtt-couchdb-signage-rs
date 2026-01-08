@@ -305,55 +305,71 @@ impl MqttClient {
         let payload_str = String::from_utf8(payload.to_vec())?;
         let alert: serde_json::Value = serde_json::from_str(&payload_str)?;
 
-        println!("🚨 Received emergency alert: {:?}", alert.get("alert_id"));
-
+        let message_type = alert["type"].as_str().unwrap_or("emergency_alert");
         let alert_id = alert["alert_id"].as_str().unwrap_or("unknown");
-        let layer_data = &alert["layer"];
-        let content = &layer_data["content"];
 
-        // Parse background color from CSS rgba() string
-        let bg_color_str = content["backgroundColor"].as_str().unwrap_or("rgba(220, 38, 38, 0.95)");
-        let bg_color = parse_rgba_string(bg_color_str);
+        match message_type {
+            "dismiss_alert" => {
+                println!("🔕 Received dismiss for alert: {}", alert_id);
 
-        // Parse text color from CSS rgba() string
-        let text_color_str = content["textColor"].as_str().unwrap_or("rgba(255, 255, 255, 1)");
-        let text_color = parse_rgba_string(text_color_str);
+                if let Err(e) = command_sender.send(SlideshowCommand::RemoveLayer {
+                    layer_id: alert_id.to_string(),
+                }) {
+                    eprintln!("Failed to send remove layer command: {}", e);
+                    return Err(e.into());
+                }
+            }
+            _ => {
+                println!("🚨 Received emergency alert: {:?}", alert.get("alert_id"));
 
-        // Extract text content
-        let text = content["text"].as_str().unwrap_or("EMERGENCY ALERT");
+                let layer_data = &alert["layer"];
+                let content = &layer_data["content"];
 
-        // Extract font size and alignment
-        let font_size = content["fontSize"].as_u64().unwrap_or(32) as u32;
-        let alignment = content["alignment"].as_str().unwrap_or("center").to_string();
+                // Parse background color from CSS rgba() string
+                let bg_color_str = content["backgroundColor"].as_str().unwrap_or("rgba(220, 38, 38, 0.95)");
+                let bg_color = parse_rgba_string(bg_color_str);
 
-        // Extract position
-        let x = layer_data["position"]["x"].as_u64().unwrap_or(0) as u32;
-        let y = layer_data["position"]["y"].as_u64().unwrap_or(0) as u32;
-        let width = layer_data["position"]["width"].as_u64().unwrap_or(1920) as u32;
-        let height = layer_data["position"]["height"].as_u64().unwrap_or(120) as u32;
+                // Parse text color from CSS rgba() string
+                let text_color_str = content["textColor"].as_str().unwrap_or("rgba(255, 255, 255, 1)");
+                let text_color = parse_rgba_string(text_color_str);
 
-        // Create the emergency layer with DataRow content for text rendering
-        let layer = Layer::new(alert_id.to_string(), LayerType::Emergency)
-            .with_position(x, y, width, height)
-            .with_data_row(text.to_string(), bg_color, text_color, font_size, alignment);
+                // Extract text content
+                let text = content["text"].as_str().unwrap_or("EMERGENCY ALERT");
 
-        println!("📺 Creating alert layer: {} with text: {}", alert_id, text);
+                // Extract font size and alignment
+                let font_size = content["fontSize"].as_u64().unwrap_or(32) as u32;
+                let alignment = content["alignment"].as_str().unwrap_or("center").to_string();
 
-        if let Err(e) = command_sender.send(SlideshowCommand::AddLayer { layer }) {
-            eprintln!("Failed to send add layer command: {}", e);
-            return Err(e.into());
-        }
+                // Extract position
+                let x = layer_data["position"]["x"].as_u64().unwrap_or(0) as u32;
+                let y = layer_data["position"]["y"].as_u64().unwrap_or(0) as u32;
+                let width = layer_data["position"]["width"].as_u64().unwrap_or(1920) as u32;
+                let height = layer_data["position"]["height"].as_u64().unwrap_or(120) as u32;
 
-        // Schedule auto-dismiss if specified
-        let auto_hide_ms = layer_data["schedule"]["auto_hide_after_ms"].as_u64().unwrap_or(0);
-        if auto_hide_ms > 0 {
-            let layer_id = alert_id.to_string();
-            let sender = command_sender.clone();
-            tokio::spawn(async move {
-                tokio::time::sleep(Duration::from_millis(auto_hide_ms)).await;
-                println!("🔕 Auto-dismissing alert: {}", layer_id);
-                let _ = sender.send(SlideshowCommand::RemoveLayer { layer_id });
-            });
+                // Create the emergency layer with DataRow content for text rendering
+                let layer = Layer::new(alert_id.to_string(), LayerType::Emergency)
+                    .with_position(x, y, width, height)
+                    .with_data_row(text.to_string(), bg_color, text_color, font_size, alignment);
+
+                println!("📺 Creating alert layer: {} with text: {}", alert_id, text);
+
+                if let Err(e) = command_sender.send(SlideshowCommand::AddLayer { layer }) {
+                    eprintln!("Failed to send add layer command: {}", e);
+                    return Err(e.into());
+                }
+
+                // Schedule auto-dismiss if specified
+                let auto_hide_ms = layer_data["schedule"]["auto_hide_after_ms"].as_u64().unwrap_or(0);
+                if auto_hide_ms > 0 {
+                    let layer_id = alert_id.to_string();
+                    let sender = command_sender.clone();
+                    tokio::spawn(async move {
+                        tokio::time::sleep(Duration::from_millis(auto_hide_ms)).await;
+                        println!("🔕 Auto-dismissing alert: {}", layer_id);
+                        let _ = sender.send(SlideshowCommand::RemoveLayer { layer_id });
+                    });
+                }
+            }
         }
 
         Ok(())

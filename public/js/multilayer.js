@@ -226,6 +226,14 @@ class MultiLayerManager {
             case 'subscription_confirmed':
                 this.log(`Subscribed to TV ${data.tv_id} layer updates`);
                 break;
+            case 'alerts_updated':
+                if (data.data?.type === 'active') this.loadActiveAlerts();
+                if (data.data?.type === 'queue' && typeof loadQueueStatus === 'function') loadQueueStatus();
+                if (data.data?.type === 'scheduled' && typeof loadScheduledAlerts === 'function') loadScheduledAlerts();
+                break;
+            case 'layers_updated':
+                if (data.data?.tv_id === this.selectedTvId) this.loadLayers();
+                break;
         }
     }
     
@@ -570,17 +578,17 @@ class MultiLayerManager {
     }
     
     startStatusUpdates() {
-        // Refresh layer status every 5 seconds
+        // Fallback refresh for layers every 60 seconds (primary updates via WebSocket)
         setInterval(() => {
             if (this.selectedTvId) {
                 this.loadLayers();
             }
-        }, 5000);
+        }, 60000);
 
-        // Refresh active alerts every 10 seconds
+        // Fallback refresh for active alerts every 60 seconds (primary updates via WebSocket)
         setInterval(() => {
             this.loadActiveAlerts();
-        }, 10000);
+        }, 60000);
     }
 
     // Emergency Alert System Methods
@@ -1344,8 +1352,8 @@ function getAlertColor(type) {
     }
 }
 
-// Auto-refresh queue status every 5 seconds
-setInterval(loadQueueStatus, 5000);
+// Fallback refresh for queue status every 60 seconds (primary updates via WebSocket)
+setInterval(loadQueueStatus, 60000);
 setTimeout(loadQueueStatus, 1000);
 
 // ============ Alert Scheduling Functions ============
@@ -1520,6 +1528,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
-// Auto-refresh scheduled alerts every 30 seconds
-setInterval(loadScheduledAlerts, 30000);
+// Fallback refresh for scheduled alerts every 60 seconds (primary updates via WebSocket)
+setInterval(loadScheduledAlerts, 60000);
 setTimeout(loadScheduledAlerts, 1500);

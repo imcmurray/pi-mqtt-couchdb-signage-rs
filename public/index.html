@@ -166,8 +166,17 @@
                     <div class="mqtt-panel">
                         <div class="mqtt-panel-header">
                             <h3><i class="fas fa-globe"></i> General MQTT Activity</h3>
-                            <span class="message-count" id="general-count">0 messages</span>
+                            <div class="mqtt-header-controls">
+                                <button id="toggle-topic-tree" class="mqtt-tree-toggle" title="Toggle topic tree">
+                                    <i class="fas fa-sitemap"></i>
+                                </button>
+                                <span class="message-count" id="general-count">0 messages</span>
+                            </div>
                         </div>
+                        <div class="mqtt-topic-tree hidden" id="mqtt-topic-tree">
+                            <!-- Dynamically populated topic tree -->
+                        </div>
+                        <div class="mqtt-filter-status" id="mqtt-filter-status"></div>
                         <div class="mqtt-messages" id="general-mqtt-messages">
                             <div class="no-messages">No MQTT activity detected</div>
                         </div>
@@ -177,7 +186,12 @@
                     <div class="mqtt-panel">
                         <div class="mqtt-panel-header">
                             <h3><i class="fas fa-tv"></i> Digital Signage MQTT</h3>
-                            <span class="message-count" id="signage-count">0 messages</span>
+                            <div class="mqtt-header-controls">
+                                <select id="mqtt-tv-filter" class="mqtt-filter-select">
+                                    <option value="all">All TVs</option>
+                                </select>
+                                <span class="message-count" id="signage-count">0 messages</span>
+                            </div>
                         </div>
                         <div class="mqtt-messages" id="signage-mqtt-messages">
                             <div class="no-messages">No digital signage MQTT activity detected</div>

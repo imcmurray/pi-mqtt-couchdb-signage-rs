@@ -121,6 +121,19 @@ class AlertService {
     console.log(`📡 Published alert to ${topic}`);
   }
 
+  async publishAlertDismissToTV(tvId, alertId) {
+    const mqttTvId = tvId.replace(/^tv_/, '');
+    const topic = `signage/tv/${mqttTvId}/alert`;
+    const message = {
+      type: 'dismiss_alert',
+      alert_id: alertId,
+      timestamp: new Date().toISOString()
+    };
+
+    mqtt.publish(topic, message);
+    console.log(`📡 Published alert dismiss to ${topic}`);
+  }
+
   scheduleAutoDismiss(alert, layers) {
     setTimeout(async () => {
       try {
@@ -155,9 +168,15 @@ class AlertService {
       throw new Error('Alert is not active');
     }
 
-    const layers = await Layer.findByGroup(`alert_${alertId}`);
+    const layers = await Layer.findByGroup(alertId);
 
+    const notifiedTvs = new Set();
     for (const layer of layers) {
+      if (!notifiedTvs.has(layer.tv_id)) {
+        await this.publishAlertDismissToTV(layer.tv_id, alertId);
+        notifiedTvs.add(layer.tv_id);
+      }
+
       await layer.setVisibility(false, { duration: 500 });
 
       setTimeout(async () => {

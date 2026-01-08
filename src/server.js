@@ -260,7 +260,7 @@ mqttService.on('message', ({ topic, payload }) => {
       const topicParts = topic.split('/');
       const tvIdIndex = topicParts.indexOf('tv') + 1;
       const tvId = topicParts[tvIdIndex];
-      
+
       // Only send to clients subscribed to this TV
       if (!client.subscribedTvId || client.subscribedTvId === tvId) {
         client.send(JSON.stringify({
@@ -272,6 +272,18 @@ mqttService.on('message', ({ topic, payload }) => {
     }
   });
 });
+
+// Broadcast to all WebSocket clients (for UI updates)
+function broadcastToClients(type, data) {
+  wss.clients.forEach(client => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(JSON.stringify({ type, data, timestamp: new Date().toISOString() }));
+    }
+  });
+}
+
+// Export for use in controllers
+module.exports = { broadcastToClients };
 
 // 404 handler
 app.use((req, res) => {

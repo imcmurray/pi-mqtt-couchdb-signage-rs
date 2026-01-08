@@ -3,6 +3,7 @@ const queueService = require('../services/alertQueueService');
 const scheduleService = require('../services/alertScheduleService');
 const Alert = require('../models/Alert');
 const Joi = require('joi');
+const { broadcastToClients } = require('../server');
 
 const alertSchema = Joi.object({
   title: Joi.string().required().max(100),
@@ -142,6 +143,9 @@ class AlertController {
         layers_created: result.layers.length
       }
     });
+
+    broadcastToClients('alerts_updated', { type: 'active' });
+    broadcastToClients('alerts_updated', { type: 'queue' });
   }
 
   /**
@@ -213,6 +217,9 @@ class AlertController {
         layers_dismissed: result.layers_dismissed
       }
     });
+
+    broadcastToClients('alerts_updated', { type: 'active' });
+    broadcastToClients('alerts_updated', { type: 'queue' });
   }
 
   /**
@@ -464,6 +471,8 @@ class AlertController {
         message: `Cleared ${count} alerts from queue`
       }
     });
+
+    broadcastToClients('alerts_updated', { type: 'queue' });
   }
 
   /**
@@ -505,6 +514,8 @@ class AlertController {
         message: 'Alert removed from queue'
       }
     });
+
+    broadcastToClients('alerts_updated', { type: 'queue' });
   }
 
   /**
@@ -596,6 +607,8 @@ class AlertController {
           } : null
         }
       });
+
+      broadcastToClients('alerts_updated', { type: 'scheduled' });
     } catch (err) {
       return res.status(500).json({
         success: false,
@@ -683,6 +696,8 @@ class AlertController {
           message: 'Scheduled alert cancelled'
         }
       });
+
+      broadcastToClients('alerts_updated', { type: 'scheduled' });
     } catch (err) {
       return res.status(404).json({
         success: false,

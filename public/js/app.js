@@ -13,7 +13,11 @@ class DigitalSignageApp {
         };
         this.mqttPaused = false;
         this.maxMqttMessages = 100;
-        
+        this.mqttTvFilter = 'all';
+        this.mqttTopicFilter = null;
+        this.mqttTopicTreeVisible = false;
+        this.mqttExpandedBranches = new Set();
+
         this.init();
     }
 
@@ -85,6 +89,17 @@ class DigitalSignageApp {
         // Version info click handler
         document.getElementById('version-info').addEventListener('click', () => {
             this.showVersionModal();
+        });
+
+        // MQTT TV filter
+        document.getElementById('mqtt-tv-filter')?.addEventListener('change', (e) => {
+            this.mqttTvFilter = e.target.value;
+            this.updateMqttDisplay();
+        });
+
+        // Topic tree toggle
+        document.getElementById('toggle-topic-tree')?.addEventListener('click', () => {
+            this.toggleTopicTree();
         });
     }
 
@@ -198,6 +213,7 @@ class DigitalSignageApp {
             this.tvs = await response.json();
             this.updateTvList();
             this.populateTvFilters();
+            this.populateMqttTvFilter();
         } catch (error) {
             console.error('Error loading TVs:', error);
         }
@@ -1179,6 +1195,31 @@ class DigitalSignageApp {
         return parts[2]; // signage/tv/{id}/status
     }
 
+    getTvNameById(tvId) {
+        // Try matching with and without tv_ prefix
+        const tv = this.tvs.find(t =>
+            t._id === tvId ||
+            t._id === `tv_${tvId}` ||
+            t._id.replace('tv_', '') === tvId
+        );
+        return tv ? tv.name : null;
+    }
+
+    populateMqttTvFilter() {
+        const select = document.getElementById('mqtt-tv-filter');
+        if (!select) return;
+
+        // Keep the "All TVs" option, clear the rest
+        select.innerHTML = '<option value="all">All TVs</option>';
+
+        this.tvs.forEach(tv => {
+            const option = document.createElement('option');
+            option.value = tv._id.replace('tv_', '');
+            option.textContent = tv.name;
+            select.appendChild(option);
+        });
+    }
+
     // Theme Management
     initTheme() {
         this.applyTheme();
@@ -1249,10 +1290,34 @@ class DigitalSignageApp {
     updateMqttPanel(type) {
         const container = document.getElementById(`${type}-mqtt-messages`);
         const countElement = document.getElementById(`${type}-count`);
-        const messages = this.mqttMessages[type];
+        let messages = this.mqttMessages[type];
+        const totalCount = this.mqttMessages[type].length;
+
+        // Filter signage messages by TV if filter is set
+        if (type === 'signage' && this.mqttTvFilter !== 'all') {
+            messages = messages.filter(msg => {
+                const tvId = this.extractTvIdFromTopic(msg.topic);
+                return tvId === this.mqttTvFilter;
+            });
+        }
+
+        // Filter general messages by topic prefix if filter is set
+        if (type === 'general' && this.mqttTopicFilter) {
+            messages = messages.filter(msg =>
+                msg.topic === this.mqttTopicFilter ||
+                msg.topic.startsWith(this.mqttTopicFilter + '/')
+            );
+        }
 
         // Update message count
-        countElement.textContent = `${messages.length} message${messages.length !== 1 ? 's' : ''}`;
+        const filteredCount = messages.length;
+        const isFiltered = (type === 'signage' && this.mqttTvFilter !== 'all') ||
+                          (type === 'general' && this.mqttTopicFilter);
+        if (isFiltered) {
+            countElement.textContent = `${filteredCount} of ${totalCount} messages`;
+        } else {
+            countElement.textContent = `${messages.length} message${messages.length !== 1 ? 's' : ''}`;
+        }
 
         // Clear existing messages
         container.innerHTML = '';
@@ -1260,9 +1325,16 @@ class DigitalSignageApp {
         if (messages.length === 0) {
             const noMessages = document.createElement('div');
             noMessages.className = 'no-messages';
-            noMessages.textContent = type === 'signage' 
-                ? 'No digital signage MQTT activity detected'
-                : 'No MQTT activity detected';
+            if (type === 'signage' && this.mqttTvFilter !== 'all') {
+                const tvName = this.getTvNameById(this.mqttTvFilter) || this.mqttTvFilter;
+                noMessages.textContent = `No messages from ${tvName}`;
+            } else if (type === 'general' && this.mqttTopicFilter) {
+                noMessages.textContent = `No messages matching ${this.mqttTopicFilter}`;
+            } else {
+                noMessages.textContent = type === 'signage'
+                    ? 'No digital signage MQTT activity detected'
+                    : 'No MQTT activity detected';
+            }
             container.appendChild(noMessages);
             return;
         }
@@ -1282,13 +1354,43 @@ class DigitalSignageApp {
         timestamp.className = 'mqtt-timestamp';
         timestamp.textContent = message.timestamp.toLocaleTimeString();
 
-        const topic = document.createElement('div');
+        // Create topic header with TV pill for signage messages
+        const topicHeader = document.createElement('div');
+        topicHeader.className = 'mqtt-topic-header';
+
+        // Add TV name pill for signage topics
+        if (type === 'signage') {
+            const tvId = this.extractTvIdFromTopic(message.topic);
+            const tvName = this.getTvNameById(tvId);
+            if (tvName) {
+                const tvPill = document.createElement('span');
+                tvPill.className = 'mqtt-tv-pill';
+                tvPill.textContent = tvName;
+                topicHeader.appendChild(tvPill);
+            }
+        }
+
+        const topic = document.createElement('span');
         topic.className = 'mqtt-topic';
-        topic.textContent = message.topic;
+        // Show simplified topic for signage messages
+        if (type === 'signage') {
+            const parts = message.topic.split('/');
+            // Transform signage/tv/{uuid}/status to tv/.../status
+            if (parts.length >= 4) {
+                const shortId = parts[2].substring(0, 8);
+                topic.textContent = `tv/${shortId}.../${parts.slice(3).join('/')}`;
+                topic.title = message.topic; // Full topic in tooltip
+            } else {
+                topic.textContent = message.topic;
+            }
+        } else {
+            topic.textContent = message.topic;
+        }
+        topicHeader.appendChild(topic);
 
         const payload = document.createElement('div');
         payload.className = 'mqtt-payload';
-        
+
         try {
             // Try to format JSON payload nicely
             if (typeof message.payload === 'object') {
@@ -1308,7 +1410,7 @@ class DigitalSignageApp {
         }
 
         messageDiv.appendChild(timestamp);
-        messageDiv.appendChild(topic);
+        messageDiv.appendChild(topicHeader);
         messageDiv.appendChild(payload);
 
         return messageDiv;
@@ -1324,13 +1426,144 @@ class DigitalSignageApp {
         this.mqttPaused = !this.mqttPaused;
         const button = document.getElementById('toggle-mqtt-pause');
         const icon = button.querySelector('i');
-        
+
         if (this.mqttPaused) {
             icon.className = 'fas fa-play';
             button.innerHTML = '<i class="fas fa-play"></i> Resume';
         } else {
             icon.className = 'fas fa-pause';
             button.innerHTML = '<i class="fas fa-pause"></i> Pause';
+        }
+    }
+
+    // Topic Tree Functions
+    buildTopicTree() {
+        const tree = {};
+        this.mqttMessages.general.forEach(msg => {
+            const parts = msg.topic.split('/');
+            let current = tree;
+            parts.forEach(part => {
+                if (!current[part]) {
+                    current[part] = { count: 0, children: {} };
+                }
+                current[part].count++;
+                current = current[part].children;
+            });
+        });
+        return tree;
+    }
+
+    renderTopicTree(tree, parentPath = '', depth = 0) {
+        const entries = Object.entries(tree);
+        if (entries.length === 0) return '';
+
+        let html = '<ul class="topic-tree-list">';
+
+        entries.sort((a, b) => b[1].count - a[1].count);
+
+        for (const [name, node] of entries) {
+            const fullPath = parentPath ? `${parentPath}/${name}` : name;
+            const hasChildren = Object.keys(node.children).length > 0;
+            const isExpanded = this.mqttExpandedBranches.has(fullPath);
+            const isSelected = this.mqttTopicFilter === fullPath;
+
+            html += `<li class="topic-node ${isSelected ? 'selected' : ''}">`;
+            html += '<div class="topic-node-content">';
+
+            if (hasChildren) {
+                html += `<span class="topic-expand" onclick="app.toggleBranch('${fullPath}')">${isExpanded ? '▼' : '▶'}</span>`;
+            } else {
+                html += '<span class="topic-expand-placeholder"></span>';
+            }
+
+            html += `<span class="topic-name" onclick="app.filterByTopic('${fullPath}')">${name}</span>`;
+            html += `<span class="topic-count">${node.count}</span>`;
+            html += '</div>';
+
+            if (hasChildren && isExpanded) {
+                html += this.renderTopicTree(node.children, fullPath, depth + 1);
+            }
+
+            html += '</li>';
+        }
+
+        html += '</ul>';
+        return html;
+    }
+
+    toggleTopicTree() {
+        this.mqttTopicTreeVisible = !this.mqttTopicTreeVisible;
+        const treeContainer = document.getElementById('mqtt-topic-tree');
+        const toggleBtn = document.getElementById('toggle-topic-tree');
+
+        if (this.mqttTopicTreeVisible) {
+            treeContainer.classList.remove('hidden');
+            toggleBtn.classList.add('active');
+            this.updateTopicTreeDisplay();
+        } else {
+            treeContainer.classList.add('hidden');
+            toggleBtn.classList.remove('active');
+        }
+    }
+
+    toggleBranch(path) {
+        if (this.mqttExpandedBranches.has(path)) {
+            this.mqttExpandedBranches.delete(path);
+        } else {
+            this.mqttExpandedBranches.add(path);
+        }
+        this.updateTopicTreeDisplay();
+    }
+
+    filterByTopic(prefix) {
+        if (this.mqttTopicFilter === prefix) {
+            this.mqttTopicFilter = null;
+        } else {
+            this.mqttTopicFilter = prefix;
+        }
+        this.updateTopicTreeDisplay();
+        this.updateMqttDisplay();
+    }
+
+    clearTopicFilter() {
+        this.mqttTopicFilter = null;
+        this.updateTopicTreeDisplay();
+        this.updateMqttDisplay();
+    }
+
+    updateTopicTreeDisplay() {
+        const treeContainer = document.getElementById('mqtt-topic-tree');
+        if (!this.mqttTopicTreeVisible) return;
+
+        const tree = this.buildTopicTree();
+        const totalCount = this.mqttMessages.general.length;
+
+        let html = '<div class="topic-tree-header">';
+        html += `<span class="topic-all ${!this.mqttTopicFilter ? 'selected' : ''}" onclick="app.clearTopicFilter()">● All Topics (${totalCount})</span>`;
+        if (this.mqttTopicFilter) {
+            html += `<button class="topic-clear-btn" onclick="app.clearTopicFilter()" title="Clear filter">✕</button>`;
+        }
+        html += '</div>';
+
+        html += this.renderTopicTree(tree);
+        treeContainer.innerHTML = html;
+
+        this.updateFilterStatus();
+    }
+
+    updateFilterStatus() {
+        const statusEl = document.getElementById('mqtt-filter-status');
+        if (!statusEl) return;
+
+        if (this.mqttTopicFilter) {
+            const filteredCount = this.mqttMessages.general.filter(
+                msg => msg.topic.startsWith(this.mqttTopicFilter)
+            ).length;
+            statusEl.textContent = `📍 ${this.mqttTopicFilter} (${filteredCount} messages)`;
+            statusEl.classList.add('active');
+        } else {
+            statusEl.textContent = '';
+            statusEl.classList.remove('active');
         }
     }
 
