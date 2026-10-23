@@ -6,6 +6,7 @@ const commonPatterns = {
   ipAddress: Joi.string().ip().required(),
   url: Joi.string().uri().optional(),
   timestamp: Joi.string().isoDate().optional(),
+  timeOfDay: Joi.string().pattern(/^([01]\d|2[0-3]):[0-5]\d$/),
   email: Joi.string().email().optional(),
   orientation: Joi.string().valid('landscape', 'portrait', 'inverted_landscape', 'inverted_portrait'),
   transitionEffect: Joi.string().valid('fade', 'slide', 'wipe', 'dissolve'),
@@ -77,7 +78,7 @@ const tvSchemas = {
     ip_address: commonPatterns.ipAddress,
     config: Joi.object({
       transition_effect: commonPatterns.transitionEffect.default('fade'),
-      display_duration: Joi.number().min(1000).max(60000).default(5000),
+      display_duration: Joi.number().min(1000).max(300000).default(5000),
       resolution: Joi.string().pattern(/^\d+x\d+$/).default('1920x1080'),
       orientation: commonPatterns.orientation.default('landscape'),
       layers: layerSchemas.layerConfig.optional(),
@@ -91,7 +92,7 @@ const tvSchemas = {
     ip_address: commonPatterns.ipAddress.optional(),
     config: Joi.object({
       transition_effect: commonPatterns.transitionEffect.optional(),
-      display_duration: Joi.number().min(1000).max(60000).optional(),
+      display_duration: Joi.number().min(1000).max(300000).optional(),
       resolution: Joi.string().pattern(/^\d+x\d+$/).optional(),
       orientation: commonPatterns.orientation.optional(),
       layers: layerSchemas.layerConfig.optional(),
@@ -101,7 +102,7 @@ const tvSchemas = {
 
   configUpdate: Joi.object({
     transition_effect: commonPatterns.transitionEffect.optional(),
-    display_duration: Joi.number().min(1000).max(60000).optional(),
+    display_duration: Joi.number().min(1000).max(300000).optional(),
     resolution: Joi.string().pattern(/^\d+x\d+$/).optional(),
     orientation: commonPatterns.orientation.optional(),
     layers: layerSchemas.layerConfig.optional(),
@@ -140,8 +141,13 @@ const imageSchemas = {
     schedule: Joi.object({
       start_time: commonPatterns.timestamp.allow(null).optional(),
       end_time: commonPatterns.timestamp.allow(null).optional(),
-      days_of_week: Joi.array().items(Joi.number().min(0).max(6)).max(7).optional()
-    }).optional()
+      days_of_week: Joi.array().items(Joi.number().min(0).max(6)).max(7).optional(),
+      // "HH:MM" daily window in the TV's local time; start > end wraps past midnight
+      daily_start: commonPatterns.timeOfDay.allow(null).optional(),
+      daily_end: commonPatterns.timeOfDay.allow(null).optional()
+    }).optional(),
+    // Per-image display time in ms; null falls back to the TV's display_duration
+    display_duration: Joi.number().integer().min(1000).max(300000).allow(null).optional()
   }).min(1), // At least one field required
 
   assignment: Joi.object({

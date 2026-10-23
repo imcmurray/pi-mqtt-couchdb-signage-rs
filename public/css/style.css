@@ -1234,6 +1234,130 @@ body {
     margin-bottom: 1rem;
 }
 
+.schedule-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin: -0.5rem 0 0.75rem;
+}
+
+.schedule-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 1px 7px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    background: #edf2f7;
+    color: #4a5568;
+}
+
+.schedule-badge.active {
+    background: #c6f6d5;
+    color: #22543d;
+}
+
+.schedule-badge.waiting {
+    background: #feebc8;
+    color: #7b341e;
+}
+
+.schedule-badge.ended {
+    background: #e2e8f0;
+    color: #718096;
+    text-decoration: line-through;
+}
+
+.playlist-badge.schedule {
+    top: auto;
+    bottom: 4px;
+    left: 4px;
+    background: rgba(45, 55, 72, 0.85);
+}
+
+.playlist-badge.schedule.waiting {
+    background: #c05621;
+}
+
+.playlist-badge.schedule.ended {
+    background: #718096;
+}
+
+.schedule-image-name {
+    font-weight: 600;
+    margin: 0 0 1rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.schedule-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 0.75rem;
+}
+
+.schedule-row .form-input {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+}
+
+.schedule-days {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+
+.schedule-day {
+    cursor: pointer;
+}
+
+.schedule-day input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.schedule-day span {
+    display: inline-block;
+    min-width: 2.6rem;
+    padding: 0.3rem 0.5rem;
+    border: 1px solid #cbd5e0;
+    border-radius: 6px;
+    text-align: center;
+    font-size: 0.8rem;
+}
+
+.schedule-day input:checked + span {
+    background: #667eea;
+    border-color: #667eea;
+    color: white;
+}
+
+.schedule-day input:focus-visible + span {
+    outline: 2px solid #667eea;
+    outline-offset: 2px;
+}
+
+.form-hint {
+    display: block;
+    margin-top: 0.25rem;
+    font-size: 0.75rem;
+    color: #718096;
+}
+
+@media (max-width: 480px) {
+    .schedule-row {
+        grid-template-columns: 1fr;
+    }
+}
+
+.dark-theme .schedule-day span {
+    border-color: #4a5568;
+}
+
 .image-actions {
     display: flex;
     gap: 0.5rem;

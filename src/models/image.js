@@ -22,8 +22,11 @@ class Image extends BaseModel {
     this.schedule = {
       start_time: data.schedule?.start_time,
       end_time: data.schedule?.end_time,
-      days_of_week: data.schedule?.days_of_week || []
+      days_of_week: data.schedule?.days_of_week || [],
+      daily_start: data.schedule?.daily_start || null,
+      daily_end: data.schedule?.daily_end || null
     };
+    this.display_duration = data.display_duration ?? null; // ms; null = TV default
   }
 
   static getDb() {
@@ -375,6 +378,7 @@ class Image extends BaseModel {
       status: this.status,
       metadata: this.metadata,
       schedule: this.schedule,
+      display_duration: this.display_duration,
       created_at: this.created_at,
       updated_at: this.updated_at
     };

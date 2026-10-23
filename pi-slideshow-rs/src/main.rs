@@ -54,6 +54,7 @@ mod couchdb_client;
 mod layer_manager;
 mod layer_animation;
 mod transition_precompute;
+mod image_schedule;
 
 use transition_precompute::TransitionPrecomputer;
 
@@ -1487,6 +1488,12 @@ async fn run_with_mqtt_control(args: Args, tv_id: String, start_time: std::time:
     let controller_clone = controller.clone();
     tokio::spawn(async move {
         controller_clone.run_periodic_tasks().await;
+    });
+
+    // Re-check image schedules so timed images come and go on their own
+    let controller_clone = controller.clone();
+    tokio::spawn(async move {
+        controller_clone.run_schedule_checks().await;
     });
     
     // Start HTTP server for local control

@@ -9,7 +9,7 @@ const tvSchema = Joi.object({
   ip_address: Joi.string().ip().required(),
   config: Joi.object({
     transition_effect: Joi.string().valid('fade', 'slide', 'wipe', 'dissolve').default('fade'),
-    display_duration: Joi.number().min(1000).max(60000).default(5000),
+    display_duration: Joi.number().min(1000).max(300000).default(5000),
     resolution: Joi.string().default('1920x1080'),
     orientation: Joi.string().valid('landscape', 'portrait', 'inverted_landscape', 'inverted_portrait').default('landscape')
   }).default() // no-arg default fills in the child defaults (default({}) would not)
@@ -17,7 +17,7 @@ const tvSchema = Joi.object({
 
 const configUpdateSchema = Joi.object({
   transition_effect: Joi.string().valid('fade', 'slide', 'wipe', 'dissolve'),
-  display_duration: Joi.number().min(1000).max(60000),
+  display_duration: Joi.number().min(1000).max(300000),
   resolution: Joi.string(),
   orientation: Joi.string().valid('landscape', 'portrait', 'inverted_landscape', 'inverted_portrait')
 });

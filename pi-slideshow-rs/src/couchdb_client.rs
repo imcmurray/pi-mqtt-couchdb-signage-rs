@@ -2,6 +2,7 @@ use couch_rs::{Client, database::Database, document::TypedCouchDocument};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::borrow::Cow;
+use crate::image_schedule::ImageSchedule;
 use crate::mqtt_client::ImageInfo;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,6 +23,10 @@ pub struct CouchImage {
     // TVs this image is assigned to but temporarily left out of the rotation
     #[serde(default)]
     pub disabled_tvs: Vec<String>,
+    #[serde(default)]
+    pub display_duration: Option<u64>,
+    #[serde(default)]
+    pub schedule: Option<ImageSchedule>,
     #[serde(alias = "upload_date")]
     pub created_at: String,
     #[serde(rename = "_attachments", skip_serializing_if = "Option::is_none")]
@@ -312,6 +317,8 @@ impl CouchDbClient {
                         order: image_doc.tv_orders.get(tv_id).copied().unwrap_or(u32::MAX),
                         url: None, // Not needed for CouchDB attachments
                         extension: Some(extension),
+                        display_duration: image_doc.display_duration,
+                        schedule: image_doc.schedule.clone(),
                     };
 
                     images_for_tv.push(image_info);

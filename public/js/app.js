@@ -72,6 +72,15 @@ class DigitalSignageApp {
             this.showTvModal();
         });
 
+        // Image schedule & timing
+        document.getElementById('schedule-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.saveImageSchedule(false);
+        });
+        document.getElementById('schedule-clear').addEventListener('click', () => {
+            this.saveImageSchedule(true);
+        });
+
         // Image assignment
         document.getElementById('confirm-assignment').addEventListener('click', () => {
             this.confirmImageAssignment();
@@ -563,6 +572,7 @@ class DigitalSignageApp {
                         <img src="/api/images/${img._id}/attachment?width=160" alt="${name}" loading="lazy" draggable="false">
                         ${isCurrent ? `<span class="playlist-badge now">${isPaused ? 'Holding' : 'Now showing'}</span>` : ''}
                         ${img.enabled ? '' : '<span class="playlist-badge off">Off</span>'}
+                        ${this.renderPlaylistScheduleBadge(img)}
                         <span class="playlist-check"><i class="fas fa-check"></i></span>
                     </div>
                     <div class="playlist-tile-name">${name}</div>
@@ -794,6 +804,152 @@ class DigitalSignageApp {
         ));
     }
 
+    // Mirrors pi-slideshow-rs ImageSchedule::is_active_at, in the browser's time zone
+    getScheduleState(schedule) {
+        if (!schedule) return 'always';
+        const { start_time, end_time, days_of_week = [], daily_start, daily_end } = schedule;
+        if (!start_time && !end_time && !days_of_week.length && !daily_start && !daily_end) return 'always';
+
+        const now = new Date();
+        if (end_time && now >= new Date(end_time)) return 'ended';
+        if (start_time && now < new Date(start_time)) return 'waiting';
+        if (days_of_week.length && !days_of_week.includes(now.getDay())) return 'waiting';
+
+        const minutes = now.getHours() * 60 + now.getMinutes();
+        const toMinutes = value => value ? Number(value.slice(0, 2)) * 60 + Number(value.slice(3, 5)) : null;
+        const start = toMinutes(daily_start);
+        const end = toMinutes(daily_end);
+        let inWindow = true;
+        if (start !== null && end !== null) {
+            inWindow = start <= end ? minutes >= start && minutes < end : minutes >= start || minutes < end;
+        } else if (start !== null) {
+            inWindow = minutes >= start;
+        } else if (end !== null) {
+            inWindow = minutes < end;
+        }
+        return inWindow ? 'active' : 'waiting';
+    }
+
+    describeSchedule(schedule) {
+        if (!schedule) return '';
+        const parts = [];
+        const days = schedule.days_of_week || [];
+        if (days.length && days.length < 7) {
+            const names = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            const sorted = [...days].sort();
+            const isRun = sorted.every((day, i) => i === 0 || day === sorted[i - 1] + 1);
+            parts.push(isRun && sorted.length > 2
+                ? `${names[sorted[0]]}–${names[sorted[sorted.length - 1]]}`
+                : sorted.map(day => names[day]).join(', '));
+        }
+        if (schedule.daily_start || schedule.daily_end) {
+            parts.push(`${schedule.daily_start || '00:00'}–${schedule.daily_end || '24:00'}`);
+        }
+        const formatDate = value => new Date(value).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+        if (schedule.start_time) parts.push(`from ${formatDate(schedule.start_time)}`);
+        if (schedule.end_time) parts.push(`until ${formatDate(schedule.end_time)}`);
+        return parts.join(' · ');
+    }
+
+    renderScheduleBadges(image) {
+        const state = this.getScheduleState(image.schedule);
+        const badges = [];
+        if (image.display_duration) {
+            badges.push(`<span class="schedule-badge duration"><i class="fas fa-stopwatch"></i> ${image.display_duration / 1000}s</span>`);
+        }
+        if (state !== 'always') {
+            const label = { active: 'Showing now', waiting: 'Not now', ended: 'Ended' }[state];
+            badges.push(`<span class="schedule-badge ${state}" title="${this.escapeHtml(this.describeSchedule(image.schedule))}">
+                <i class="fas fa-calendar-alt"></i> ${label}</span>`);
+        }
+        return badges.length ? `<div class="schedule-badges">${badges.join('')}</div>` : '';
+    }
+
+    renderPlaylistScheduleBadge(img) {
+        const state = this.getScheduleState(img.schedule);
+        const parts = [];
+        if (img.display_duration) parts.push(`${img.display_duration / 1000}s`);
+        if (state === 'waiting') parts.push('Not now');
+        if (state === 'ended') parts.push('Ended');
+        if (!parts.length) return '';
+        const title = this.escapeHtml(this.describeSchedule(img.schedule) || 'Custom display time');
+        return `<span class="playlist-badge schedule ${state}" title="${title}">${parts.join(' · ')}</span>`;
+    }
+
+    // datetime-local wants local "YYYY-MM-DDTHH:MM"
+    toLocalInputValue(iso) {
+        if (!iso) return '';
+        const date = new Date(iso);
+        return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    }
+
+    editImageSchedule(imageId) {
+        const image = this.images.find(img => img._id === imageId);
+        if (!image) return;
+        this.currentImageId = imageId;
+        const schedule = image.schedule || {};
+
+        document.getElementById('schedule-image-name').textContent = image.original_name;
+        document.getElementById('schedule-seconds').value = image.display_duration ? image.display_duration / 1000 : '';
+        document.getElementById('schedule-start').value = this.toLocalInputValue(schedule.start_time);
+        document.getElementById('schedule-end').value = this.toLocalInputValue(schedule.end_time);
+        document.getElementById('schedule-daily-start').value = schedule.daily_start || '';
+        document.getElementById('schedule-daily-end').value = schedule.daily_end || '';
+
+        const days = schedule.days_of_week || [];
+        document.getElementById('schedule-days').innerHTML = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+            .map((name, day) => `
+                <label class="schedule-day">
+                    <input type="checkbox" value="${day}" ${days.includes(day) ? 'checked' : ''}>
+                    <span>${name}</span>
+                </label>`).join('');
+
+        document.getElementById('schedule-modal').classList.add('show');
+    }
+
+    async saveImageSchedule(clear) {
+        const value = id => document.getElementById(id).value;
+        const seconds = parseFloat(value('schedule-seconds'));
+        const body = clear
+            ? {
+                display_duration: null,
+                schedule: { start_time: null, end_time: null, days_of_week: [], daily_start: null, daily_end: null }
+            }
+            : {
+                display_duration: seconds > 0 ? Math.round(seconds * 1000) : null,
+                schedule: {
+                    start_time: value('schedule-start') ? new Date(value('schedule-start')).toISOString() : null,
+                    end_time: value('schedule-end') ? new Date(value('schedule-end')).toISOString() : null,
+                    days_of_week: [...document.querySelectorAll('#schedule-days input:checked')].map(cb => Number(cb.value)),
+                    daily_start: value('schedule-daily-start') || null,
+                    daily_end: value('schedule-daily-end') || null
+                }
+            };
+
+        if (body.schedule.start_time && body.schedule.end_time && body.schedule.end_time <= body.schedule.start_time) {
+            this.showToast('"Until" must be after "Show from"', 'warning');
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/images/${this.currentImageId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || response.statusText);
+
+            this.showToast(clear ? 'Schedule cleared' : 'Schedule saved', 'success');
+            this.closeModal();
+            await this.loadImages();
+            // Refresh any open TV playlists so their badges update
+            await Promise.all([...this.expandedPlaylists].map(tvId => this.loadPlaylist(tvId)));
+        } catch (error) {
+            this.showToast(error.message, 'error');
+        }
+    }
+
     createImageCard(image) {
         const card = document.createElement('div');
         card.className = 'image-card';
@@ -811,9 +967,13 @@ class DigitalSignageApp {
                 <div class="image-name" title="${name}">${name}</div>
                 <div class="image-meta">${this.formatFileSize(image.size)}${dimensions}</div>
                 <div class="image-assignments">${this.escapeHtml(assignedTvsText)}</div>
+                ${this.renderScheduleBadges(image)}
                 <div class="image-actions">
-                    <button class="btn btn-sm btn-primary" onclick="app.assignImage('${image._id}')">
+                    <button class="btn btn-sm btn-primary" title="Assign to TVs" onclick="app.assignImage('${image._id}')">
                         <i class="fas fa-tv"></i>
+                    </button>
+                    <button class="btn btn-sm btn-secondary" title="Schedule &amp; timing" onclick="app.editImageSchedule('${image._id}')">
+                        <i class="fas fa-clock"></i>
                     </button>
                     <button class="btn btn-sm btn-danger" onclick="app.deleteImage('${image._id}')">
                         <i class="fas fa-trash"></i>
@@ -889,7 +1049,7 @@ class DigitalSignageApp {
             document.getElementById('tv-location').value = tv.location;
             document.getElementById('tv-ip').value = tv.ip_address;
             document.getElementById('tv-transition').value = tv.config?.transition_effect || 'fade';
-            document.getElementById('tv-duration').value = tv.config?.display_duration || 5000;
+            document.getElementById('tv-duration').value = (tv.config?.display_duration || 5000) / 1000;
             document.getElementById('tv-orientation').value = tv.config?.orientation || 'landscape';
             form.dataset.tvId = tv._id;
         } else {
@@ -916,7 +1076,7 @@ class DigitalSignageApp {
             ip_address: document.getElementById('tv-ip').value,
             config: {
                 transition_effect: document.getElementById('tv-transition').value,
-                display_duration: parseInt(document.getElementById('tv-duration').value),
+                display_duration: Math.round(parseFloat(document.getElementById('tv-duration').value) * 1000),
                 orientation: orientation,
                 resolution: resolution
             }

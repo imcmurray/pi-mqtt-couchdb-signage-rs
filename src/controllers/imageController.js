@@ -3,6 +3,7 @@ const Image = require('../models/image');
 const TV = require('../models/tv.multilayer');
 const mqttService = require('../services/multilayer.mqttService');
 const Joi = require('joi');
+const { imageSchemas } = require('../middleware/validation');
 
 // Resized thumbnails served via /api/images/:id/attachment?width=N, cached in
 // memory by id + revision (oldest evicted first)
@@ -16,19 +17,6 @@ const playlistEnabledSchema = Joi.object({
     .messages({ 'array.min': 'At least one image must stay in rotation' })
 });
 
-const imageUpdateSchema = Joi.object({
-  original_name: Joi.string(),
-  status: Joi.string().valid('active', 'inactive'),
-  metadata: Joi.object({
-    description: Joi.string().allow(''),
-    tags: Joi.array().items(Joi.string())
-  }),
-  schedule: Joi.object({
-    start_time: Joi.string().isoDate().allow(null),
-    end_time: Joi.string().isoDate().allow(null),
-    days_of_week: Joi.array().items(Joi.number().min(0).max(6))
-  })
-});
 
 const assignmentSchema = Joi.object({
   tv_ids: Joi.array().items(Joi.string()).required(),
@@ -423,12 +411,24 @@ class ImageController {
       return res.status(404).json({ error: 'Image not found' });
     }
 
-    const { error, value } = imageUpdateSchema.validate(req.body);
+    const { error, value } = imageSchemas.update.validate(req.body);
     if (error) {
       return res.status(400).json({ error: error.details[0].message });
     }
 
     const updatedImage = await image.update(value);
+
+    // Schedule and display time are enforced on the TVs, so push the change out
+    if ('schedule' in value || 'display_duration' in value) {
+      for (const tvId of updatedImage.assigned_tvs) {
+        try {
+          await this._updateTvImageList(tvId);
+        } catch (mqttError) {
+          console.error(`Error updating TV ${tvId}:`, mqttError);
+        }
+      }
+    }
+
     res.json(updatedImage);
   }
 
@@ -843,7 +843,9 @@ class ImageController {
       size: img.size,
       metadata: img.metadata,
       order: img.tv_orders[tv._id] ?? null,
-      enabled: img.isEnabledForTv(tv._id)
+      enabled: img.isEnabledForTv(tv._id),
+      display_duration: img.display_duration,
+      schedule: img.schedule
     })));
   }
 
@@ -918,7 +920,9 @@ class ImageController {
         id: img._id,
         path: `api/images/${img._id}/attachment`,
         order: img.getOrderForTv(tvId),
-        extension: img.getFileExtension()
+        extension: img.getFileExtension(),
+        display_duration: img.display_duration,
+        schedule: img.schedule
       }));
 
     console.log(`📋 Updating TV ${tvId} image list: ${imageList.length} images`);

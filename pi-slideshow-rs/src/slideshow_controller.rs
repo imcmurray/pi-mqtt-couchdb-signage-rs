@@ -40,6 +40,8 @@ pub struct SlideshowController {
     config: Arc<RwLock<ControllerConfig>>,
     state: Arc<RwLock<SlideshowState>>,
     pub current_index: Arc<RwLock<usize>>,
+    // Everything assigned to this TV; `images` is the subset whose schedule is active now
+    all_images: Arc<RwLock<Vec<ImageInfo>>>,
     images: Arc<RwLock<Vec<ImageInfo>>>,
     command_receiver: broadcast::Receiver<SlideshowCommand>,
     status_sender: mpsc::Sender<TvStatus>,
@@ -60,6 +62,7 @@ impl Clone for SlideshowController {
             config: self.config.clone(),
             state: self.state.clone(),
             current_index: self.current_index.clone(),
+            all_images: self.all_images.clone(),
             images: self.images.clone(),
             command_receiver: self.command_receiver.resubscribe(),
             status_sender: self.status_sender.clone(),
@@ -90,6 +93,7 @@ impl SlideshowController {
             config: Arc::new(RwLock::new(config)),
             state: Arc::new(RwLock::new(SlideshowState::Stopped)),
             current_index: Arc::new(RwLock::new(0)),
+            all_images: Arc::new(RwLock::new(Vec::new())),
             images: Arc::new(RwLock::new(Vec::new())),
             command_receiver,
             status_sender,
@@ -206,8 +210,7 @@ impl SlideshowController {
 
     async fn scan_local_images(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let config = self.config.read().await;
-        let mut images = self.images.write().await;
-        images.clear();
+        let mut images = Vec::new();
 
         if let Ok(entries) = std::fs::read_dir(&config.image_dir) {
             for entry in entries.flatten() {
@@ -225,6 +228,7 @@ impl SlideshowController {
                             order: images.len() as u32,
                             url: None,
                             extension: path.extension().and_then(|ext| ext.to_str()).map(|s| format!(".{}", s)),
+                            ..Default::default()
                         };
                         images.push(image_info);
                     }
@@ -236,6 +240,8 @@ impl SlideshowController {
         if !images.is_empty() {
             println!("Found {} local images", images.len());
         }
+        drop(config);
+        self.set_all_images(images).await;
         Ok(())
     }
 
@@ -246,11 +252,9 @@ impl SlideshowController {
         if let Some(ref couchdb_client) = *self.couchdb_client.read().await {
             let couchdb_images = couchdb_client.get_images_for_tv(&tv_id).await?;
             
-            // Always clear local images when CouchDB is available - we only show what's assigned
-            let mut local_images = self.images.write().await;
-            let previous_id = Self::current_image_id(&local_images, *self.current_index.read().await);
-            local_images.clear();
-            
+            // Always replace local images when CouchDB is available - we only show what's assigned
+            let mut local_images = Vec::new();
+
             if !couchdb_images.is_empty() {
                 println!("Received {} images from CouchDB for {}", couchdb_images.len(), tv_id);
 
@@ -273,15 +277,11 @@ impl SlideshowController {
                         }
                     }
 
-                    let updated_info = ImageInfo {
-                        id: image_info.id,
+                    local_images.push(ImageInfo {
                         path: local_path.to_string_lossy().to_string(),
-                        order: image_info.order,
                         url: None, // Not needed for CouchDB attachments
-                        extension: image_info.extension,
-                    };
-                    
-                    local_images.push(updated_info);
+                        ..image_info
+                    });
                 }
 
                 local_images.sort_by(|a, b| a.order.cmp(&b.order));
@@ -290,9 +290,8 @@ impl SlideshowController {
                 println!("No images assigned to {} in CouchDB", tv_id);
             }
 
-            let mut current_index = self.current_index.write().await;
-            Self::restore_current_index(&local_images, &mut current_index, previous_id);
-            
+            drop(config);
+            self.set_all_images(local_images).await;
             Ok(())
         } else {
             Err("CouchDB client not initialized".into())
@@ -444,6 +443,53 @@ impl SlideshowController {
         images.get(index).map(|img| img.id.clone())
     }
 
+    /// Replace everything assigned to this TV, then show what's scheduled now
+    async fn set_all_images(&self, all_images: Vec<ImageInfo>) {
+        *self.all_images.write().await = all_images;
+        self.apply_schedules().await;
+    }
+
+    /// Narrow the playlist to images whose schedule is active right now.
+    /// Returns true if the playlist changed.
+    async fn apply_schedules(&self) -> bool {
+        let now = chrono::Local::now().fixed_offset();
+        let active = Self::scheduled_images(&self.all_images.read().await, &now);
+
+        let mut images = self.images.write().await;
+        if *images == active {
+            return false;
+        }
+
+        // Keep showing the same image if it's still in the playlist
+        let mut current_index = self.current_index.write().await;
+        let previous_id = Self::current_image_id(&images, *current_index);
+        *images = active;
+        Self::restore_current_index(&images, &mut current_index, previous_id);
+        true
+    }
+
+    fn scheduled_images(all_images: &[ImageInfo], now: &chrono::DateTime<chrono::FixedOffset>) -> Vec<ImageInfo> {
+        all_images.iter().filter(|img| img.is_scheduled_at(now)).cloned().collect()
+    }
+
+    pub async fn run_schedule_checks(&self) {
+        let mut interval = tokio::time::interval(Duration::from_secs(30));
+        loop {
+            interval.tick().await;
+            if !self.apply_schedules().await {
+                continue;
+            }
+
+            let count = self.images.read().await.len();
+            println!("🗓️ Schedule changed the playlist: {} image(s) showing now", count);
+            // A playlist that was empty (stopped) starts playing once something is scheduled
+            if count > 0 && matches!(*self.state.read().await, SlideshowState::Stopped) {
+                *self.state.write().await = SlideshowState::Playing;
+            }
+            self.send_status_update().await;
+        }
+    }
+
     /// After the playlist is replaced, point back at the image that was showing
     /// (so a reorder or newly enabled image doesn't swap out a held image).
     fn restore_current_index(images: &[ImageInfo], current_index: &mut usize, previous_id: Option<String>) {
@@ -456,10 +502,8 @@ impl SlideshowController {
 
     async fn update_images(&self, new_images: Vec<ImageInfo>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let config = self.config.read().await;
-        let mut images = self.images.write().await;
-        let previous_id = Self::current_image_id(&images, *self.current_index.read().await);
 
-        println!("Updating images: received {} new images (previous count: {})", new_images.len(), images.len());
+        println!("Updating images: received {} new images", new_images.len());
 
         // Download new images from CouchDB
         if let Some(ref couchdb_client) = *self.couchdb_client.read().await {
@@ -495,24 +539,19 @@ impl SlideshowController {
             let local_filename = format!("{}.{}", image_info.id, original_ext);
             let local_path = Path::new(&config.image_dir).join(&local_filename);
             
-            let updated_info = ImageInfo {
-                id: image_info.id,
+            updated_images.push(ImageInfo {
                 path: local_path.to_string_lossy().to_string(),
-                order: image_info.order,
                 url: None, // Not needed for CouchDB attachments
-                extension: image_info.extension,
-            };
-            updated_images.push(updated_info);
+                ..image_info
+            });
         }
-        
-        *images = updated_images;
-        images.sort_by(|a, b| a.order.cmp(&b.order));
 
-        // Keep showing the same image if it's still in the playlist
-        let mut current_index = self.current_index.write().await;
-        Self::restore_current_index(&images, &mut current_index, previous_id);
+        updated_images.sort_by(|a, b| a.order.cmp(&b.order));
+        drop(config);
+        self.set_all_images(updated_images).await;
 
         // Update state based on image availability
+        let images = self.images.read().await;
         if images.is_empty() {
             *self.state.write().await = SlideshowState::Stopped;
             println!("Image list updated: 0 images - slideshow stopped");
@@ -619,8 +658,17 @@ impl SlideshowController {
             _ => last_change,
         };
 
-        let config = self.config.read().await;
-        since.elapsed() >= config.display_duration
+        since.elapsed() >= self.current_display_duration().await
+    }
+
+    /// The showing image's own display time, falling back to the TV's
+    async fn current_display_duration(&self) -> Duration {
+        let index = *self.current_index.read().await;
+        let image_duration = self.images.read().await.get(index).and_then(|img| img.display_duration);
+        match image_duration {
+            Some(ms) => Duration::from_millis(ms),
+            None => self.config.read().await.display_duration,
+        }
     }
 
 
@@ -1036,8 +1084,22 @@ mod tests {
                 order: order as u32,
                 url: None,
                 extension: Some(".png".to_string()),
+                ..Default::default()
             })
             .collect()
+    }
+
+    #[test]
+    fn scheduled_images_drops_inactive_ones() {
+        use crate::image_schedule::ImageSchedule;
+        let mut images = playlist(&["always", "expired", "weekend"]);
+        images[1].schedule = Some(ImageSchedule { end_time: Some("2026-01-01T00:00:00Z".into()), ..Default::default() });
+        images[2].schedule = Some(ImageSchedule { days_of_week: vec![0, 6], ..Default::default() });
+
+        // Thursday
+        let now = chrono::DateTime::parse_from_rfc3339("2026-10-22T12:00:00-06:00").unwrap();
+        let ids: Vec<_> = SlideshowController::scheduled_images(&images, &now).into_iter().map(|img| img.id).collect();
+        assert_eq!(ids, vec!["always"]);
     }
 
     #[test]

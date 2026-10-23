@@ -1,4 +1,5 @@
 use rumqttc::{AsyncClient, Event, Incoming, MqttOptions, QoS};
+use crate::image_schedule::ImageSchedule;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Duration;
@@ -92,13 +93,24 @@ pub enum SlideshowCommand {
     SyncAlerts { alerts: Vec<AlertData> },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ImageInfo {
     pub id: String,
     pub path: String,
     pub order: u32,
     pub url: Option<String>, // URL to download image from management server
     pub extension: Option<String>, // File extension from server
+    // Per-image display time in ms; None uses the TV's display_duration
+    #[serde(default)]
+    pub display_duration: Option<u64>,
+    #[serde(default)]
+    pub schedule: Option<ImageSchedule>,
+}
+
+impl ImageInfo {
+    pub fn is_scheduled_at(&self, now: &chrono::DateTime<chrono::FixedOffset>) -> bool {
+        self.schedule.as_ref().map_or(true, |schedule| schedule.is_active_at(now))
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

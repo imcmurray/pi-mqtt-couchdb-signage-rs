@@ -752,8 +752,8 @@
                     </select>
                 </div>
                 <div class="form-group">
-                    <label for="tv-duration">Display Duration (ms)</label>
-                    <input type="number" id="tv-duration" class="form-input" min="1000" max="60000" value="5000">
+                    <label for="tv-duration">Seconds per image</label>
+                    <input type="number" id="tv-duration" class="form-input" min="1" max="300" value="5">
                 </div>
                 <div class="form-group">
                     <label for="tv-orientation">Display Orientation</label>
@@ -788,6 +788,56 @@
                 <button type="button" class="btn btn-secondary modal-cancel">Cancel</button>
                 <button type="button" class="btn btn-primary" id="confirm-assignment">Assign</button>
             </div>
+        </div>
+    </div>
+
+    <div id="schedule-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Schedule &amp; timing</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <form id="schedule-form">
+                <div class="modal-body">
+                    <p class="schedule-image-name" id="schedule-image-name"></p>
+                    <div class="form-group">
+                        <label for="schedule-seconds">Seconds on screen</label>
+                        <input type="number" id="schedule-seconds" class="form-input" min="1" max="300" placeholder="TV default">
+                        <small class="form-hint">Leave blank to use each TV's own setting.</small>
+                    </div>
+                    <div class="schedule-row">
+                        <div class="form-group">
+                            <label for="schedule-start">Show from</label>
+                            <input type="datetime-local" id="schedule-start" class="form-input">
+                        </div>
+                        <div class="form-group">
+                            <label for="schedule-end">Until</label>
+                            <input type="datetime-local" id="schedule-end" class="form-input">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Days</label>
+                        <div class="schedule-days" id="schedule-days"></div>
+                        <small class="form-hint">None ticked means every day.</small>
+                    </div>
+                    <div class="schedule-row">
+                        <div class="form-group">
+                            <label for="schedule-daily-start">Daily from</label>
+                            <input type="time" id="schedule-daily-start" class="form-input">
+                        </div>
+                        <div class="form-group">
+                            <label for="schedule-daily-end">Daily until</label>
+                            <input type="time" id="schedule-daily-end" class="form-input">
+                        </div>
+                    </div>
+                    <small class="form-hint">Times are the TV's local time. A start later than the end runs overnight.</small>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" id="schedule-clear">Clear schedule</button>
+                    <button type="button" class="btn btn-secondary modal-cancel">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save</button>
+                </div>
+            </form>
         </div>
     </div>
 
