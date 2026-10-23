@@ -1,5 +1,6 @@
 const TV = require('../models/tv.multilayer');
 const Image = require('../models/image');
+const mqttService = require('../services/multilayer.mqttService');
 
 class DashboardController {
   /**
@@ -74,7 +75,7 @@ class DashboardController {
       name: tv.name,
       location: tv.location,
       status: tv.status,
-      current_image_id: tv.current_image,
+      current_image_id: mqttService.applyCurrentImage(tv).current_image,
       last_heartbeat: tv.last_heartbeat,
       assigned_images_count: allImages.filter(img => img.assigned_tvs.includes(tv._id)).length
     }));

@@ -148,6 +148,9 @@ class DigitalSignageApp {
             // Update current image when Pi changes images
             if (topic.includes('/image/current')) {
                 this.updateTvCurrentImage(topic, payload);
+            } else if (topic.includes('/status') && payload.current_image) {
+                // Manual next/previous only reports the new image in the status message
+                this.updateTvCurrentImage(topic, { image_id: payload.current_image });
             }
         }
     }
@@ -174,6 +177,8 @@ class DigitalSignageApp {
                 this.loadTvs(),
                 this.loadImages()
             ]);
+            // Re-render once images are loaded so "Currently Playing" can resolve its image
+            this.updateTvOverview(this.tvs);
             this.startLastSeenTimer();
         } catch (error) {
             console.error('Error loading initial data:', error);

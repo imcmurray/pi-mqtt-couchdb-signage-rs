@@ -8,6 +8,8 @@ class MultilayerMqttService extends EventEmitter {
     this.client = null;
     this.connected = false;
     this.reconnectAttempts = 0;
+    // Latest image each TV reported over MQTT, keyed by TV doc _id ("tv_<id>")
+    this.currentImages = new Map();
   }
 
   async connect() {
@@ -80,10 +82,30 @@ class MultilayerMqttService extends EventEmitter {
   handleMessage(topic, message) {
     try {
       const payload = JSON.parse(message.toString());
+      this.trackCurrentImage(topic, payload);
       this.emit('message', { topic, payload });
     } catch (error) {
       console.error('Error parsing MQTT message:', error);
     }
+  }
+
+  // The Pi publishes image/current on auto-advance without writing CouchDB,
+  // so the stored current_image goes stale; remember what it last reported.
+  trackCurrentImage(topic, payload) {
+    const match = topic.match(/\/tv\/([^/]+)\/(?:image\/current|status)$/);
+    const imageId = match && (payload.image_id || payload.current_image);
+    if (imageId) {
+      this.currentImages.set(`tv_${match[1]}`, imageId);
+    }
+  }
+
+  // Overlay the live current image onto a TV loaded from CouchDB
+  applyCurrentImage(tv) {
+    const imageId = this.currentImages.get(tv._id);
+    if (imageId) {
+      tv.current_image = imageId;
+    }
+    return tv;
   }
 
   // Layer control methods
