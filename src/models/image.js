@@ -11,6 +11,7 @@ class Image extends BaseModel {
     this.mimetype = data.mimetype;
     this.assigned_tvs = data.assigned_tvs || []; // Array of TV IDs this image is assigned to
     this.tv_orders = data.tv_orders || {}; // Object mapping TV ID to order position
+    this.disabled_tvs = data.disabled_tvs || []; // Assigned TVs that skip this image in rotation
     this.status = data.status || 'active';
     this.metadata = {
       width: data.metadata?.width,
@@ -67,7 +68,7 @@ class Image extends BaseModel {
       const images = result.rows
         .map(row => new Image(row.value))
         .filter(img => img.status === 'active')
-        .sort((a, b) => (a.tv_orders[tvId] || 0) - (b.tv_orders[tvId] || 0));
+        .sort((a, b) => a.getOrderForTv(tvId) - b.getOrderForTv(tvId));
       return images;
     } catch (error) {
       console.error('Error finding images by TV ID:', error);
@@ -159,6 +160,15 @@ class Image extends BaseModel {
     }
   }
 
+  // Playlist position for a TV; unordered images go last (matches pi-slideshow-rs, u32::MAX)
+  getOrderForTv(tvId) {
+    return this.tv_orders[tvId] ?? 4294967295;
+  }
+
+  isEnabledForTv(tvId) {
+    return !this.disabled_tvs.includes(tvId);
+  }
+
   getFileExtension() {
     const ext = this.original_name ? require('path').extname(this.original_name) : '.png';
     return ext || '.png';
@@ -240,7 +250,15 @@ class Image extends BaseModel {
     const assigned_tvs = this.assigned_tvs.filter(id => id !== tvId);
     const tv_orders = { ...this.tv_orders };
     delete tv_orders[tvId];
-    return this.update({ assigned_tvs, tv_orders });
+    const disabled_tvs = this.disabled_tvs.filter(id => id !== tvId);
+    return this.update({ assigned_tvs, tv_orders, disabled_tvs });
+  }
+
+  async setEnabledForTv(tvId, enabled) {
+    const disabled_tvs = enabled
+      ? this.disabled_tvs.filter(id => id !== tvId)
+      : [...new Set([...this.disabled_tvs, tvId])];
+    return this.update({ disabled_tvs });
   }
 
   async bulkAssignToTvs(tvIds, startOrder = 0) {
@@ -355,6 +373,7 @@ class Image extends BaseModel {
       mimetype: this.mimetype,
       assigned_tvs: this.assigned_tvs,
       tv_orders: this.tv_orders,
+      disabled_tvs: this.disabled_tvs,
       status: this.status,
       metadata: this.metadata,
       schedule: this.schedule,

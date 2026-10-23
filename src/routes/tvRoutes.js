@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Joi = require('joi');
 const tvController = require('../controllers/tvController');
+const imageController = require('../controllers/imageController');
 const { validate, tvSchemas, paramSchemas, querySchemas, layerSchemas } = require('../middleware/validation');
 const { registrationLimiter, strictLimiter, adminAuth, tvTokenAuth } = require('../middleware/security');
 
@@ -96,8 +97,44 @@ router.post('/:id/control/:action',
   }
 );
 
+// GET /api/tvs/:id/playlist - Assigned images with per-TV enabled flag
+router.get('/:id/playlist',
+  validate(paramSchemas.id, 'params'),
+  async (req, res, next) => {
+    try {
+      await imageController.getTvPlaylist(req, res);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// PUT /api/tvs/:id/playlist - Choose which assigned images stay in rotation
+router.put('/:id/playlist',
+  validate(paramSchemas.id, 'params'),
+  async (req, res, next) => {
+    try {
+      await imageController.setTvPlaylistEnabled(req, res);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// POST /api/tvs/:id/playlist/:imageId/show - Jump to an image (body.hold pauses on it)
+router.post('/:id/playlist/:imageId/show',
+  validate(Joi.object({ id: Joi.string().min(1).max(100).required(), imageId: Joi.string().min(1).max(100).required() }), 'params'),
+  async (req, res, next) => {
+    try {
+      await imageController.showTvImage(req, res);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 // PUT /api/tvs/:id/config - Update TV configuration
-router.put('/:id/config', 
+router.put('/:id/config',
   validate(paramSchemas.id, 'params'),
   validate(tvSchemas.configUpdate, 'body'),
   async (req, res, next) => {

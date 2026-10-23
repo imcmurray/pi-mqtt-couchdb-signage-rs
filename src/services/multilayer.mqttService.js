@@ -297,6 +297,11 @@ class MultilayerMqttService extends EventEmitter {
     return this.sendCommand(tvId, 'reboot');
   }
 
+  // Jump to an image in the TV's playlist; hold pauses on it
+  async showImage(tvId, imageId, hold = false) {
+    return this.sendCommand(tvId, 'show_image', { image_id: imageId, hold });
+  }
+
   // Layer Management Commands
   async updateLayerConfig(tvId, layerConfig) {
     console.log(`🔄 SENDING LAYER CONFIG UPDATE to TV ${tvId}:`, layerConfig);

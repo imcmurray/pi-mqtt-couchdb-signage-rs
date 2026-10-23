@@ -1,4 +1,13 @@
 // Digital Signage Management App
+
+// Shown in place of an image preview that fails to load
+const IMAGE_PLACEHOLDER = 'data:image/svg+xml,' + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="150" viewBox="0 0 200 150">' +
+    '<rect width="200" height="150" fill="#f8f9fa"/>' +
+    '<text x="100" y="75" text-anchor="middle" fill="#666" font-family="Arial" font-size="12">No Preview</text>' +
+    '</svg>'
+);
+
 class DigitalSignageApp {
     constructor() {
         this.ws = null;
@@ -6,6 +15,10 @@ class DigitalSignageApp {
         this.tvs = [];
         this.images = [];
         this.currentImageId = null;
+        // TV Management "Images" section; kept here because the TV list re-renders on every heartbeat
+        this.expandedPlaylists = new Set();
+        this.playlists = {};           // tvId -> [{ _id, original_name, enabled, ... }]
+        this.playlistSelection = {};   // tvId -> Set of selected image ids
         this.darkTheme = localStorage.getItem('darkTheme') === 'true';
         this.mqttMessages = {
             general: [],
@@ -229,6 +242,10 @@ class DigitalSignageApp {
             const response = await fetch('/api/images');
             this.images = await response.json();
             this.updateImageGrid();
+
+            // Assignments may have changed; refresh any open Images sections
+            this.playlists = {};
+            this.expandedPlaylists.forEach(tvId => this.loadPlaylist(tvId));
         } catch (error) {
             console.error('Error loading images:', error);
         }
@@ -262,7 +279,7 @@ class DigitalSignageApp {
         const currentImageId = tv.current_image_id || tv.current_image;
         const currentImage = currentImageId ? this.images.find(img => img._id === currentImageId) : null;
         const thumbnailHtml = currentImage ? 
-            `<img src="/api/images/${currentImage._id}/attachment" alt="${currentImage.original_name}" class="tv-current-thumbnail">` :
+            `<img src="/api/images/${currentImage._id}/attachment?width=160" alt="${this.escapeHtml(currentImage.original_name)}" class="tv-current-thumbnail">` :
             `<div class="tv-no-image"><i class="fas fa-image"></i></div>`;
         
         card.innerHTML = `
@@ -281,7 +298,7 @@ class DigitalSignageApp {
                     </div>
                     <div class="tv-current-info">
                         <div class="tv-current-label">Currently Playing:</div>
-                        <div class="tv-current-name">${currentImage ? currentImage.original_name : 'None'}</div>
+                        <div class="tv-current-name" title="${currentImage ? this.escapeHtml(currentImage.original_name) : ''}">${currentImage ? this.escapeHtml(currentImage.original_name) : 'None'}</div>
                     </div>
                 </div>
                 <div class="tv-system-metrics" id="system-metrics-${tv._id}">
@@ -358,7 +375,7 @@ class DigitalSignageApp {
         const currentImageId = tv.current_image_id || tv.current_image;
         const currentImage = currentImageId ? this.images.find(img => img._id === currentImageId) : null;
         const thumbnailHtml = currentImage ?
-            `<img src="/api/images/${currentImage._id}/attachment" alt="${currentImage.original_name}" class="tv-thumbnail">` :
+            `<img src="/api/images/${currentImage._id}/attachment?width=160" alt="${this.escapeHtml(currentImage.original_name)}" class="tv-thumbnail">` :
             `<div class="tv-thumbnail-placeholder"><i class="fas fa-image"></i><span>No Image</span></div>`;
 
         const tvIdShort = tv._id.replace('tv_', '');
@@ -402,7 +419,7 @@ class DigitalSignageApp {
                     <div class="tv-display-info">
                         <div class="tv-current-image" id="tv-current-${tv._id}">
                             <span class="detail-label">Currently Showing</span>
-                            <span class="detail-value">${currentImage ? currentImage.original_name : 'None'}</span>
+                            <span class="detail-value" title="${currentImage ? this.escapeHtml(currentImage.original_name) : ''}">${currentImage ? this.escapeHtml(currentImage.original_name) : 'None'}</span>
                         </div>
                         <div class="tv-id-row">
                             <span class="detail-label">TV ID</span>
@@ -461,6 +478,8 @@ class DigitalSignageApp {
                     </div>
                 </div>
 
+                ${this.renderTvPlaylist(tv)}
+
                 <div class="tv-actions">
                     <button class="btn btn-sm btn-primary" onclick="app.editTv('${tv._id}')">
                         <i class="fas fa-edit"></i> Edit
@@ -484,11 +503,191 @@ class DigitalSignageApp {
         return item;
     }
 
-    updateImageGrid(filteredImages = null) {
+    // Expandable "Images" section on a TV Management card
+    renderTvPlaylist(tv) {
+        const expanded = this.expandedPlaylists.has(tv._id);
+        const playlist = this.playlists[tv._id];
+        const summary = playlist
+            ? `${playlist.filter(img => img.enabled).length} of ${playlist.length} in rotation`
+            : '';
+
+        return `
+            <div class="tv-playlist">
+                <button class="tv-playlist-toggle" onclick="app.togglePlaylist('${tv._id}')">
+                    <i class="fas fa-chevron-${expanded ? 'down' : 'right'}"></i>
+                    <span>Images</span>
+                    <span class="tv-playlist-summary">${summary}</span>
+                </button>
+                ${expanded ? this.renderTvPlaylistBody(tv, playlist) : ''}
+            </div>
+        `;
+    }
+
+    renderTvPlaylistBody(tv, playlist) {
+        if (!playlist) {
+            return '<div class="tv-playlist-body"><div class="tv-playlist-empty">Loading images…</div></div>';
+        }
+        if (playlist.length === 0) {
+            return '<div class="tv-playlist-body"><div class="tv-playlist-empty">No images assigned to this TV</div></div>';
+        }
+
+        const selected = this.playlistSelection[tv._id] || new Set();
+        const allEnabled = playlist.every(img => img.enabled);
+        const isPaused = tv.slideshow_state === 'paused';
+
+        const tiles = playlist.map(img => {
+            const isCurrent = img._id === tv.current_image;
+            const name = this.escapeHtml(img.original_name);
+            const classes = ['playlist-tile',
+                img.enabled ? '' : 'disabled',
+                selected.has(img._id) ? 'selected' : '',
+                isCurrent ? 'current' : ''].filter(Boolean).join(' ');
+
+            return `
+                <div class="${classes}" onclick="app.togglePlaylistSelection('${tv._id}', '${img._id}')" title="${name}">
+                    <div class="playlist-thumb">
+                        <img src="/api/images/${img._id}/attachment?width=160" alt="${name}" loading="lazy">
+                        ${isCurrent ? `<span class="playlist-badge now">${isPaused ? 'Holding' : 'Now showing'}</span>` : ''}
+                        ${img.enabled ? '' : '<span class="playlist-badge off">Off</span>'}
+                        <span class="playlist-check"><i class="fas fa-check"></i></span>
+                    </div>
+                    <div class="playlist-tile-name">${name}</div>
+                    <div class="playlist-tile-actions">
+                        <button class="btn btn-sm ${img.enabled ? 'btn-secondary' : 'btn-success'}"
+                                title="${img.enabled ? 'Take out of rotation' : 'Put back in rotation'}"
+                                onclick="event.stopPropagation(); app.setPlaylistImageEnabled('${tv._id}', '${img._id}', ${!img.enabled})">
+                            <i class="fas fa-eye${img.enabled ? '' : '-slash'}"></i>
+                        </button>
+                        <button class="btn btn-sm btn-primary" title="Show now" ${img.enabled ? '' : 'disabled'}
+                                onclick="event.stopPropagation(); app.showPlaylistImage('${tv._id}', '${img._id}', false)">
+                            <i class="fas fa-play"></i>
+                        </button>
+                        <button class="btn btn-sm btn-warning" title="Show and hold (pause on it)" ${img.enabled ? '' : 'disabled'}
+                                onclick="event.stopPropagation(); app.showPlaylistImage('${tv._id}', '${img._id}', true)">
+                            <i class="fas fa-thumbtack"></i>
+                        </button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        return `
+            <div class="tv-playlist-body">
+                <div class="tv-playlist-toolbar">
+                    <span class="tv-playlist-hint">Click images to select them</span>
+                    <button class="btn btn-sm btn-primary" ${selected.size ? '' : 'disabled'}
+                            onclick="app.cycleOnlySelected('${tv._id}')">
+                        <i class="fas fa-sync-alt"></i> Cycle only selected (${selected.size})
+                    </button>
+                    <button class="btn btn-sm btn-secondary" ${allEnabled ? 'disabled' : ''}
+                            onclick="app.enableAllPlaylist('${tv._id}')">
+                        <i class="fas fa-eye"></i> Enable all
+                    </button>
+                    ${isPaused ? `
+                        <button class="btn btn-sm btn-success" onclick="app.controlTv('${tv._id}', 'play')">
+                            <i class="fas fa-play"></i> Resume rotation
+                        </button>` : ''}
+                </div>
+                <div class="tv-playlist-grid">${tiles}</div>
+            </div>
+        `;
+    }
+
+    async togglePlaylist(tvId) {
+        if (this.expandedPlaylists.has(tvId)) {
+            this.expandedPlaylists.delete(tvId);
+            this.updateTvList();
+            return;
+        }
+
+        this.expandedPlaylists.add(tvId);
+        this.updateTvList();
+        await this.loadPlaylist(tvId);
+    }
+
+    async loadPlaylist(tvId) {
+        try {
+            const response = await fetch(`/api/tvs/${tvId}/playlist`);
+            if (!response.ok) throw new Error((await response.json()).error || response.statusText);
+            this.playlists[tvId] = await response.json();
+        } catch (error) {
+            console.error('Error loading playlist:', error);
+            this.showToast(`Couldn't load images: ${error.message}`, 'error');
+            this.playlists[tvId] = this.playlists[tvId] || [];
+        }
+        this.updateTvList();
+    }
+
+    togglePlaylistSelection(tvId, imageId) {
+        const selected = this.playlistSelection[tvId] || (this.playlistSelection[tvId] = new Set());
+        if (selected.has(imageId)) {
+            selected.delete(imageId);
+        } else {
+            selected.add(imageId);
+        }
+        this.updateTvList();
+    }
+
+    async savePlaylistEnabled(tvId, enabledIds, successMessage) {
+        try {
+            const response = await fetch(`/api/tvs/${tvId}/playlist`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled_ids: enabledIds })
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || response.statusText);
+
+            this.showToast(successMessage, 'success');
+            delete this.playlistSelection[tvId];
+            await this.loadPlaylist(tvId);
+        } catch (error) {
+            this.showToast(error.message, 'error');
+        }
+    }
+
+    setPlaylistImageEnabled(tvId, imageId, enabled) {
+        const enabledIds = (this.playlists[tvId] || [])
+            .filter(img => (img._id === imageId ? enabled : img.enabled))
+            .map(img => img._id);
+        return this.savePlaylistEnabled(tvId, enabledIds, enabled ? 'Image back in rotation' : 'Image taken out of rotation');
+    }
+
+    cycleOnlySelected(tvId) {
+        const selected = [...(this.playlistSelection[tvId] || [])];
+        return this.savePlaylistEnabled(tvId, selected, `Now cycling ${selected.length} selected image(s)`);
+    }
+
+    enableAllPlaylist(tvId) {
+        const allIds = (this.playlists[tvId] || []).map(img => img._id);
+        return this.savePlaylistEnabled(tvId, allIds, 'All images back in rotation');
+    }
+
+    async showPlaylistImage(tvId, imageId, hold) {
+        try {
+            const response = await fetch(`/api/tvs/${tvId}/playlist/${imageId}/show`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ hold })
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || response.statusText);
+            this.showToast(result.message, 'success');
+        } catch (error) {
+            this.showToast(error.message, 'error');
+        }
+    }
+
+    updateImageGrid() {
         const grid = document.getElementById('image-grid');
         grid.innerHTML = '';
 
-        const imagesToShow = filteredImages || this.images;
+        const imagesToShow = this.getFilteredImages();
+
+        if (imagesToShow.length === 0) {
+            grid.innerHTML = `<div class="image-grid-empty">${this.images.length ? 'No images match the current filter' : 'No images uploaded yet'}</div>`;
+            return;
+        }
 
         imagesToShow.forEach(image => {
             const card = this.createImageCard(image);
@@ -496,21 +695,29 @@ class DigitalSignageApp {
         });
     }
 
+    escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, ch => (
+            { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]
+        ));
+    }
+
     createImageCard(image) {
         const card = document.createElement('div');
         card.className = 'image-card';
-        
-        const assignedTvsText = image.assigned_tvs.length > 0 
-            ? `Assigned to ${image.assigned_tvs.length} TV(s)`
+
+        const tvNames = image.assigned_tvs.map(tvId => this.tvs.find(tv => tv._id === tvId)?.name || tvId);
+        const assignedTvsText = tvNames.length > 0
+            ? `Assigned to ${tvNames.join(', ')}`
             : 'Not assigned';
-        
+        const name = this.escapeHtml(image.original_name);
+        const dimensions = image.metadata?.width ? ` • ${image.metadata.width}x${image.metadata.height}` : '';
+
         card.innerHTML = `
-            <img src="/api/images/${image._id}/attachment" alt="${image.original_name}" class="image-preview" 
-                 onerror="this.src='data:image/svg+xml,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"200\" height=\"150\" viewBox=\"0 0 200 150\"><rect width=\"200\" height=\"150\" fill=\"%23f8f9fa\"/><text x=\"100\" y=\"75\" text-anchor=\"middle\" fill=\"%23666\" font-family=\"Arial\" font-size=\"12\">No Preview</text></svg>'">
+            <img src="/api/images/${image._id}/attachment?width=400" alt="${name}" class="image-preview" loading="lazy" decoding="async">
             <div class="image-info">
-                <div class="image-name">${image.original_name}</div>
-                <div class="image-meta">${this.formatFileSize(image.size)} • ${image.metadata.width}x${image.metadata.height}</div>
-                <div class="image-assignments">${assignedTvsText}</div>
+                <div class="image-name" title="${name}">${name}</div>
+                <div class="image-meta">${this.formatFileSize(image.size)}${dimensions}</div>
+                <div class="image-assignments">${this.escapeHtml(assignedTvsText)}</div>
                 <div class="image-actions">
                     <button class="btn btn-sm btn-primary" onclick="app.assignImage('${image._id}')">
                         <i class="fas fa-tv"></i>
@@ -521,7 +728,14 @@ class DigitalSignageApp {
                 </div>
             </div>
         `;
-        
+
+        // Swap in a placeholder if the image can't load (set here, not inline,
+        // so the SVG's quotes can't break the <img> tag)
+        const preview = card.querySelector('.image-preview');
+        preview.addEventListener('error', () => {
+            preview.src = IMAGE_PLACEHOLDER;
+        }, { once: true });
+
         return card;
     }
 
@@ -806,28 +1020,25 @@ class DigitalSignageApp {
         }
     }
 
-    searchImages(query) {
-        if (!query.trim()) {
-            this.updateImageGrid();
-            return;
-        }
-
-        const filtered = this.images.filter(image => 
-            image.original_name.toLowerCase().includes(query.toLowerCase()) ||
-            (image.metadata?.description?.toLowerCase().includes(query.toLowerCase()) || false)
-        );
-        
-        this.updateImageGrid(filtered);
+    searchImages() {
+        this.updateImageGrid();
     }
 
-    filterImagesByTv(tvId) {
-        if (!tvId) {
-            this.updateImageGrid();
-            return;
-        }
+    filterImagesByTv() {
+        this.updateImageGrid();
+    }
 
-        const filtered = this.images.filter(image => image.assigned_tvs.includes(tvId));
-        this.updateImageGrid(filtered);
+    // Images matching both the search box and the TV filter
+    getFilteredImages() {
+        const query = (document.getElementById('search-images')?.value || '').trim().toLowerCase();
+        const tvId = document.getElementById('filter-tv')?.value || '';
+
+        return this.images.filter(image =>
+            (!tvId || image.assigned_tvs.includes(tvId)) &&
+            (!query ||
+                image.original_name.toLowerCase().includes(query) ||
+                (image.metadata?.description || '').toLowerCase().includes(query))
+        );
     }
 
     // Upload functionality
@@ -1200,8 +1411,8 @@ class DigitalSignageApp {
             if (currentImageElement) {
                 const currentImage = payload.image_id ? this.images.find(img => img._id === payload.image_id) : null;
                 currentImageElement.innerHTML = `
-                    <span class="detail-label">Current Image:</span>
-                    <span class="detail-value">${currentImage ? currentImage.original_name : 'None'}</span>
+                    <span class="detail-label">Currently Showing</span>
+                    <span class="detail-value" title="${currentImage ? this.escapeHtml(currentImage.original_name) : ''}">${currentImage ? this.escapeHtml(currentImage.original_name) : 'None'}</span>
                 `;
             }
             
@@ -1210,12 +1421,17 @@ class DigitalSignageApp {
             if (thumbnailContainer) {
                 const currentImage = payload.image_id ? this.images.find(img => img._id === payload.image_id) : null;
                 thumbnailContainer.innerHTML = currentImage ? 
-                    `<img src="/api/images/${currentImage._id}/attachment" alt="${currentImage.original_name}" class="tv-thumbnail">` :
+                    `<img src="/api/images/${currentImage._id}/attachment?width=160" alt="${this.escapeHtml(currentImage.original_name)}" class="tv-thumbnail">` :
                     `<div class="tv-thumbnail-placeholder"><i class="fas fa-image"></i><span>No Image</span></div>`;
             }
             
             // Also refresh dashboard overview
             this.updateTvOverview(this.tvs);
+
+            // Move the "Now showing" badge in an open Images section
+            if (this.expandedPlaylists.has(tv._id)) {
+                this.updateTvList();
+            }
         }
     }
 

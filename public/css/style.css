@@ -441,6 +441,14 @@ body {
     display: flex;
     flex-direction: column;
     gap: 0.125rem;
+    min-width: 0;
+}
+
+/* Long filenames truncate (full name in the tooltip) instead of widening the card */
+.tv-current-image .detail-value {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .tv-list-item {
@@ -857,18 +865,31 @@ body {
 .system-info-item .metric-icon {
     width: 1rem;
     text-align: center;
-    color: #adb5bd;
+    color: #a0aec0;
 }
 
 .system-info-item .detail-label {
     flex: 1;
-    color: #dee2e6;
+    color: #718096;
 }
 
 .system-info-item .detail-value {
     font-weight: 500;
     min-width: 4rem;
     text-align: right;
+    color: #2d3748;
+}
+
+/* The light-on-dark colours suit only the dark panel */
+.dark-theme .system-info-item .metric-icon {
+    color: #adb5bd;
+}
+
+.dark-theme .system-info-item .detail-label {
+    color: #dee2e6;
+}
+
+.dark-theme .system-info-item .detail-value {
     color: #f8f9fa;
 }
 
@@ -911,6 +932,12 @@ body {
     align-items: center;
 }
 
+/* Fill the card so its width never depends on text length (e.g. the current filename) */
+.tv-list-item > .tv-card-layout {
+    flex: 1;
+    min-width: 0;
+}
+
 .tv-info {
     flex: 1;
 }
@@ -933,11 +960,206 @@ body {
     align-items: center;
 }
 
+/* TV Management: expandable per-TV "Images" section */
+.tv-playlist {
+    border-top: 1px solid #e2e8f0;
+    margin: 0.75rem 0;
+    padding-top: 0.5rem;
+}
+
+.tv-playlist-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    background: none;
+    border: none;
+    padding: 0.35rem 0;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #2d3748;
+    cursor: pointer;
+    text-align: left;
+}
+
+.tv-playlist-toggle i {
+    width: 0.9rem;
+    color: #718096;
+}
+
+.tv-playlist-summary {
+    margin-left: auto;
+    font-weight: 400;
+    font-size: 0.8rem;
+    color: #718096;
+}
+
+.tv-playlist-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0.5rem 0 0.75rem;
+}
+
+.tv-playlist-hint {
+    font-size: 0.8rem;
+    color: #718096;
+    margin-right: auto;
+}
+
+.tv-playlist-empty {
+    padding: 1rem;
+    text-align: center;
+    color: #718096;
+    font-size: 0.85rem;
+}
+
+.tv-playlist-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 0.6rem;
+}
+
+.playlist-tile {
+    border: 2px solid #e2e8f0;
+    border-radius: 6px;
+    overflow: hidden;
+    background: white;
+    cursor: pointer;
+    transition: border-color 0.15s ease;
+}
+
+.playlist-tile:hover {
+    border-color: #a3bffa;
+}
+
+.playlist-tile.selected {
+    border-color: #667eea;
+    box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.3);
+}
+
+.playlist-tile.current {
+    border-color: #38a169;
+}
+
+.playlist-tile.disabled .playlist-thumb img {
+    opacity: 0.35;
+    filter: grayscale(1);
+}
+
+.playlist-thumb {
+    position: relative;
+    height: 80px;
+    background: #f7fafc;
+}
+
+.playlist-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.playlist-badge {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: white;
+}
+
+.playlist-badge.now {
+    background: #38a169;
+}
+
+.playlist-badge.off {
+    background: #718096;
+    left: auto;
+    right: 4px;
+}
+
+.playlist-check {
+    display: none;
+    position: absolute;
+    bottom: 4px;
+    right: 4px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #667eea;
+    color: white;
+    font-size: 0.7rem;
+    align-items: center;
+    justify-content: center;
+}
+
+.playlist-tile.selected .playlist-check {
+    display: flex;
+}
+
+.playlist-tile-name {
+    padding: 0.3rem 0.4rem 0;
+    font-size: 0.75rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #2d3748;
+}
+
+.playlist-tile-actions {
+    display: flex;
+    gap: 0.25rem;
+    padding: 0.3rem 0.4rem 0.4rem;
+}
+
+.playlist-tile-actions .btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.25rem 0;
+}
+
+.playlist-tile-actions .btn:disabled,
+.tv-playlist-toolbar .btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.dark-theme .tv-playlist {
+    border-top-color: #4a5568;
+}
+
+.dark-theme .tv-playlist-toggle,
+.dark-theme .playlist-tile-name {
+    color: #e2e8f0;
+}
+
+.dark-theme .playlist-tile {
+    background: #2d3748;
+    border-color: #4a5568;
+}
+
+.dark-theme .playlist-thumb {
+    background: #1a202c;
+}
+
 /* Image Grid */
 .image-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
     gap: 1rem;
+}
+
+.image-grid-empty {
+    grid-column: 1 / -1;
+    padding: 2rem;
+    text-align: center;
+    color: #718096;
 }
 
 .image-card {
