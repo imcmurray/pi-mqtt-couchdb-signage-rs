@@ -34,7 +34,7 @@ const layerSchema = Joi.object({
     show_at: Joi.date().iso().allow(null),
     hide_at: Joi.date().iso().allow(null),
     auto_hide_after_ms: Joi.number().min(0).allow(null)
-  }).default({})
+  }).default() // no-arg default fills in the child defaults (default({}) would not)
 });
 
 const animationSchema = Joi.object({

@@ -12,7 +12,7 @@ const tvSchema = Joi.object({
     display_duration: Joi.number().min(1000).max(60000).default(5000),
     resolution: Joi.string().default('1920x1080'),
     orientation: Joi.string().valid('landscape', 'portrait', 'inverted_landscape', 'inverted_portrait').default('landscape')
-  }).default({})
+  }).default() // no-arg default fills in the child defaults (default({}) would not)
 });
 
 const configUpdateSchema = Joi.object({

@@ -11,7 +11,7 @@ describe('Input Validation', () => {
         display_duration: Joi.number().min(1000).max(60000).default(5000),
         resolution: Joi.string().default('1920x1080'),
         orientation: Joi.string().valid('landscape', 'portrait', 'inverted_landscape', 'inverted_portrait').default('landscape')
-      }).default({})
+      }).default()
     });
 
     it('should validate correct TV data', () => {

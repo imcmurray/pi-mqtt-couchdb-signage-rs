@@ -194,9 +194,9 @@ class AlertService {
     const expiredAlerts = allAlerts.filter(a => a.status === 'expired');
 
     const byType = {
-      CRITICAL: allAlerts.filter(a => a.type === 'CRITICAL').length,
-      URGENT: allAlerts.filter(a => a.type === 'URGENT').length,
-      INFO: allAlerts.filter(a => a.type === 'INFO').length
+      CRITICAL: allAlerts.filter(a => a.alert_type === 'CRITICAL').length,
+      URGENT: allAlerts.filter(a => a.alert_type === 'URGENT').length,
+      INFO: allAlerts.filter(a => a.alert_type === 'INFO').length
     };
 
     return {

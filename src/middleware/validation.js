@@ -82,7 +82,7 @@ const tvSchemas = {
       orientation: commonPatterns.orientation.default('landscape'),
       layers: layerSchemas.layerConfig.optional(),
       layer_settings: layerSchemas.layerSettings.optional()
-    }).default({})
+    }).default() // no-arg default fills in the child defaults (default({}) would not)
   }),
 
   update: Joi.object({
