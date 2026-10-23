@@ -518,9 +518,10 @@ impl LayerManager {
         // Create base canvas
         let mut composite = RgbaImage::new(width, height);
         
-        // Fill with transparent black
+        // Start from opaque black (the letterbox colour) so translucent layers over
+        // the letterbox blend with black instead of drawing at full strength
         for pixel in composite.pixels_mut() {
-            *pixel = Rgba([0, 0, 0, 0]);
+            *pixel = Rgba([0, 0, 0, 255]);
         }
 
         // Get visible layers sorted by priority (lowest first)

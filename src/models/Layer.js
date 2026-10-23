@@ -82,15 +82,18 @@ class Layer extends BaseModel {
     return result.rows.map(row => new Layer(row.value));
   }
 
+  // Accepts the CouchDB _id or the layer_id (the id the API, UI and TVs use)
   static async findById(id) {
     const db = this.getDb();
     try {
       const doc = await db.get(id);
       return doc.type === 'layer' ? new Layer(doc) : null;
     } catch (error) {
-      if (error.statusCode === 404) return null;
-      throw error;
+      if (error.statusCode !== 404) throw error;
     }
+
+    const result = await db.find({ selector: { type: 'layer', layer_id: id }, limit: 1 });
+    return result.docs.length ? new Layer(result.docs[0]) : null;
   }
 
   static async findByTv(tvId) {

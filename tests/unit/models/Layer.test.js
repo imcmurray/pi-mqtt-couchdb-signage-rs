@@ -580,6 +580,43 @@ describe('Layer Model', () => {
     });
   });
 
+  describe('findById', () => {
+    const originalGetDb = Layer.getDb;
+    afterEach(() => { Layer.getDb = originalGetDb; });
+
+    it('finds a layer by its CouchDB _id', async () => {
+      const db = { get: jest.fn().mockResolvedValue({ _id: 'layer_abc', type: 'layer', layer_id: 'layer_1_x', tv_id: 'tv_1' }), find: jest.fn() };
+      Layer.getDb = () => db;
+
+      const layer = await Layer.findById('layer_abc');
+
+      expect(layer.layer_id).toBe('layer_1_x');
+      expect(db.find).not.toHaveBeenCalled();
+    });
+
+    it('falls back to layer_id, which is what the API and TVs use', async () => {
+      const db = {
+        get: jest.fn().mockRejectedValue(Object.assign(new Error('missing'), { statusCode: 404 })),
+        find: jest.fn().mockResolvedValue({ docs: [{ _id: 'layer_abc', type: 'layer', layer_id: 'layer_1_x', tv_id: 'tv_1' }] })
+      };
+      Layer.getDb = () => db;
+
+      const layer = await Layer.findById('layer_1_x');
+
+      expect(db.find).toHaveBeenCalledWith({ selector: { type: 'layer', layer_id: 'layer_1_x' }, limit: 1 });
+      expect(layer._id).toBe('layer_abc');
+    });
+
+    it('returns null when neither id matches', async () => {
+      Layer.getDb = () => ({
+        get: jest.fn().mockRejectedValue(Object.assign(new Error('missing'), { statusCode: 404 })),
+        find: jest.fn().mockResolvedValue({ docs: [] })
+      });
+
+      expect(await Layer.findById('nope')).toBeNull();
+    });
+  });
+
   describe('layer types', () => {
     it('should create valid DynamicText layer', () => {
       const layer = new Layer({
