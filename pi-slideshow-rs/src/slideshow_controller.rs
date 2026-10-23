@@ -1128,16 +1128,16 @@ impl SlideshowController {
         self.layer_manager.write().await.update_slideshow_content(image_path).await
     }
 
-    pub async fn has_emergency_layers(&self) -> bool {
-        self.layer_manager.read().await.has_emergency_layers().await
+    pub async fn has_overlay_layers(&self) -> bool {
+        self.layer_manager.read().await.has_overlay_layers().await
     }
 
     pub async fn set_transition_frame(&self, frame: Option<image::RgbaImage>) {
         self.layer_manager.write().await.set_transition_frame(frame).await
     }
 
-    pub async fn render_emergency_layers_only(&self) -> Result<image::RgbaImage, String> {
-        self.layer_manager.read().await.render_emergency_layers_only().await
+    pub async fn render_overlay_layers(&self) -> Result<image::RgbaImage, String> {
+        self.layer_manager.read().await.render_overlay_layers().await
     }
 
     /// Add static overlay layer (for future HTTP API)

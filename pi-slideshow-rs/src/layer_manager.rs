@@ -420,10 +420,11 @@ impl LayerManager {
         *self.composite_dirty.write().await = true;
     }
 
-    pub async fn has_emergency_layers(&self) -> bool {
+    /// Anything drawn on top of the slideshow (logo, Layer Control layers, alerts)
+    pub async fn has_overlay_layers(&self) -> bool {
         let config = self.config.read().await;
         config.layers.values().any(|layer| {
-            layer.visible && layer.layer_type == LayerType::Emergency
+            layer.visible && layer.layer_type != LayerType::Slideshow
         })
     }
 
@@ -476,7 +477,9 @@ impl LayerManager {
         *self.composite_dirty.write().await = true;
     }
 
-    pub async fn render_emergency_layers_only(&self) -> Result<RgbaImage, String> {
+    /// Every visible layer except the slideshow, on a transparent canvas, so
+    /// transitions can play underneath the logo, Layer Control layers and alerts
+    pub async fn render_overlay_layers(&self) -> Result<RgbaImage, String> {
         let config = self.config.read().await;
         let (width, height) = config.output_resolution;
 
@@ -485,15 +488,16 @@ impl LayerManager {
             *pixel = Rgba([0, 0, 0, 0]);
         }
 
-        let emergency_layers: Vec<Layer> = config.layers
+        let mut overlay_layers: Vec<Layer> = config.layers
             .values()
-            .filter(|layer| layer.visible && layer.layer_type == LayerType::Emergency)
+            .filter(|layer| layer.visible && layer.layer_type != LayerType::Slideshow)
             .cloned()
             .collect();
+        overlay_layers.sort_by_key(|layer| layer.priority);
 
-        for layer in emergency_layers {
+        for layer in overlay_layers {
             if let Err(e) = self.render_layer_onto_composite(&layer, &mut overlay).await {
-                eprintln!("Warning: Failed to render emergency layer '{}': {}", layer.id, e);
+                eprintln!("Warning: Failed to render overlay layer '{}': {}", layer.id, e);
             }
         }
 

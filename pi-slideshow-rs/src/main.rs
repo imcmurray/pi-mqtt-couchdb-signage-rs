@@ -977,6 +977,7 @@ impl ImageManager {
         transition_type: TransitionType,
         orientation: &Orientation,
         frame_buffer: Option<Arc<tokio::sync::RwLock<Option<RgbaImage>>>>,
+        overlay: Option<&RgbaImage>,
     ) -> IoResult<()> {
         let transition_name = transition_type.name();
 
@@ -1001,6 +1002,8 @@ impl ImageManager {
             frame_count,
             frame_duration.as_millis()
         );
+
+        let mut overlay_buffer = Vec::new();
 
         for i in 0..frame_count {
             let start = Instant::now();
@@ -1028,7 +1031,13 @@ impl ImageManager {
 
             let buffer = fb.image_to_bgra_buffer(&transition_frame);
 
-            fb.display_buffer(&buffer)?;
+            match overlay {
+                Some(overlay) => {
+                    blend_rgba_overlay_onto_bgra(&buffer, overlay, &mut overlay_buffer);
+                    fb.display_buffer(&overlay_buffer)?;
+                }
+                None => fb.display_buffer(&buffer)?,
+            }
 
             if i % 10 == 0 {
                 println!(
@@ -1055,7 +1064,7 @@ impl ImageManager {
         fb: &mut Framebuffer,
         transition_duration: Duration,
         transition_name: &str,
-        controller: Option<&SlideshowController>,
+        overlay: Option<&RgbaImage>,
     ) -> IoResult<()> {
         let frame_count = buffers.len();
         if frame_count == 0 {
@@ -1064,24 +1073,13 @@ impl ImageManager {
 
         let frame_duration = transition_duration / frame_count as u32;
 
-        // Pre-render emergency overlay ONCE at the start (if needed)
-        let emergency_overlay: Option<RgbaImage> = if let Some(ctrl) = controller {
-            tokio::task::block_in_place(|| {
-                tokio::runtime::Handle::current().block_on(async {
-                    ctrl.render_emergency_layers_only().await.ok()
-                })
-            })
-        } else {
-            None
-        };
-
-        let has_overlay = emergency_overlay.is_some();
+        let has_overlay = overlay.is_some();
 
         println!(
             "🎬 Playing {} pre-computed BGRA frames at {}ms per frame{}",
             frame_count,
             frame_duration.as_millis(),
-            if has_overlay { " (with cached emergency overlay)" } else { "" }
+            if has_overlay { " (with layer overlay)" } else { "" }
         );
 
         // Reusable output buffer to avoid allocations per frame
@@ -1090,12 +1088,12 @@ impl ImageManager {
         for (i, buffer) in buffers.iter().enumerate() {
             let start = Instant::now();
 
-            if let Some(ref overlay) = emergency_overlay {
-                // Fast path: blend pre-rendered overlay onto transition frame
+            if let Some(overlay) = overlay {
+                // Blend the pre-rendered layers onto the transition frame
                 blend_rgba_overlay_onto_bgra(buffer, overlay, &mut output_buffer);
                 fb.display_buffer(&output_buffer)?;
             } else {
-                // Fastest path - no emergency layers, direct buffer display
+                // Fastest path - no layers, direct buffer display
                 fb.display_buffer(buffer)?;
             }
 
@@ -1639,21 +1637,23 @@ async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoRe
                 let from_path = &image_manager.images[previous_index];
                 let to_path = &image_manager.images[current_index];
 
+                // Keep the logo, Layer Control layers and alerts on screen through
+                // the transition; rendered once and blended onto every frame
+                let overlay = if controller.has_overlay_layers().await {
+                    controller.render_overlay_layers().await.ok()
+                } else {
+                    None
+                };
+
                 // Check if precomputed BGRA buffers are available for this transition
                 if let Some(buffers) = precomputer.try_get_frames(from_path, to_path, transition_name).await {
                     println!("✨ Using pre-computed transition ({} BGRA buffers)", buffers.len());
-                    // Check if emergency layers need to be composited during transition
-                    let emergency_controller = if controller.has_emergency_layers().await {
-                        Some(&controller)
-                    } else {
-                        None
-                    };
                     if let Err(e) = image_manager.play_precomputed_transition(
                         &buffers,
                         &mut fb,
                         transition_duration,
                         transition_name,
-                        emergency_controller,
+                        overlay.as_ref(),
                     ) {
                         println!("Failed to play precomputed transition: {}", e);
                     }
@@ -1667,7 +1667,8 @@ async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoRe
                         transition_duration,
                         transition_type.clone(),
                         &current_orientation,
-                        Some(controller.get_current_frame())
+                        Some(controller.get_current_frame()),
+                        overlay.as_ref(),
                     ) {
                         println!("Failed to play transition: {}", e);
                     }
@@ -2219,7 +2220,7 @@ fn run_original_slideshow(config: Config) -> IoResult<()> {
 
         // Play transition from the current image to next
         let transition_type = TransitionType::get_random(); // Use random in standalone mode
-        if let Err(e) = image_manager.play_transition(actual_current_idx, next_idx, &mut fb, config.transition_duration, transition_type, &config.orientation, None) {
+        if let Err(e) = image_manager.play_transition(actual_current_idx, next_idx, &mut fb, config.transition_duration, transition_type, &config.orientation, None, None) {
             println!("Failed to play transition: {}", e);
         }
 
