@@ -53,7 +53,7 @@ class TvController {
    */
   async getAllTvs(req, res) {
     const tvs = await TV.findAll();
-    res.json(tvs.map(tv => mqttService.applyCurrentImage(tv)));
+    res.json(tvs.map(tv => mqttService.applyLiveState(tv)));
   }
 
   /**
@@ -91,7 +91,7 @@ class TvController {
     if (!tv) {
       return res.status(404).json({ error: 'TV not found' });
     }
-    res.json(mqttService.applyCurrentImage(tv));
+    res.json(mqttService.applyLiveState(tv));
   }
 
   /**

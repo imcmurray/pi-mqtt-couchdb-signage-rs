@@ -273,7 +273,7 @@ class DigitalSignageApp {
             <div class="tv-card-body">
                 <div class="tv-status">
                     <span class="status-dot ${statusClass}"></span>
-                    <span>${tv.status}</span>
+                    <span>${this.formatTvStatus(tv)}</span>
                 </div>
                 <div class="tv-current-section">
                     <div class="tv-current-thumbnail-container">
@@ -372,7 +372,7 @@ class DigitalSignageApp {
                         <div class="tv-card-location"><i class="fas fa-map-marker-alt"></i> ${tv.location}</div>
                     </div>
                     <div class="tv-card-status-row">
-                        <span class="status-badge ${statusClass}">${tv.status}</span>
+                        <span class="status-badge ${statusClass}">${this.formatTvStatus(tv)}</span>
                         <div class="last-seen-container">
                             <i class="fas fa-signal"></i>
                             <span class="last-seen-value" id="last-seen-${tv._id}">${this.formatTimeSince(tv.last_heartbeat)}</span>
@@ -1001,14 +1001,38 @@ class DigitalSignageApp {
         return `${days}d ${hours % 24}h`;
     }
 
+    // Connection status plus the Pi's slideshow state, e.g. "online · playing"
+    formatTvStatus(tv) {
+        return tv.status === 'online' && tv.slideshow_state
+            ? `${tv.status} · ${tv.slideshow_state}`
+            : tv.status;
+    }
+
     startLastSeenTimer() {
+        // Matches the server's TV_HEARTBEAT_TIMEOUT default (Pi heartbeats every 30s)
+        const heartbeatTimeoutMs = 120000;
+
         setInterval(() => {
+            let wentOffline = false;
+
             this.tvs.forEach(tv => {
                 const el = document.getElementById(`last-seen-${tv._id}`);
                 if (el) {
                     el.textContent = this.formatTimeSince(tv.last_heartbeat);
                 }
+
+                const age = Date.now() - Date.parse(tv.last_heartbeat);
+                if (tv.status === 'online' && !(age < heartbeatTimeoutMs)) {
+                    tv.status = 'offline';
+                    wentOffline = true;
+                }
             });
+
+            if (wentOffline) {
+                this.updateTvOverview(this.tvs);
+                this.updateTvList();
+                this.updateDashboardStatsFromTvs();
+            }
         }, 1000);
     }
 

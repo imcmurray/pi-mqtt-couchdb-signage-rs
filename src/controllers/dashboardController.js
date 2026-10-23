@@ -56,10 +56,11 @@ class DashboardController {
    *                         type: integer
    */
   async getOverview(req, res) {
-    const [allTvs, allImages] = await Promise.all([
+    const [storedTvs, allImages] = await Promise.all([
       TV.findAll(),
       Image.findAll()
     ]);
+    const allTvs = storedTvs.map(tv => mqttService.applyLiveState(tv));
 
     const stats = {
       total_tvs: allTvs.length,
@@ -70,13 +71,11 @@ class DashboardController {
       last_updated: new Date().toISOString()
     };
 
+    // Full TV records so the dashboard cards get _id, metrics and slideshow state
     const tvStatus = allTvs.map(tv => ({
+      ...tv.toJSON(),
       id: tv._id,
-      name: tv.name,
-      location: tv.location,
-      status: tv.status,
-      current_image_id: mqttService.applyCurrentImage(tv).current_image,
-      last_heartbeat: tv.last_heartbeat,
+      current_image_id: tv.current_image,
       assigned_images_count: allImages.filter(img => img.assigned_tvs.includes(tv._id)).length
     }));
 

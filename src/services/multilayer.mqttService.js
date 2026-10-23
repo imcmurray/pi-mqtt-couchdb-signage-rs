@@ -8,8 +8,8 @@ class MultilayerMqttService extends EventEmitter {
     this.client = null;
     this.connected = false;
     this.reconnectAttempts = 0;
-    // Latest image each TV reported over MQTT, keyed by TV doc _id ("tv_<id>")
-    this.currentImages = new Map();
+    // Latest live state each TV reported over MQTT, keyed by TV doc _id ("tv_<id>")
+    this.liveState = new Map();
   }
 
   async connect() {
@@ -82,29 +82,54 @@ class MultilayerMqttService extends EventEmitter {
   handleMessage(topic, message) {
     try {
       const payload = JSON.parse(message.toString());
-      this.trackCurrentImage(topic, payload);
+      this.trackLiveState(topic, payload);
       this.emit('message', { topic, payload });
     } catch (error) {
       console.error('Error parsing MQTT message:', error);
     }
   }
 
-  // The Pi publishes image/current on auto-advance without writing CouchDB,
-  // so the stored current_image goes stale; remember what it last reported.
-  trackCurrentImage(topic, payload) {
-    const match = topic.match(/\/tv\/([^/]+)\/(?:image\/current|status)$/);
-    const imageId = match && (payload.image_id || payload.current_image);
-    if (imageId) {
-      this.currentImages.set(`tv_${match[1]}`, imageId);
+  // The Pi doesn't write heartbeats, metrics or auto-advance images to CouchDB,
+  // so the stored values go stale; remember what each TV last reported.
+  trackLiveState(topic, payload) {
+    const match = topic.match(/\/tv\/([^/]+)\/(heartbeat|status|image\/current)$/);
+    if (!match) return;
+
+    const [, tvId, messageType] = match;
+    const state = this.liveState.get(`tv_${tvId}`) || {};
+    state.last_heartbeat = new Date().toISOString();
+
+    if (messageType === 'heartbeat' && payload.system_metrics) {
+      state.system_metrics = payload.system_metrics;
     }
+    if (messageType === 'status' && payload.status) {
+      state.slideshow_state = payload.status;
+    }
+    const imageId = payload.image_id || payload.current_image;
+    if (imageId) {
+      state.current_image = imageId;
+    }
+
+    this.liveState.set(`tv_${tvId}`, state);
   }
 
-  // Overlay the live current image onto a TV loaded from CouchDB
-  applyCurrentImage(tv) {
-    const imageId = this.currentImages.get(tv._id);
-    if (imageId) {
-      tv.current_image = imageId;
-    }
+  // Overlay live state onto a TV loaded from CouchDB (API responses only, never saved).
+  // The Pi stores its slideshow state (playing/paused) in `status`; connection
+  // status is derived from heartbeat age instead.
+  applyLiveState(tv) {
+    const live = this.liveState.get(tv._id) || {};
+    const storedState = ['online', 'offline'].includes(tv.status) ? null : tv.status;
+    const lastSeen = [live.last_heartbeat, tv.last_heartbeat]
+      .filter(Boolean)
+      .sort((a, b) => Date.parse(b) - Date.parse(a))[0];
+
+    tv.current_image = live.current_image || tv.current_image;
+    tv.system_metrics = live.system_metrics || tv.system_metrics;
+    tv.slideshow_state = live.slideshow_state || storedState || tv.slideshow_state;
+    tv.last_heartbeat = lastSeen || null;
+    tv.status = lastSeen && Date.now() - Date.parse(lastSeen) < config.tvDefaults.heartbeatTimeout
+      ? 'online'
+      : 'offline';
     return tv;
   }
 

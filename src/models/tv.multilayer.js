@@ -17,14 +17,16 @@ class TVMultilayer extends BaseModel {
       display_duration: data.config?.display_duration || 5000,
       resolution: data.config?.resolution || '1920x1080',
       orientation: data.config?.orientation || 'landscape',
-      // Enhanced layer configuration for multi-layer system
-      layers: data.config?.layers || {
+      // Enhanced layer configuration for multi-layer system. The Pi rejects any
+      // layer config without a slideshow layer, so always guarantee one.
+      layers: {
         slideshow: {
           enabled: true,
           position: { x: 0, y: 0, width: 1920, height: 1080 },
           priority: 1,
           opacity: 1.0
-        }
+        },
+        ...data.config?.layers
       },
       layer_settings: data.config?.layer_settings || {
         max_layers: 50, // Increased for individual data rows
