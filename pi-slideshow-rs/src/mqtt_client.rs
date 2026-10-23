@@ -78,6 +78,8 @@ pub enum SlideshowCommand {
     Next,
     Previous,
     UpdateImages { images: Vec<ImageInfo> },
+    /// Jump to an image; `hold` pauses on it
+    ShowImage { image_id: String, hold: bool },
     UpdateConfig { config: SlideshowConfig },
     Reboot,
     Shutdown,
@@ -246,6 +248,14 @@ impl MqttClient {
                 let images: Vec<ImageInfo> = serde_json::from_value(mqtt_command.payload["images"].clone())?;
                 println!("📥 MQTT: Received update_images with {} images", images.len());
                 SlideshowCommand::UpdateImages { images }
+            },
+            "show_image" => {
+                let image_id = mqtt_command.payload["image_id"]
+                    .as_str()
+                    .ok_or("show_image requires payload.image_id")?
+                    .to_string();
+                let hold = mqtt_command.payload["hold"].as_bool().unwrap_or(false);
+                SlideshowCommand::ShowImage { image_id, hold }
             },
             "update_config" => {
                 // The payload contains the full TV config object from the management system

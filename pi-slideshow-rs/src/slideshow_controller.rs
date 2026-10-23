@@ -49,6 +49,9 @@ pub struct SlideshowController {
     registration_status: Arc<RwLock<Option<RegistrationStatus>>>,
     pub start_time: Instant,
     current_frame: Arc<RwLock<Option<image::RgbaImage>>>,
+    // When next/previous/show_image last moved the slideshow, so auto-advance
+    // gives the chosen image its full display time
+    manual_change_at: Arc<RwLock<Option<Instant>>>,
 }
 
 impl Clone for SlideshowController {
@@ -66,6 +69,7 @@ impl Clone for SlideshowController {
             registration_status: self.registration_status.clone(),
             start_time: self.start_time,
             current_frame: self.current_frame.clone(),
+            manual_change_at: self.manual_change_at.clone(),
         }
     }
 }
@@ -95,6 +99,7 @@ impl SlideshowController {
             registration_status: Arc::new(RwLock::new(None)),
             start_time: Instant::now(),
             current_frame: Arc::new(RwLock::new(None)),
+            manual_change_at: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -243,6 +248,7 @@ impl SlideshowController {
             
             // Always clear local images when CouchDB is available - we only show what's assigned
             let mut local_images = self.images.write().await;
+            let previous_id = Self::current_image_id(&local_images, *self.current_index.read().await);
             local_images.clear();
             
             if !couchdb_images.is_empty() {
@@ -283,6 +289,9 @@ impl SlideshowController {
             } else {
                 println!("No images assigned to {} in CouchDB", tv_id);
             }
+
+            let mut current_index = self.current_index.write().await;
+            Self::restore_current_index(&local_images, &mut current_index, previous_id);
             
             Ok(())
         } else {
@@ -315,12 +324,22 @@ impl SlideshowController {
             }
             SlideshowCommand::Next => {
                 self.advance_to_next_image().await;
+                *self.manual_change_at.write().await = Some(Instant::now());
             }
             SlideshowCommand::Previous => {
                 self.advance_to_previous_image().await;
+                *self.manual_change_at.write().await = Some(Instant::now());
             }
             SlideshowCommand::UpdateImages { images } => {
                 self.update_images(images).await?;
+            }
+            SlideshowCommand::ShowImage { image_id, hold } => {
+                if !self.show_image(&image_id).await {
+                    return Err(format!("Image {} is not in the current playlist", image_id).into());
+                }
+                *self.manual_change_at.write().await = Some(Instant::now());
+                *self.state.write().await = if hold { SlideshowState::Paused } else { SlideshowState::Playing };
+                self.publish_current_image_to_mqtt().await;
             }
             SlideshowCommand::UpdateConfig { config } => {
                 self.update_config(config).await;
@@ -409,10 +428,37 @@ impl SlideshowController {
         }
     }
 
+    /// Jump to a specific image by ID. Returns false if it isn't in the playlist.
+    pub async fn show_image(&self, image_id: &str) -> bool {
+        let images = self.images.read().await;
+        match images.iter().position(|img| img.id == image_id) {
+            Some(position) => {
+                *self.current_index.write().await = position;
+                true
+            }
+            None => false,
+        }
+    }
+
+    fn current_image_id(images: &[ImageInfo], index: usize) -> Option<String> {
+        images.get(index).map(|img| img.id.clone())
+    }
+
+    /// After the playlist is replaced, point back at the image that was showing
+    /// (so a reorder or newly enabled image doesn't swap out a held image).
+    fn restore_current_index(images: &[ImageInfo], current_index: &mut usize, previous_id: Option<String>) {
+        if let Some(position) = previous_id.and_then(|id| images.iter().position(|img| img.id == id)) {
+            *current_index = position;
+        } else if *current_index >= images.len() {
+            *current_index = 0;
+        }
+    }
+
     async fn update_images(&self, new_images: Vec<ImageInfo>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let config = self.config.read().await;
         let mut images = self.images.write().await;
-        
+        let previous_id = Self::current_image_id(&images, *self.current_index.read().await);
+
         println!("Updating images: received {} new images (previous count: {})", new_images.len(), images.len());
 
         // Download new images from CouchDB
@@ -462,11 +508,9 @@ impl SlideshowController {
         *images = updated_images;
         images.sort_by(|a, b| a.order.cmp(&b.order));
 
-        // Reset current index if out of bounds
+        // Keep showing the same image if it's still in the playlist
         let mut current_index = self.current_index.write().await;
-        if *current_index >= images.len() && !images.is_empty() {
-            *current_index = 0;
-        }
+        Self::restore_current_index(&images, &mut current_index, previous_id);
 
         // Update state based on image availability
         if images.is_empty() {
@@ -569,8 +613,14 @@ impl SlideshowController {
             return false;
         }
 
+        // Count from the later of the last automatic advance and the last manual change
+        let since = match *self.manual_change_at.read().await {
+            Some(manual) if manual > last_change => manual,
+            _ => last_change,
+        };
+
         let config = self.config.read().await;
-        last_change.elapsed() >= config.display_duration
+        since.elapsed() >= config.display_duration
     }
 
 
@@ -971,5 +1021,43 @@ impl SlideshowController {
     #[allow(dead_code)]
     pub async fn get_layer_cache_stats(&self) -> (usize, usize) {
         self.layer_manager.read().await.get_cache_stats().await
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn playlist(ids: &[&str]) -> Vec<ImageInfo> {
+        ids.iter()
+            .enumerate()
+            .map(|(order, id)| ImageInfo {
+                id: id.to_string(),
+                path: format!("{}.png", id),
+                order: order as u32,
+                url: None,
+                extension: Some(".png".to_string()),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn restore_follows_image_when_playlist_reorders() {
+        let mut index = 1;
+        SlideshowController::restore_current_index(&playlist(&["c", "a", "b"]), &mut index, Some("b".into()));
+        assert_eq!(index, 2);
+    }
+
+    #[test]
+    fn restore_clamps_when_image_was_removed() {
+        let mut index = 3;
+        SlideshowController::restore_current_index(&playlist(&["a", "b"]), &mut index, Some("gone".into()));
+        assert_eq!(index, 0);
+    }
+
+    #[test]
+    fn restore_keeps_index_when_still_in_range() {
+        let mut index = 1;
+        SlideshowController::restore_current_index(&playlist(&["a", "b", "c"]), &mut index, Some("gone".into()));
+        assert_eq!(index, 1);
     }
 }

@@ -1718,8 +1718,10 @@ async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoRe
                 last_displayed_image_path = controller.get_current_image_path().await;
             }
         } else if let Some(current_image_path) = controller.get_current_image_path().await {
-            if controller.is_playing().await {
-                // Only load and display if image has changed (for initial display)
+            // Redraw whenever the image changes, playing or paused, so manual
+            // next/previous/show_image take effect while paused too
+            {
+                // Only load and display if image has changed (initial display or manual change)
                 let needs_reload = match &last_displayed_image_path {
                     Some(last_path) => last_path != &current_image_path,
                     None => true,
@@ -1740,6 +1742,8 @@ async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoRe
                                 eprintln!("Failed to display composite image: {}", e);
                             } else {
                                 last_displayed_image_path = Some(current_image_path.clone());
+                                // Give a manually chosen image its full display time
+                                last_image_change = Instant::now();
                                 println!("🎨 Displayed composite image with layers");
 
                                 // Pre-compute the NEXT transition while image is displayed

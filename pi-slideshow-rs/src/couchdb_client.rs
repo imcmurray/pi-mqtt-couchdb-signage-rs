@@ -16,6 +16,12 @@ pub struct CouchImage {
     pub size: u64,
     pub metadata: ImageMetadata,
     pub assigned_tvs: Vec<String>,
+    // Per-TV playlist position set by the management server ("tv_<id>" -> order)
+    #[serde(default)]
+    pub tv_orders: HashMap<String, u32>,
+    // TVs this image is assigned to but temporarily left out of the rotation
+    #[serde(default)]
+    pub disabled_tvs: Vec<String>,
     #[serde(alias = "upload_date")]
     pub created_at: String,
     #[serde(rename = "_attachments", skip_serializing_if = "Option::is_none")]
@@ -246,8 +252,11 @@ impl CouchDbClient {
         for doc in all_docs.rows {
             // Parse as CouchImage directly
             if let Ok(image_doc) = serde_json::from_value::<CouchImage>(doc) {
-                // Check if this is an image document and if this TV is in the assigned_tvs list
-                if image_doc.doc_type == "image" && image_doc.assigned_tvs.contains(&tv_id.to_string()) {
+                // Check if this is an image document assigned to this TV and not disabled for it
+                if image_doc.doc_type == "image"
+                    && image_doc.assigned_tvs.contains(&tv_id.to_string())
+                    && !image_doc.disabled_tvs.contains(&tv_id.to_string())
+                {
                     // Determine file extension from attachment content_type, fallback to metadata format, then original name
                     let extension = if let Some(attachments) = &image_doc.attachments {
                         if let Some((_name, attachment)) = attachments.iter().next() {
@@ -299,17 +308,18 @@ impl CouchDbClient {
                     let image_info = ImageInfo {
                         id: image_doc.id.clone(),
                         path: format!("{}{}", image_doc.id, extension),
-                        order: images_for_tv.len() as u32, // Use index as order for now
+                        // Images without an order for this TV go last
+                        order: image_doc.tv_orders.get(tv_id).copied().unwrap_or(u32::MAX),
                         url: None, // Not needed for CouchDB attachments
                         extension: Some(extension),
                     };
-                    
+
                     images_for_tv.push(image_info);
                 }
             }
         }
-        
-        // Sort by order (which is currently just the index)
+
+        // Stable sort: images sharing an order keep their CouchDB (_id) order
         images_for_tv.sort_by(|a, b| a.order.cmp(&b.order));
         
         println!("Found {} images for TV {}", images_for_tv.len(), tv_id);
