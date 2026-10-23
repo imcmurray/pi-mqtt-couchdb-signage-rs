@@ -146,7 +146,7 @@ const imageSchemas = {
 
   assignment: Joi.object({
     tv_ids: Joi.array().items(Joi.string().min(1).max(100)).min(1).max(50).required(),
-    order: Joi.number().min(0).max(999).default(0)
+    order: Joi.number().min(0).max(999) // omitted = append to the end of each TV's rotation
   }),
 
   reorder: Joi.object({

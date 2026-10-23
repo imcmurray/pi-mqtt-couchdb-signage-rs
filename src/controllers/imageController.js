@@ -32,7 +32,7 @@ const imageUpdateSchema = Joi.object({
 
 const assignmentSchema = Joi.object({
   tv_ids: Joi.array().items(Joi.string()).required(),
-  order: Joi.number().min(0).default(0)
+  order: Joi.number().min(0)
 });
 
 const reorderSchema = Joi.object({
@@ -552,7 +552,18 @@ class ImageController {
       }
     }
 
-    const updatedImage = await image.bulkAssignToTvs(tv_ids, order);
+    // Without an explicit order, new assignments go to the end of the rotation
+    // and TVs that already have this image keep its position
+    const tvOrders = {};
+    for (const tvId of tv_ids) {
+      if (order !== undefined) {
+        tvOrders[tvId] = order;
+      } else if (!image.assigned_tvs.includes(tvId)) {
+        tvOrders[tvId] = await this._nextOrderForTv(tvId);
+      }
+    }
+
+    const updatedImage = await image.bulkAssignToTvs(tv_ids, tvOrders);
 
     // Update TVs via MQTT
     for (const tvId of tv_ids) {
@@ -889,6 +900,13 @@ class ImageController {
     const hold = req.body?.hold === true;
     await mqttService.showImage(tv._id.replace('tv_', ''), image._id, hold);
     res.json({ message: `${hold ? 'Holding on' : 'Showing'} ${image.original_name}` });
+  }
+
+  // Position after the last ordered image on a TV
+  async _nextOrderForTv(tvId) {
+    const images = await Image.findByTvId(tvId);
+    const orders = images.map(img => img.tv_orders[tvId]).filter(Number.isFinite);
+    return orders.length ? Math.max(...orders) + 1 : 0;
   }
 
   // Private helper method to update TV image list via MQTT

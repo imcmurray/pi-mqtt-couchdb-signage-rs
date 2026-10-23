@@ -1043,6 +1043,32 @@ body {
     border-color: #38a169;
 }
 
+.playlist-tile.dragging {
+    opacity: 0.4;
+}
+
+.playlist-tile.drop-before {
+    box-shadow: -4px 0 0 #667eea;
+}
+
+.playlist-tile.drop-after {
+    box-shadow: 4px 0 0 #667eea;
+}
+
+.tv-playlist-grid > .tv-playlist-empty {
+    grid-column: 1 / -1;
+}
+
+.tv-playlist-filter {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.8rem;
+    color: #4a5568;
+    cursor: pointer;
+    user-select: none;
+}
+
 .playlist-tile.disabled .playlist-thumb img {
     opacity: 0.35;
     filter: grayscale(1);
@@ -1135,6 +1161,7 @@ body {
 }
 
 .dark-theme .tv-playlist-toggle,
+.dark-theme .tv-playlist-filter,
 .dark-theme .playlist-tile-name {
     color: #e2e8f0;
 }

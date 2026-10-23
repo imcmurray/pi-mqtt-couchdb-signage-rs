@@ -1,7 +1,7 @@
 {
-  "version": "v0.2.0-53-g1bd15af",
-  "commit_hash": "1bd15afe1713718ef4a5142d0ae21e256f5e9368",
-  "commit_short": "1bd15af",
+  "version": "v0.2.0-54-g4c4bb30",
+  "commit_hash": "4c4bb304c7cdbd11665b4c48fc7cc530330ea7e6",
+  "commit_short": "4c4bb30",
   "branch": "feature/basic-layering",
-  "build_time": "2026-10-23T19:56:03.037Z"
+  "build_time": "2026-10-23T23:04:31.085Z"
 }

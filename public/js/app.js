@@ -19,6 +19,8 @@ class DigitalSignageApp {
         this.expandedPlaylists = new Set();
         this.playlists = {};           // tvId -> [{ _id, original_name, enabled, ... }]
         this.playlistSelection = {};   // tvId -> Set of selected image ids
+        this.playlistDrag = null;      // { tvId, imageId } while a tile is being dragged
+        this.hideDisabledImages = localStorage.getItem('hideDisabledImages') === 'true';
         this.darkTheme = localStorage.getItem('darkTheme') === 'true';
         this.mqttMessages = {
             general: [],
@@ -350,6 +352,9 @@ class DigitalSignageApp {
     }
 
     updateTvList() {
+        // Re-rendering mid-drag would destroy the dragged tile; dragend re-renders
+        if (this.playlistDrag) return;
+
         const list = document.getElementById('tv-list');
         list.innerHTML = '';
 
@@ -535,7 +540,10 @@ class DigitalSignageApp {
         const allEnabled = playlist.every(img => img.enabled);
         const isPaused = tv.slideshow_state === 'paused';
 
-        const tiles = playlist.map(img => {
+        const visible = this.hideDisabledImages ? playlist.filter(img => img.enabled) : playlist;
+        const hiddenCount = playlist.length - visible.length;
+
+        const tiles = visible.map(img => {
             const isCurrent = img._id === tv.current_image;
             const name = this.escapeHtml(img.original_name);
             const classes = ['playlist-tile',
@@ -544,9 +552,15 @@ class DigitalSignageApp {
                 isCurrent ? 'current' : ''].filter(Boolean).join(' ');
 
             return `
-                <div class="${classes}" onclick="app.togglePlaylistSelection('${tv._id}', '${img._id}')" title="${name}">
+                <div class="${classes}" title="${name}" draggable="true"
+                     onclick="app.togglePlaylistSelection('${tv._id}', '${img._id}')"
+                     ondragstart="app.onPlaylistDragStart(event, '${tv._id}', '${img._id}')"
+                     ondragover="app.onPlaylistDragOver(event, '${tv._id}')"
+                     ondragleave="this.classList.remove('drop-before', 'drop-after')"
+                     ondrop="app.onPlaylistDrop(event, '${tv._id}', '${img._id}')"
+                     ondragend="app.onPlaylistDragEnd()">
                     <div class="playlist-thumb">
-                        <img src="/api/images/${img._id}/attachment?width=160" alt="${name}" loading="lazy">
+                        <img src="/api/images/${img._id}/attachment?width=160" alt="${name}" loading="lazy" draggable="false">
                         ${isCurrent ? `<span class="playlist-badge now">${isPaused ? 'Holding' : 'Now showing'}</span>` : ''}
                         ${img.enabled ? '' : '<span class="playlist-badge off">Off</span>'}
                         <span class="playlist-check"><i class="fas fa-check"></i></span>
@@ -574,7 +588,12 @@ class DigitalSignageApp {
         return `
             <div class="tv-playlist-body">
                 <div class="tv-playlist-toolbar">
-                    <span class="tv-playlist-hint">Click images to select them</span>
+                    <span class="tv-playlist-hint">Click to select, drag to reorder</span>
+                    <label class="tv-playlist-filter" title="Hide images that are out of rotation">
+                        <input type="checkbox" ${this.hideDisabledImages ? 'checked' : ''}
+                               onchange="app.setHideDisabledImages(this.checked)">
+                        Hide disabled${hiddenCount ? ` (${hiddenCount})` : ''}
+                    </label>
                     <button class="btn btn-sm btn-primary" ${selected.size ? '' : 'disabled'}
                             onclick="app.cycleOnlySelected('${tv._id}')">
                         <i class="fas fa-sync-alt"></i> Cycle only selected (${selected.size})
@@ -588,7 +607,7 @@ class DigitalSignageApp {
                             <i class="fas fa-play"></i> Resume rotation
                         </button>` : ''}
                 </div>
-                <div class="tv-playlist-grid">${tiles}</div>
+                <div class="tv-playlist-grid">${tiles || '<div class="tv-playlist-empty">All images are disabled</div>'}</div>
             </div>
         `;
     }
@@ -661,6 +680,80 @@ class DigitalSignageApp {
     enableAllPlaylist(tvId) {
         const allIds = (this.playlists[tvId] || []).map(img => img._id);
         return this.savePlaylistEnabled(tvId, allIds, 'All images back in rotation');
+    }
+
+    setHideDisabledImages(hide) {
+        this.hideDisabledImages = hide;
+        localStorage.setItem('hideDisabledImages', hide);
+        this.updateTvList();
+    }
+
+    onPlaylistDragStart(event, tvId, imageId) {
+        this.playlistDrag = { tvId, imageId };
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', imageId);
+        event.currentTarget.classList.add('dragging');
+    }
+
+    // Drop indicator: before or after the hovered tile, by which half the pointer is in
+    playlistDropSide(event) {
+        const rect = event.currentTarget.getBoundingClientRect();
+        return event.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
+    }
+
+    onPlaylistDragOver(event, tvId) {
+        if (this.playlistDrag?.tvId !== tvId) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+        const side = this.playlistDropSide(event);
+        event.currentTarget.classList.toggle('drop-before', side === 'before');
+        event.currentTarget.classList.toggle('drop-after', side === 'after');
+    }
+
+    async onPlaylistDrop(event, tvId, targetId) {
+        event.preventDefault();
+        const drag = this.playlistDrag;
+        const side = this.playlistDropSide(event);
+        this.playlistDrag = null;
+        if (drag?.tvId !== tvId || drag.imageId === targetId) {
+            this.updateTvList();
+            return;
+        }
+
+        // Move within the full playlist so hidden (disabled) images keep their places
+        const playlist = this.playlists[tvId];
+        const moved = playlist.find(img => img._id === drag.imageId);
+        const reordered = playlist.filter(img => img._id !== drag.imageId);
+        const targetIndex = reordered.findIndex(img => img._id === targetId);
+        reordered.splice(targetIndex + (side === 'after' ? 1 : 0), 0, moved);
+
+        const changes = reordered
+            .map((img, order) => ({ image_id: img._id, order, previous: img.order }))
+            .filter(change => change.order !== change.previous);
+        reordered.forEach((img, order) => { img.order = order; });
+        this.playlists[tvId] = reordered;
+        this.updateTvList();
+
+        try {
+            const response = await fetch(`/api/images/reorder/${tvId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ images: changes.map(({ image_id, order }) => ({ image_id, order })) })
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || response.statusText);
+            this.showToast('Rotation order updated', 'success');
+        } catch (error) {
+            this.showToast(`Couldn't reorder: ${error.message}`, 'error');
+        }
+        await this.loadPlaylist(tvId);
+    }
+
+    onPlaylistDragEnd() {
+        // Fires after drop too; only needed to clean up a cancelled drag
+        if (!this.playlistDrag) return;
+        this.playlistDrag = null;
+        this.updateTvList();
     }
 
     async showPlaylistImage(tvId, imageId, hold) {

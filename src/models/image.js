@@ -261,12 +261,10 @@ class Image extends BaseModel {
     return this.update({ disabled_tvs });
   }
 
-  async bulkAssignToTvs(tvIds, startOrder = 0) {
+  // tvOrders maps TV ID -> playlist position; TVs left out keep their current position
+  async bulkAssignToTvs(tvIds, tvOrders = {}) {
     const assigned_tvs = [...new Set([...this.assigned_tvs, ...tvIds])];
-    const tv_orders = { ...this.tv_orders };
-    tvIds.forEach((tvId, index) => {
-      tv_orders[tvId] = startOrder + index;
-    });
+    const tv_orders = { ...this.tv_orders, ...tvOrders };
     return this.update({ assigned_tvs, tv_orders });
   }
 
