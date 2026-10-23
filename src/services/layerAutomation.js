@@ -162,7 +162,8 @@ class LayerAutomationService {
           const newData = await this.fetchUpdatedDataForLayer(layer);
           
           if (newData && newData.text !== layer.content.text) {
-            await layer.updateContent(newData, { duration: 300 });
+            await layer.updateContent(newData);
+            mqttService.syncLayers(tv._id);
             console.log(`Refreshed data layer ${layer.layer_id}`);
           }
         }
@@ -292,7 +293,7 @@ class LayerAutomationService {
       await layer.updateContent(content, transition);
       
       if (mqttService.isConnected()) {
-        await mqttService.publishLayerContent(tvId, layerId, content, transition);
+        mqttService.syncLayers(tvId);
       }
       
       return true;

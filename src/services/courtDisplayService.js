@@ -73,6 +73,7 @@ class CourtDisplayService {
     for (const layer of existingLayers) {
       try {
         await layer.delete();
+        mqtt.syncLayers(layer.tv_id);
         layersRemoved++;
       } catch (error) {
         console.error(`Failed to delete layer ${layer.layer_id}:`, error.message);
@@ -146,25 +147,10 @@ class CourtDisplayService {
    * @param {string} tvId - Target TV ID
    * @param {Object} layer - Layer object
    */
-  async publishLayerUpdate(tvId, layer) {
-    const mqttTvId = tvId.replace(/^tv_/, '');
-    const topic = `signage/tv/${mqttTvId}/layer/add`;
-    const message = {
-      type: 'layer_add',
-      layer: {
-        layer_id: layer.layer_id,
-        layer_type: layer.layer_type,
-        priority: layer.priority,
-        position: layer.position,
-        content: layer.content,
-        visible: layer.visible,
-        opacity: layer.opacity
-      },
-      timestamp: new Date().toISOString()
-    };
-
-    mqtt.publish(topic, message);
+  async publishLayerUpdate(tvId) {
+    mqtt.syncLayers(tvId);
   }
+
 
   /**
    * Generate header layer for court schedule
@@ -229,6 +215,7 @@ class CourtDisplayService {
     for (const layer of oldScheduleLayers) {
       try {
         await layer.delete();
+        mqtt.syncLayers(layer.tv_id);
         removed++;
       } catch (error) {
         console.error(`Failed to delete old layer ${layer.layer_id}:`, error.message);
@@ -288,6 +275,7 @@ class CourtDisplayService {
     if (hearing.status === 'completed' || hearing.status === 'cancelled') {
       for (const layer of hearingLayers) {
         await layer.delete();
+        mqtt.syncLayers(layer.tv_id);
       }
       return { layers_removed: hearingLayers.length, layers_updated: 0 };
     }

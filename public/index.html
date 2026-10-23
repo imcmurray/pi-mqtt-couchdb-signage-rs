@@ -214,6 +214,119 @@
                         </div>
                     </div>
 
+                    <div class="quick-actions">
+                        <h3>Layer Quick Actions</h3>
+                        <div class="tv-selector">
+                            <div class="tv-selection-mode">
+                                <button class="tv-mode-btn active" id="singleTvMode" onclick="setTvMode('single')">Single TV</button>
+                                <button class="tv-mode-btn" id="multiTvMode" onclick="setTvMode('multi')">Multi-TV</button>
+                            </div>
+
+                            <div id="singleTvSelector">
+                                <label for="tvSelect">Select TV:</label>
+                                <select id="tvSelect" class="form-select">
+                                    <option value="">Loading TVs...</option>
+                                </select>
+                                <button class="btn btn-secondary btn-sm" onclick="loadTVs()">Refresh</button>
+                            </div>
+
+                            <div id="multiTvSelector" style="display: none;">
+                                <label>Select TVs:</label>
+                                <div class="tv-checkbox-list" id="tvCheckboxList"></div>
+                                <div class="tv-checkbox-actions">
+                                    <button class="btn btn-secondary btn-sm" onclick="selectAllTvs()">Select All</button>
+                                    <button class="btn btn-secondary btn-sm" onclick="deselectAllTvs()">Deselect All</button>
+                                    <span id="selectedTvCount" style="margin-left: 8px; font-size: 12px; color: #7f8c8d;">0 selected</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <button class="btn btn-primary" onclick="createSampleLayers()">Create Sample Layers</button>
+                        <button class="btn btn-warning" onclick="hideAllLayers()">Hide All</button>
+                        <button class="btn btn-success" onclick="showAllLayers()">Show All</button>
+                        <button class="btn btn-danger" onclick="deleteAllLayers()">Delete All</button>
+                    </div>
+
+                    <div class="layers-display">
+                        <div class="layers-list">
+                            <h3>Active Layers <span class="layer-count" id="layerCountText">0</span></h3>
+                            <div id="layersList"></div>
+                        </div>
+                        <div class="preview-canvas">
+                            <div class="preview-header">
+                                <h3>Screen Preview</h3>
+                                <span class="preview-hint">Drag a layer to move it. Click to edit.</span>
+                            </div>
+                            <div class="screen-mockup" id="screenPreview"></div>
+                            <div class="preview-legend" id="previewLegend"></div>
+                        </div>
+                    </div>
+
+                    <div class="controls">
+                        <div class="control-panel">
+                            <div class="editor-header">
+                                <h3 id="layerEditorTitle">New Layer</h3>
+                                <button type="button" class="btn btn-secondary btn-sm" id="layerEditorNew" onclick="newLayer()" style="display: none;">+ New layer</button>
+                            </div>
+                            <form id="layerForm" onsubmit="saveLayer(event)">
+                                <div class="form-group">
+                                    <label for="layerName">Name</label>
+                                    <input type="text" id="layerName" class="form-input" placeholder="e.g., Court Schedule Header" maxlength="100" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="layerText">Text</label>
+                                    <textarea id="layerText" class="form-input" rows="2" placeholder="e.g., 9:00 AM - Room 101 - Smith vs. Johnson" required></textarea>
+                                </div>
+                                <div class="editor-grid">
+                                    <div class="form-group"><label for="layerX">X</label><input type="number" id="layerX" class="form-input" min="0" max="1920" value="0"></div>
+                                    <div class="form-group"><label for="layerY">Y</label><input type="number" id="layerY" class="form-input" min="0" max="1920" value="100"></div>
+                                    <div class="form-group"><label for="layerWidth">Width</label><input type="number" id="layerWidth" class="form-input" min="1" max="1920" value="1920"></div>
+                                    <div class="form-group"><label for="layerHeight">Height</label><input type="number" id="layerHeight" class="form-input" min="1" max="1920" value="60"></div>
+                                </div>
+                                <div class="editor-grid">
+                                    <div class="form-group"><label for="fontSize">Font size</label><input type="number" id="fontSize" class="form-input" min="10" max="100" value="28"></div>
+                                    <div class="form-group">
+                                        <label for="layerAlignment">Align</label>
+                                        <select id="layerAlignment" class="form-select">
+                                            <option value="left">Left</option>
+                                            <option value="center">Center</option>
+                                            <option value="right">Right</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group"><label for="layerPriority">Priority</label><input type="number" id="layerPriority" class="form-input" min="2" max="199" value="15" title="Higher draws on top. The slideshow is 1; alerts are 150 and up."></div>
+                                    <div class="form-group"><label for="layerOpacity">Opacity</label><input type="number" id="layerOpacity" class="form-input" min="0" max="100" value="100" step="5"></div>
+                                </div>
+                                <div class="editor-grid">
+                                    <div class="form-group"><label for="layerBgColor">Background</label><input type="color" id="layerBgColor" class="form-input color-input" value="#000000"></div>
+                                    <div class="form-group"><label for="layerBgAlpha">Background %</label><input type="number" id="layerBgAlpha" class="form-input" min="0" max="100" value="80" step="5"></div>
+                                    <div class="form-group"><label for="layerTextColor">Text</label><input type="color" id="layerTextColor" class="form-input color-input" value="#ffffff"></div>
+                                    <div class="form-group checkbox-group"><label><input type="checkbox" id="layerVisible" checked> Visible</label></div>
+                                </div>
+                                <div class="editor-actions">
+                                    <button type="submit" class="btn btn-primary" id="layerSaveButton">Create layer</button>
+                                    <button type="button" class="btn btn-secondary" id="layerSaveTemplateButton" onclick="openSaveTemplateModal()" style="display: none;">Save as template</button>
+                                </div>
+                            </form>
+                        </div>
+
+                        <div class="control-panel">
+                            <h3>Animation Controls</h3>
+                            <p style="margin-bottom: 16px; color: var(--ml-text-muted);">Plays once on the TV for the selected layer; the next change puts it back.</p>
+                            <div class="animation-controls">
+                                <button class="btn btn-primary btn-sm" onclick="animateSelected('slide_up')">↑ Slide Up</button>
+                                <button class="btn btn-primary btn-sm" onclick="animateSelected('slide_down')">↓ Slide Down</button>
+                                <button class="btn btn-primary btn-sm" onclick="animateSelected('slide_left')">← Slide Left</button>
+                                <button class="btn btn-primary btn-sm" onclick="animateSelected('slide_right')">→ Slide Right</button>
+                                <button class="btn btn-primary btn-sm" onclick="animateSelected('fade_in')">Fade In</button>
+                                <button class="btn btn-primary btn-sm" onclick="animateSelected('fade_out')">Fade Out</button>
+                            </div>
+                            <div class="form-group">
+                                <label for="animDuration">Duration (ms):</label>
+                                <input type="number" id="animDuration" class="form-input" value="500" min="100" max="3000">
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="alert-panel">
                         <h3>🚨 Emergency Alert System</h3>
 
@@ -327,111 +440,6 @@
                             </div>
 
                             <div id="scheduledList" style="margin-top: 8px;"></div>
-                        </div>
-                    </div>
-
-                    <div class="quick-actions">
-                        <h3>Layer Quick Actions</h3>
-                        <div class="tv-selector">
-                            <div class="tv-selection-mode">
-                                <button class="tv-mode-btn active" id="singleTvMode" onclick="setTvMode('single')">Single TV</button>
-                                <button class="tv-mode-btn" id="multiTvMode" onclick="setTvMode('multi')">Multi-TV</button>
-                            </div>
-
-                            <div id="singleTvSelector">
-                                <label for="tvSelect">Select TV:</label>
-                                <select id="tvSelect" class="form-select">
-                                    <option value="">Loading TVs...</option>
-                                </select>
-                                <button class="btn btn-secondary btn-sm" onclick="loadTVs()">Refresh</button>
-                            </div>
-
-                            <div id="multiTvSelector" style="display: none;">
-                                <label>Select TVs:</label>
-                                <div class="tv-checkbox-list" id="tvCheckboxList"></div>
-                                <div class="tv-checkbox-actions">
-                                    <button class="btn btn-secondary btn-sm" onclick="selectAllTvs()">Select All</button>
-                                    <button class="btn btn-secondary btn-sm" onclick="deselectAllTvs()">Deselect All</button>
-                                    <span id="selectedTvCount" style="margin-left: 8px; font-size: 12px; color: #7f8c8d;">0 selected</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <button class="btn btn-primary" onclick="createSampleLayers()">Create Sample Layers</button>
-                        <button class="btn btn-warning" onclick="hideAllLayers()">Hide All</button>
-                        <button class="btn btn-success" onclick="showAllLayers()">Show All</button>
-                        <button class="btn btn-danger" onclick="deleteAllLayers()">Delete All</button>
-                    </div>
-
-                    <div class="controls">
-                        <div class="control-panel">
-                            <h3>Create Data Row Layer</h3>
-                            <form id="layerForm">
-                                <div class="form-group">
-                                    <label for="layerName">Layer Name:</label>
-                                    <input type="text" id="layerName" class="form-input" placeholder="e.g., Court Schedule Entry">
-                                </div>
-
-                                <div class="form-group">
-                                    <label for="layerText">Text Content:</label>
-                                    <textarea id="layerText" class="form-input" rows="2" placeholder="e.g., 9:00 AM - Room 101 - Smith vs. Johnson"></textarea>
-                                </div>
-
-                                <div class="form-group">
-                                    <label for="layerY">Y Position:</label>
-                                    <input type="number" id="layerY" class="form-input" value="100" min="0" max="1080">
-                                </div>
-
-                                <div class="form-group">
-                                    <label for="layerHeight">Height:</label>
-                                    <input type="number" id="layerHeight" class="form-input" value="50" min="20" max="200">
-                                </div>
-
-                                <div class="form-group">
-                                    <label for="fontSize">Font Size:</label>
-                                    <input type="number" id="fontSize" class="form-input" value="24" min="12" max="48">
-                                </div>
-
-                                <button type="button" class="btn btn-primary" onclick="createLayer()">Create Layer</button>
-                            </form>
-                        </div>
-
-                        <div class="control-panel">
-                            <h3>Animation Controls</h3>
-                            <p style="margin-bottom: 16px; color: #7f8c8d;">Select a layer first, then choose animation:</p>
-
-                            <div class="animation-controls">
-                                <button class="btn btn-primary btn-sm" onclick="animateSelected('slide_up')">↑ Slide Up</button>
-                                <button class="btn btn-primary btn-sm" onclick="animateSelected('slide_down')">↓ Slide Down</button>
-                                <button class="btn btn-primary btn-sm" onclick="animateSelected('slide_left')">← Slide Left</button>
-                                <button class="btn btn-primary btn-sm" onclick="animateSelected('slide_right')">→ Slide Right</button>
-                                <button class="btn btn-primary btn-sm" onclick="animateSelected('fade_in')">Fade In</button>
-                                <button class="btn btn-primary btn-sm" onclick="animateSelected('fade_out')">Fade Out</button>
-                            </div>
-
-                            <div class="form-group">
-                                <label for="animDuration">Duration (ms):</label>
-                                <input type="number" id="animDuration" class="form-input" value="500" min="100" max="3000">
-                            </div>
-
-                            <div class="position-controls">
-                                <input type="number" id="moveX" class="form-input" placeholder="X" value="0">
-                                <input type="number" id="moveY" class="form-input" placeholder="Y" value="0">
-                                <button class="btn btn-primary btn-sm" onclick="moveSelected(false)">Move</button>
-                                <button class="btn btn-primary btn-sm" onclick="moveSelected(true)">Animate Move</button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="layers-display">
-                        <div class="layers-list">
-                            <h3>Active Layers <span class="layer-count" id="layerCountText">0</span></h3>
-                            <div id="layersList"></div>
-                        </div>
-
-                        <div class="preview-canvas">
-                            <h3>Screen Preview</h3>
-                            <div class="screen-mockup" id="screenPreview"></div>
                         </div>
                     </div>
 

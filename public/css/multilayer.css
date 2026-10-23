@@ -72,6 +72,7 @@
     display: grid;
     grid-template-columns: 1fr 2fr;
     gap: 24px;
+    margin-bottom: 24px;
 }
 
 #layers-section .layers-list {
@@ -152,34 +153,204 @@
 #layers-section .screen-mockup {
     position: relative;
     width: 100%;
-    max-width: 600px;
     aspect-ratio: 16/9;
     background: #000;
     border-radius: 8px;
     border: 2px solid var(--ml-border);
     overflow: hidden;
     margin: 0 auto;
+    touch-action: none;
+    user-select: none;
+}
+
+#layers-section .preview-background {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    pointer-events: none;
+}
+
+#layers-section .preview-empty {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #64748b;
+    font-size: 14px;
 }
 
 #layers-section .layer-preview {
     position: absolute;
-    background: rgba(0, 0, 0, 0.8);
-    color: white;
-    padding: 8px 12px;
-    font-size: 12px;
-    border-radius: 4px;
-    transition: all 0.3s ease;
-    cursor: pointer;
-    border: 1px solid rgba(255, 255, 255, 0.3);
+    display: flex;
+    align-items: center;
+    box-sizing: border-box;
+    overflow: hidden;
+    line-height: 1.15;
+    white-space: pre-wrap;
+    cursor: grab;
+    outline: 1px dashed rgba(255, 255, 255, 0.35);
+    outline-offset: -1px;
+}
+
+#layers-section .layer-preview span {
+    width: 100%;
 }
 
 #layers-section .layer-preview:hover {
-    background: rgba(255, 255, 255, 0.9);
-    color: black;
+    outline: 2px solid rgba(255, 255, 255, 0.8);
 }
 
-#layers-section .layer-preview.animating {
-    animation: ml-pulse 0.5s infinite;
+#layers-section .layer-preview.selected {
+    outline: 2px solid #f59e0b;
+    outline-offset: -2px;
+}
+
+#layers-section .layer-preview.dragging {
+    cursor: grabbing;
+    box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.15);
+}
+
+#layers-section .layer-preview.alert-layer {
+    cursor: default;
+    outline: 2px dashed #f87171;
+}
+
+#layers-section .preview-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+#layers-section .preview-hint,
+#layers-section .preview-legend {
+    font-size: 12px;
+    color: var(--ml-text-muted);
+}
+
+#layers-section .preview-legend {
+    margin-top: 8px;
+    min-height: 1em;
+}
+
+#layers-section .layers-empty {
+    color: var(--ml-text-muted);
+    text-align: center;
+    padding: 24px;
+}
+
+#layers-section .layer-item {
+    cursor: pointer;
+}
+
+#layers-section .layer-item.selected {
+    border-color: #f59e0b;
+    box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.25);
+}
+
+#layers-section .layer-item.hidden-layer .layer-text,
+#layers-section .layer-item.hidden-layer .layer-name {
+    opacity: 0.55;
+}
+
+#layers-section .layer-item-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+    min-width: 0;
+}
+
+#layers-section .layer-item-header .layer-name {
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#layers-section .layer-swatch {
+    flex: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    border: 1px solid var(--ml-border);
+}
+
+#layers-section .layer-badge {
+    margin-left: auto;
+    flex: none;
+    font-size: 11px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: var(--ml-border);
+    color: var(--ml-text-muted);
+}
+
+#layers-section .layer-text {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#layers-section .layer-meta {
+    flex-wrap: wrap;
+}
+
+#layers-section .editor-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+#layers-section .editor-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+}
+
+#layers-section .editor-grid .form-group {
+    margin-bottom: 12px;
+}
+
+#layers-section .editor-grid .form-input,
+#layers-section .editor-grid .form-select {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+}
+
+#layers-section .color-input {
+    height: 38px;
+    padding: 2px 4px;
+}
+
+#layers-section .checkbox-group {
+    display: flex;
+    align-items: flex-end;
+}
+
+#layers-section .checkbox-group label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+}
+
+#layers-section .editor-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+@media (max-width: 560px) {
+    #layers-section .editor-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
 }
 
 @keyframes ml-pulse {

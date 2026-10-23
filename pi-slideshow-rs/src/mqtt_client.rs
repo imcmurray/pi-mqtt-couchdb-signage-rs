@@ -91,6 +91,8 @@ pub enum SlideshowCommand {
     SetLayerOpacity { layer_id: String, opacity: f32 },
     AnimateLayer { layer_id: String, animation_type: String, duration_ms: u64, distance: Option<f32> },
     SyncAlerts { alerts: Vec<AlertData> },
+    // Full Layer Control layer list for this TV (server Layer documents)
+    SyncLayers { layers: Vec<serde_json::Value> },
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -147,7 +149,11 @@ pub fn parse_rgba_string(rgba: &str) -> (u8, u8, u8, u8) {
     let r = parts[0].parse::<u8>().unwrap_or(default.0);
     let g = parts[1].parse::<u8>().unwrap_or(default.1);
     let b = parts[2].parse::<u8>().unwrap_or(default.2);
-    let a = parts[3].parse::<f32>().map(|v| (v * 255.0) as u8).unwrap_or(default.3);
+    // CSS alpha is 0-1, but layer templates store 0-255; accept both
+    let a = parts[3]
+        .parse::<f32>()
+        .map(|v| if v > 1.0 { v.min(255.0) as u8 } else { (v * 255.0) as u8 })
+        .unwrap_or(default.3);
 
     (r, g, b, a)
 }
@@ -286,6 +292,11 @@ impl MqttClient {
                 };
                 println!("🔄 MQTT CONFIG UPDATE received: {:?}", config);
                 SlideshowCommand::UpdateConfig { config }
+            },
+            "sync_layers" => {
+                let layers = mqtt_command.payload["layers"].as_array().cloned().unwrap_or_default();
+                println!("🧱 MQTT SYNC LAYERS received: {} layer(s)", layers.len());
+                SlideshowCommand::SyncLayers { layers }
             },
             "add_layer" => {
                 let layer: Layer = serde_json::from_value(mqtt_command.payload["layer"].clone())?;

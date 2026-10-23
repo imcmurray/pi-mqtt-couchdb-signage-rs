@@ -1,5 +1,9 @@
 // Mock node-cron before requiring batchScheduler
 jest.mock('node-cron');
+jest.mock('../../../src/services/multilayer.mqttService', () => ({
+  syncLayers: jest.fn(),
+  isConnected: jest.fn(() => false)
+}));
 
 const batchScheduler = require('../../../src/services/batchScheduler');
 const cron = require('node-cron');
@@ -296,9 +300,10 @@ describe('BatchScheduler Service', () => {
 
       const result = await batchScheduler.setLayerVisibility('court-schedule', false);
 
-      expect(mockLayers[0].setVisibility).toHaveBeenCalledWith(false, { duration: 500 });
-      expect(mockLayers[1].setVisibility).toHaveBeenCalledWith(false, { duration: 500 });
+      expect(mockLayers[0].setVisibility).toHaveBeenCalledWith(false);
+      expect(mockLayers[1].setVisibility).toHaveBeenCalledWith(false);
       expect(mockLayers[2].setVisibility).not.toHaveBeenCalled();
+      expect(require('../../../src/services/multilayer.mqttService').syncLayers).toHaveBeenCalledTimes(2);
     });
 
     it('should handle empty layer result', async () => {

@@ -292,8 +292,8 @@ class LayerController {
       return res.status(400).json({ error: error.details[0].message });
     }
     
-    // Check layer limit
-    const existingLayers = await Layer.findByTv(tv_id);
+    // Check layer limit (alert banners don't count; they come and go on their own)
+    const existingLayers = (await Layer.findByTv(tv_id)).filter(l => !Layer.isAlertLayer(l));
     if (existingLayers.length >= tv.config.layer_settings.max_layers) {
       return res.status(400).json({ 
         error: `Maximum layer limit (${tv.config.layer_settings.max_layers}) reached` 
@@ -303,11 +303,7 @@ class LayerController {
     // Create layer
     const layer = new Layer(value);
     await layer.save();
-    
-    // Publish MQTT event
-    if (mqttService.isConnected()) {
-      await mqttService.publishLayerUpdate(tv_id, layer.layer_id, 'created', layer);
-    }
+    mqttService.syncLayers(tv_id);
 
     res.status(201).json(layer);
 
@@ -376,13 +372,24 @@ class LayerController {
       return res.status(404).json({ error: 'Layer not found' });
     }
     
-    // Update layer
-    await layer.update(req.body);
-
-    // Publish MQTT event
-    if (mqttService.isConnected()) {
-      await mqttService.publishLayerUpdate(tv_id, layer_id, 'updated', layer);
+    // Validate the layer as it will be after the update
+    const current = {
+      name: layer.name,
+      layer_type: layer.layer_type,
+      content: layer.content,
+      position: layer.position,
+      visible: layer.visible,
+      opacity: layer.opacity,
+      priority: layer.priority
+    };
+    const { error, value } = layerSchema.validate({ ...current, ...req.body, tv_id, layer_id });
+    if (error) {
+      return res.status(400).json({ error: error.details[0].message });
     }
+
+    const { schedule, ...updates } = value;
+    await layer.update(updates);
+    mqttService.syncLayers(tv_id);
 
     res.json(layer);
 
@@ -437,11 +444,7 @@ class LayerController {
     }
     
     await layer.delete();
-
-    // Publish MQTT event
-    if (mqttService.isConnected()) {
-      await mqttService.publishLayerUpdate(tv_id, layer_id, 'deleted');
-    }
+    mqttService.syncLayers(tv_id);
 
     res.json({ message: 'Layer deleted successfully' });
 
@@ -545,31 +548,14 @@ class LayerController {
       return res.status(404).json({ error: 'Layer not found' });
     }
     
-    // Update animation state
-    layer.animation_state = {
-      active: true,
-      type: value.type,
-      start_time: new Date().toISOString(),
-      duration: value.duration,
-      easing: value.easing,
-      progress: 0
-    };
-    
-    // Set target position for move animations
+ 
+    // A move is a position change; the other animations play once on the TV
+    // and the next layer sync puts the layer back to its saved state
     if (value.type === 'move') {
-      layer.target_position = {
-        x: value.to_x,
-        y: value.to_y,
-        width: layer.position.width,
-        height: layer.position.height
-      };
-    }
-    
-    await layer.save();
-    
-    // Publish MQTT command
-    if (mqttService.isConnected()) {
-      await mqttService.publishLayerAnimation(tv_id, layer_id, value);
+      await layer.move(value.to_x, value.to_y);
+      mqttService.syncLayers(tv_id);
+    } else {
+      await mqttService.animateLayer(tv_id, layer_id, value);
     }
     
     res.json({ 
@@ -642,20 +628,20 @@ class LayerController {
    */
   async toggleLayerVisibility(req, res) {
     const { tv_id, layer_id } = req.params;
-    const { visible, transition } = req.body;
+    const { visible } = req.body;
     
     const layer = await Layer.findById(layer_id);
     if (!layer || layer.tv_id !== tv_id) {
       return res.status(404).json({ error: 'Layer not found' });
     }
     
-    await layer.setVisibility(visible, transition);
-    
-    // Publish MQTT event
-    if (mqttService.isConnected()) {
-      await mqttService.publishLayerVisibility(tv_id, layer_id, visible, transition);
+    if (typeof visible !== 'boolean') {
+      return res.status(400).json({ error: 'visible must be true or false' });
     }
-    
+
+    await layer.setVisibility(visible);
+    mqttService.syncLayers(tv_id);
+
     res.json({ 
       message: `Layer ${visible ? 'shown' : 'hidden'}`, 
       layer_id,
@@ -749,7 +735,7 @@ class LayerController {
    */
   async moveLayer(req, res) {
     const { tv_id, layer_id } = req.params;
-    const { x, y, animate = false, duration = 500 } = req.body;
+    const { x, y } = req.body;
     
     if (typeof x !== 'number' || typeof y !== 'number') {
       return res.status(400).json({ error: 'Invalid position coordinates' });
@@ -760,18 +746,13 @@ class LayerController {
       return res.status(404).json({ error: 'Layer not found' });
     }
     
-    await layer.move(x, y, animate, duration);
-    
-    // Publish MQTT command
-    if (mqttService.isConnected()) {
-      await mqttService.publishLayerMove(tv_id, layer_id, x, y, animate, duration);
-    }
-    
-    res.json({ 
-      message: 'Layer moved', 
+    await layer.move(x, y);
+    mqttService.syncLayers(tv_id);
+
+    res.json({
+      message: 'Layer moved',
       layer_id,
-      position: { x, y },
-      animated: animate 
+      position: layer.position
     });
   }
 
@@ -845,20 +826,16 @@ class LayerController {
    */
   async updateLayerContent(req, res) {
     const { tv_id, layer_id } = req.params;
-    const { content, transition } = req.body;
+    const { content } = req.body;
     
     const layer = await Layer.findById(layer_id);
     if (!layer || layer.tv_id !== tv_id) {
       return res.status(404).json({ error: 'Layer not found' });
     }
     
-    await layer.updateContent(content, transition);
-    
-    // Publish MQTT event
-    if (mqttService.isConnected()) {
-      await mqttService.publishLayerContent(tv_id, layer_id, content, transition);
-    }
-    
+    await layer.updateContent(content);
+    mqttService.syncLayers(tv_id);
+
     res.json({ 
       message: 'Layer content updated', 
       layer_id,
@@ -968,21 +945,20 @@ class LayerController {
         for (const { layer_id, animation } of layers) {
           const layer = await Layer.findById(layer_id);
           if (layer && layer.tv_id === tv_id) {
-            // Start animation
-            if (mqttService.isConnected()) {
-              await mqttService.publishLayerAnimation(tv_id, layer_id, animation);
-            }
             results.push({ layer_id, animation });
           }
         }
         break;
     }
     
-    // Publish batch MQTT event
-    if (mqttService.isConnected()) {
-      await mqttService.publishLayerBatch(tv_id, operation, results);
+    if (operation === 'animate') {
+      for (const { layer_id, animation } of results) {
+        await mqttService.animateLayer(tv_id, layer_id, animation);
+      }
+    } else {
+      mqttService.syncLayers(tv_id);
     }
-    
+
     res.json({ 
       message: `Batch ${operation} completed`, 
       operation,

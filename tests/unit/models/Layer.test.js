@@ -371,19 +371,21 @@ describe('Layer Model', () => {
       expect(layer.position.y).toBe(0); // Moved to target position
     });
 
-    it('should set visibility with fade transition', async () => {
+    it('should save visibility without starting an animation', async () => {
       const layer = new Layer({
         tv_id: 'tv_123',
-        layer_type: 'DataRow'
+        layer_type: 'DataRow',
+        visible: false
       });
 
       layer.save = jest.fn().mockResolvedValue(layer);
       layer.startAnimation = jest.fn().mockResolvedValue(layer);
 
-      await layer.setVisibility(true, { duration: 500, easing: 'ease-in' });
+      await layer.setVisibility(true);
 
       expect(layer.visible).toBe(true);
-      expect(layer.startAnimation).toHaveBeenCalledWith('fade_in', 500, 'ease-in');
+      expect(layer.save).toHaveBeenCalled();
+      expect(layer.startAnimation).not.toHaveBeenCalled();
     });
 
     it('should set visibility without transition', async () => {
@@ -400,19 +402,21 @@ describe('Layer Model', () => {
       expect(layer.save).toHaveBeenCalled();
     });
 
-    it('should move layer with animation', async () => {
+    it('should save the new position and clear any pending target', async () => {
       const layer = new Layer({
         tv_id: 'tv_123',
         layer_type: 'DataRow',
-        position: { x: 0, y: 0, width: 1920, height: 40 }
+        position: { x: 0, y: 0, width: 1920, height: 40 },
+        target_position: { x: 5, y: 5, width: 1920, height: 40 }
       });
 
-      layer.startAnimation = jest.fn().mockResolvedValue(layer);
+      layer.save = jest.fn().mockResolvedValue(layer);
 
-      await layer.move(100, 200, true, 500);
+      await layer.move(100, 200);
 
-      expect(layer.target_position).toEqual({ x: 100, y: 200, width: 1920, height: 40 });
-      expect(layer.startAnimation).toHaveBeenCalledWith('move', 500);
+      expect(layer.position).toEqual({ x: 100, y: 200, width: 1920, height: 40 });
+      expect(layer.target_position).toBeNull();
+      expect(layer.save).toHaveBeenCalled();
     });
 
     it('should move layer without animation', async () => {

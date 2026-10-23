@@ -1,5 +1,10 @@
 // Multi-Layer Digital Signage Management Interface
 
+// Layer coordinates are in the TV's 1920x1080 compositing space
+const SCREEN_WIDTH = 1920;
+const SCREEN_HEIGHT = 1080;
+const DRAG_SNAP = 10;
+
 class MultiLayerManager {
     constructor() {
         this.selectedTvId = null;
@@ -7,6 +12,7 @@ class MultiLayerManager {
         this.layers = [];
         this.ws = null;
         this.apiBase = '/api';
+        this.drag = null;
 
         // Alert management properties
         this.selectedAlertType = 'INFO';
@@ -22,7 +28,7 @@ class MultiLayerManager {
 
         this.init();
     }
-    
+
     async init() {
         await this.loadTVs();
         await this.loadActiveAlerts();
@@ -31,9 +37,58 @@ class MultiLayerManager {
         this.setupEventListeners();
         this.startStatusUpdates();
         this.renderTvCheckboxes();
+        this.resetLayerForm();
         this.log('Multi-Layer Manager initialized');
     }
-    
+
+    // Layer Control API lives under /api/layers (the /api/tvs/:id/layers routes
+    // are the older per-TV slideshow/logo config)
+    layersUrl(path = '', tvId = this.selectedTvId) {
+        return `${this.apiBase}/layers/tvs/${tvId}/layers${path}`;
+    }
+
+    escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, ch => (
+            { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]
+        ));
+    }
+
+    // Layer colours are "rgba(r, g, b, a)"; templates store a as 0-255, the UI as 0-1
+    parseColor(value) {
+        const match = String(value || '').match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+))?\s*\)/);
+        if (!match) return { r: 0, g: 0, b: 0, a: 1 };
+        let a = match[4] === undefined ? 1 : parseFloat(match[4]);
+        if (a > 1) a = Math.min(a, 255) / 255;
+        return { r: +match[1], g: +match[2], b: +match[3], a };
+    }
+
+    cssColor(value) {
+        const { r, g, b, a } = this.parseColor(value);
+        return `rgba(${r}, ${g}, ${b}, ${a.toFixed(3)})`;
+    }
+
+    colorToHex(value) {
+        const { r, g, b } = this.parseColor(value);
+        return '#' + [r, g, b].map(n => n.toString(16).padStart(2, '0')).join('');
+    }
+
+    hexToRgba(hex, alpha) {
+        const n = parseInt(hex.slice(1), 16);
+        return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${Math.round(alpha * 100) / 100})`;
+    }
+
+    isAlertLayer(layer) {
+        return (layer.tags || []).includes('alert');
+    }
+
+    get selectedTv() {
+        return this.tvs.find(tv => tv._id === this.selectedTvId);
+    }
+
+    get controlLayers() {
+        return this.layers.filter(layer => !this.isAlertLayer(layer));
+    }
+
     async loadTVs() {
         try {
             const response = await fetch(`${this.apiBase}/tvs`);
@@ -41,193 +96,250 @@ class MultiLayerManager {
             this.tvs = tvs;
 
             const tvSelect = document.getElementById('tvSelect');
-            tvSelect.innerHTML = '<option value="">Select a TV...</option>';
-
-            tvs.forEach(tv => {
-                const option = document.createElement('option');
-                option.value = tv._id;
-                option.textContent = `${tv.name} (${tv.location})`;
-                tvSelect.appendChild(option);
-            });
+            tvSelect.innerHTML = '<option value="">Select a TV...</option>' + tvs.map(tv =>
+                `<option value="${this.escapeHtml(tv._id)}">${this.escapeHtml(tv.name)} (${this.escapeHtml(tv.location)})</option>`
+            ).join('');
 
             // Auto-select first TV if available
             if (tvs.length > 0 && !this.selectedTvId) {
                 this.selectedTvId = tvs[0]._id;
-                tvSelect.value = this.selectedTvId;
+            }
+            tvSelect.value = this.selectedTvId || '';
+            if (this.selectedTvId) {
                 await this.loadLayers();
             }
 
-            // Update multi-TV checkboxes
             this.renderTvCheckboxes();
-
             this.log(`Loaded ${tvs.length} TVs`);
         } catch (error) {
             this.log(`Error loading TVs: ${error.message}`, 'error');
         }
     }
-    
+
     async loadLayers() {
         if (!this.selectedTvId) return;
 
         try {
-            const response = await fetch(`${this.apiBase}/tvs/${this.selectedTvId}/layers`);
-            const data = await response.json();
-
-            this.layers = Array.isArray(data) ? data : [];
-
-            this.updateLayersList();
-            this.updateScreenPreview();
-            this.updateLayerCount();
-
-            this.log(`Loaded ${this.layers.length} layers for TV ${this.selectedTvId}`);
+            const response = await fetch(this.layersUrl());
+            if (!response.ok) throw new Error((await response.json()).error || response.statusText);
+            this.layers = await response.json();
         } catch (error) {
             this.layers = [];
             this.log(`Error loading layers: ${error.message}`, 'error');
         }
+
+        if (this.selectedLayerId && !this.layers.some(l => l.layer_id === this.selectedLayerId)) {
+            this.selectedLayerId = null;
+            this.resetLayerForm();
+        }
+        this.renderLayers();
     }
-    
+
+    renderLayers() {
+        // Re-rendering mid-drag would drop the element being dragged
+        if (this.drag) return;
+        this.updateLayersList();
+        this.updateScreenPreview();
+        this.updateLayerCount();
+    }
+
     updateLayersList() {
         const layersList = document.getElementById('layersList');
-        
-        if (this.layers.length === 0) {
-            layersList.innerHTML = '<p style="color: var(--text-muted); text-align: center; padding: 24px;">No layers created yet</p>';
+        const layers = [...this.controlLayers].sort((a, b) => b.priority - a.priority);
+
+        if (layers.length === 0) {
+            layersList.innerHTML = '<p class="layers-empty">No layers yet. Create one, apply a template, or add the sample layers.</p>';
             return;
         }
-        
-        // Sort layers by priority
-        const sortedLayers = [...this.layers].sort((a, b) => a.priority - b.priority);
-        
-        layersList.innerHTML = sortedLayers.map(layer => `
-            <div class="layer-item ${layer.isAnimating ? 'animating' : ''}" 
-                 onclick="selectLayer('${layer.layer_id}')"
-                 style="border-color: ${this.selectedLayerId === layer.layer_id ? 'var(--primary)' : 'var(--border)'}">
-                <div class="layer-name">${layer.name}</div>
-                <div class="layer-text">${layer.content.text}</div>
+
+        layersList.innerHTML = layers.map(layer => {
+            const id = this.escapeHtml(layer.layer_id);
+            const { x, y, width, height } = layer.position;
+            return `
+            <div class="layer-item ${this.selectedLayerId === layer.layer_id ? 'selected' : ''} ${layer.visible ? '' : 'hidden-layer'}"
+                 onclick="selectLayer('${id}')">
+                <div class="layer-item-header">
+                    <span class="layer-swatch" style="background: ${this.cssColor(layer.content?.backgroundColor)}"></span>
+                    <span class="layer-name">${this.escapeHtml(layer.name)}</span>
+                    ${layer.visible ? '' : '<span class="layer-badge">Hidden</span>'}
+                </div>
+                <div class="layer-text">${this.escapeHtml(layer.content?.text)}</div>
                 <div class="layer-meta">
-                    <span>Y: ${layer.position.y}px</span>
-                    <span>H: ${layer.position.height}px</span>
-                    <span>P: ${layer.priority}</span>
-                    <span>O: ${Math.round(layer.opacity * 100)}%</span>
-                    <span style="color: ${layer.visible ? 'var(--success)' : 'var(--danger)'}">
-                        ${layer.visible ? '👁️ Visible' : '🙈 Hidden'}
-                    </span>
+                    <span>${x},${y}</span>
+                    <span>${width}×${height}</span>
+                    <span>Priority ${layer.priority}</span>
+                    ${layer.opacity < 1 ? `<span>${Math.round(layer.opacity * 100)}%</span>` : ''}
                 </div>
                 <div class="layer-controls">
-                    <button class="btn btn-small btn-secondary" onclick="event.stopPropagation(); editLayer('${layer.layer_id}')">Edit</button>
-                    <button class="btn btn-small ${layer.visible ? 'btn-warning' : 'btn-success'}" 
-                            onclick="event.stopPropagation(); toggleLayerVisibility('${layer.layer_id}', ${!layer.visible})">
+                    <button class="btn btn-small ${layer.visible ? 'btn-warning' : 'btn-success'}"
+                            onclick="event.stopPropagation(); toggleLayerVisibility('${id}', ${!layer.visible})">
                         ${layer.visible ? 'Hide' : 'Show'}
                     </button>
-                    <button class="btn btn-small btn-danger" onclick="event.stopPropagation(); deleteLayer('${layer.layer_id}')">Delete</button>
+                    <button class="btn btn-small btn-danger" onclick="event.stopPropagation(); deleteLayer('${id}')">Delete</button>
                 </div>
-            </div>
-        `).join('');
+            </div>`;
+        }).join('');
     }
-    
+
     updateScreenPreview() {
-        const screenPreview = document.getElementById('screenPreview');
-        
-        // Clear existing previews
-        screenPreview.innerHTML = '';
-        
-        // Sort layers by priority for proper z-index
-        const sortedLayers = [...this.layers].sort((a, b) => a.priority - b.priority);
-        
-        sortedLayers.forEach(layer => {
-            if (!layer.visible) return;
-            
-            const preview = document.createElement('div');
-            preview.className = `layer-preview ${layer.isAnimating ? 'animating' : ''}`;
-            preview.onclick = () => this.selectLayer(layer.layer_id);
-            
-            // Scale position to fit preview (600px wide for 1920px screen)
-            const scale = 600 / 1920;
-            const scaledX = layer.position.x * scale;
-            const scaledY = layer.position.y * scale;
-            const scaledWidth = layer.position.width * scale;
-            const scaledHeight = layer.position.height * scale;
-            
-            preview.style.left = `${scaledX}px`;
-            preview.style.top = `${scaledY}px`;
-            preview.style.width = `${scaledWidth}px`;
-            preview.style.height = `${scaledHeight}px`;
-            preview.style.zIndex = layer.priority;
-            preview.style.opacity = layer.opacity;
-            
-            // Parse background color
-            const bgMatch = layer.content.backgroundColor.match(/rgba?\(([^)]+)\)/);
-            if (bgMatch) {
-                preview.style.background = layer.content.backgroundColor;
-            }
-            
-            // Truncate text for preview
-            const maxLength = scaledWidth > 100 ? 30 : 15;
-            const displayText = layer.content.text.length > maxLength 
-                ? layer.content.text.substring(0, maxLength) + '...'
-                : layer.content.text;
-            
-            preview.textContent = displayText;
-            preview.title = `${layer.name}: ${layer.content.text}`;
-            
-            screenPreview.appendChild(preview);
-        });
+        const screen = document.getElementById('screenPreview');
+        const tv = this.selectedTv;
+        const scale = (screen.clientWidth || 600) / SCREEN_WIDTH;
+        const alerts = this.layers.filter(layer => this.isAlertLayer(layer) && layer.visible);
+
+        const background = tv?.current_image
+            ? `<img class="preview-background" src="/api/images/${encodeURIComponent(tv.current_image)}/attachment?width=960" alt="" draggable="false">`
+            : '<div class="preview-empty">No image showing</div>';
+
+        // Hidden layers aren't on the TV; still draw the selected one faintly so it can be moved
+        const drawn = this.layers
+            .filter(layer => layer.visible || layer.layer_id === this.selectedLayerId)
+            .sort((a, b) => a.priority - b.priority);
+
+        screen.innerHTML = background + drawn.map(layer => {
+            const { x, y, width, height } = layer.position;
+            const content = layer.content || {};
+            const isAlert = this.isAlertLayer(layer);
+            const classes = ['layer-preview',
+                isAlert ? 'alert-layer' : '',
+                layer.layer_id === this.selectedLayerId ? 'selected' : '',
+                layer.visible ? '' : 'hidden-layer'].filter(Boolean).join(' ');
+            const style = [
+                `left: ${(x / SCREEN_WIDTH) * 100}%`,
+                `top: ${(y / SCREEN_HEIGHT) * 100}%`,
+                `width: ${(width / SCREEN_WIDTH) * 100}%`,
+                `height: ${(height / SCREEN_HEIGHT) * 100}%`,
+                `z-index: ${layer.priority}`,
+                `opacity: ${layer.visible ? layer.opacity : 0.35}`,
+                `background: ${this.cssColor(content.backgroundColor)}`,
+                `color: ${this.cssColor(content.textColor)}`,
+                `font-size: ${Math.max((content.fontSize || 24) * scale, 6)}px`,
+                `justify-content: ${{ center: 'center', right: 'flex-end' }[content.alignment] || 'flex-start'}`,
+                `text-align: ${content.alignment || 'left'}`,
+                `padding: 0 ${10 * scale}px`
+            ].join('; ');
+            return `<div class="${classes}" data-layer-id="${this.escapeHtml(layer.layer_id)}" style="${style}"
+                         title="${this.escapeHtml(layer.name)}"><span>${this.escapeHtml(content.text)}</span></div>`;
+        }).join('');
+
+        document.getElementById('previewLegend').textContent = [
+            tv?.config?.orientation && tv.config.orientation !== 'landscape' ? `TV orientation: ${tv.config.orientation}` : '',
+            alerts.length ? `${alerts.length} alert banner(s) showing (managed under Emergency Alerts)` : ''
+        ].filter(Boolean).join(' · ');
     }
-    
+
     updateLayerCount() {
-        const count = this.layers.length;
-        document.getElementById('layerCount').textContent = `${count} layers`;
+        const count = this.controlLayers.length;
+        document.getElementById('layerCount').textContent = `${count} layer${count === 1 ? '' : 's'}`;
         document.getElementById('layerCountText').textContent = count;
     }
-    
+
+    // Drag layers around the preview; a press without movement selects
+    onPreviewPointerDown(event) {
+        const element = event.target.closest('.layer-preview');
+        if (!element || element.classList.contains('alert-layer') || event.button !== 0) return;
+        const layer = this.layers.find(l => l.layer_id === element.dataset.layerId);
+        if (!layer) return;
+
+        event.preventDefault();
+        element.setPointerCapture(event.pointerId);
+        const screen = document.getElementById('screenPreview');
+        this.drag = {
+            element,
+            layer,
+            startX: event.clientX,
+            startY: event.clientY,
+            scale: screen.clientWidth / SCREEN_WIDTH,
+            moved: false,
+            x: layer.position.x,
+            y: layer.position.y
+        };
+    }
+
+    onPreviewPointerMove(event) {
+        const drag = this.drag;
+        if (!drag) return;
+        const dx = (event.clientX - drag.startX) / drag.scale;
+        const dy = (event.clientY - drag.startY) / drag.scale;
+        if (!drag.moved && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 4) return;
+        drag.moved = true;
+
+        const snap = value => Math.round(value / DRAG_SNAP) * DRAG_SNAP;
+        const { width, height } = drag.layer.position;
+        drag.x = Math.min(Math.max(snap(drag.layer.position.x + dx), 0), SCREEN_WIDTH - width);
+        drag.y = Math.min(Math.max(snap(drag.layer.position.y + dy), 0), SCREEN_HEIGHT - height);
+        drag.element.style.left = `${(drag.x / SCREEN_WIDTH) * 100}%`;
+        drag.element.style.top = `${(drag.y / SCREEN_HEIGHT) * 100}%`;
+        drag.element.classList.add('dragging');
+    }
+
+    async onPreviewPointerUp() {
+        const drag = this.drag;
+        if (!drag) return;
+        this.drag = null;
+
+        if (!drag.moved) {
+            this.selectLayer(drag.layer.layer_id);
+            return;
+        }
+        if (drag.x === drag.layer.position.x && drag.y === drag.layer.position.y) {
+            this.renderLayers();
+            return;
+        }
+
+        try {
+            const response = await fetch(this.layersUrl(`/${drag.layer.layer_id}/move`), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ x: drag.x, y: drag.y })
+            });
+            if (!response.ok) throw new Error((await response.json()).error || response.statusText);
+            this.log(`Moved "${drag.layer.name}" to ${drag.x},${drag.y}`);
+        } catch (error) {
+            this.log(`Failed to move layer: ${error.message}`, 'error');
+        }
+        this.selectedLayerId = drag.layer.layer_id;
+        await this.loadLayers();
+        this.fillLayerForm(this.layers.find(l => l.layer_id === drag.layer.layer_id));
+    }
+
     connectWebSocket() {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${protocol}//${window.location.host}`;
-        
+
         this.ws = new WebSocket(wsUrl);
-        
+
         this.ws.onopen = () => {
             this.updateConnectionStatus(true);
             this.log('WebSocket connected');
-            
-            // Subscribe to layer updates for current TV
-            if (this.selectedTvId) {
-                this.ws.send(JSON.stringify({
-                    type: 'subscribe_layers',
-                    tv_id: this.selectedTvId
-                }));
-            }
         };
-        
+
         this.ws.onmessage = (event) => {
             const data = JSON.parse(event.data);
             this.handleWebSocketMessage(data);
         };
-        
+
         this.ws.onclose = () => {
             this.updateConnectionStatus(false);
             this.log('WebSocket disconnected, attempting to reconnect...', 'warning');
-            
-            // Attempt to reconnect after 3 seconds
-            setTimeout(() => {
-                this.connectWebSocket();
-            }, 3000);
+            setTimeout(() => this.connectWebSocket(), 3000);
         };
-        
-        this.ws.onerror = (error) => {
-            this.log(`WebSocket error: ${error}`, 'error');
+
+        this.ws.onerror = () => {
+            this.log('WebSocket error', 'error');
         };
     }
-    
+
     handleWebSocketMessage(data) {
         switch (data.type) {
             case 'mqtt_message':
                 this.handleMqttMessage(data.topic, data.payload);
                 break;
-            case 'subscription_confirmed':
-                this.log(`Subscribed to TV ${data.tv_id} layer updates`);
-                break;
             case 'alerts_updated':
-                if (data.data?.type === 'active') this.loadActiveAlerts();
+                if (data.data?.type === 'active') {
+                    this.loadActiveAlerts();
+                    this.loadLayers(); // alert banners show in the preview
+                }
                 if (data.data?.type === 'queue' && typeof loadQueueStatus === 'function') loadQueueStatus();
                 if (data.data?.type === 'scheduled' && typeof loadScheduledAlerts === 'function') loadScheduledAlerts();
                 break;
@@ -236,347 +348,325 @@ class MultiLayerManager {
                 break;
         }
     }
-    
+
     handleMqttMessage(topic, payload) {
-        // Refresh layers when changes are received
-        if (topic.includes('layer') && topic.includes(this.selectedTvId)) {
-            this.loadLayers();
-            this.log(`Layer update received: ${payload.action || 'unknown'}`);
+        // Keep the preview background on whatever the selected TV is showing
+        const tv = this.selectedTv;
+        if (!tv || typeof topic !== 'string') return;
+        const mqttTvId = tv._id.replace(/^tv_/, '');
+        if (topic.endsWith(`/tv/${mqttTvId}/image/current`) && payload?.image_id && payload.image_id !== tv.current_image) {
+            tv.current_image = payload.image_id;
+            this.updateScreenPreview();
         }
     }
-    
+
     updateConnectionStatus(connected) {
         const statusDot = document.getElementById('connectionStatus');
         const statusText = document.getElementById('connectionText');
-        
-        if (connected) {
-            statusDot.classList.add('connected');
-            statusText.textContent = 'Connected';
-        } else {
-            statusDot.classList.remove('connected');
-            statusText.textContent = 'Disconnected';
-        }
+        statusDot.classList.toggle('connected', connected);
+        statusText.textContent = connected ? 'Connected' : 'Disconnected';
     }
-    
+
     setupEventListeners() {
         document.getElementById('tvSelect').addEventListener('change', async (e) => {
             this.selectedTvId = e.target.value;
             this.selectedLayerId = null;
-            
+            this.resetLayerForm();
             if (this.selectedTvId) {
                 await this.loadLayers();
-                
-                // Resubscribe to new TV
-                if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-                    this.ws.send(JSON.stringify({
-                        type: 'subscribe_layers',
-                        tv_id: this.selectedTvId
-                    }));
-                }
+            } else {
+                this.layers = [];
+                this.renderLayers();
             }
         });
-    }
-    
-    selectLayer(layerId) {
-        this.selectedLayerId = layerId;
-        this.updateLayersList();
-        
-        const layer = this.layers.find(l => l.layer_id === layerId);
-        if (layer) {
-            this.log(`Selected layer: ${layer.name}`);
-            
-            // Populate move controls with current position
-            document.getElementById('moveX').value = layer.position.x;
-            document.getElementById('moveY').value = layer.position.y;
+
+        const screen = document.getElementById('screenPreview');
+        screen.addEventListener('pointerdown', e => this.onPreviewPointerDown(e));
+        screen.addEventListener('pointermove', e => this.onPreviewPointerMove(e));
+        screen.addEventListener('pointerup', () => this.onPreviewPointerUp());
+        screen.addEventListener('pointercancel', () => { this.drag = null; this.renderLayers(); });
+
+        // Font sizes in the preview follow its width
+        if (window.ResizeObserver) {
+            let lastWidth = 0;
+            new ResizeObserver(entries => {
+                const width = Math.round(entries[0].contentRect.width);
+                if (width && width !== lastWidth) {
+                    lastWidth = width;
+                    this.updateScreenPreview();
+                }
+            }).observe(screen);
         }
     }
-    
-    async createLayer() {
+
+    selectLayer(layerId) {
+        const layer = this.layers.find(l => l.layer_id === layerId);
+        if (!layer) return;
+        this.selectedLayerId = layerId;
+        this.fillLayerForm(layer);
+        this.renderLayers();
+    }
+
+    newLayer() {
+        this.selectedLayerId = null;
+        this.resetLayerForm();
+        this.renderLayers();
+        document.getElementById('layerName').focus();
+    }
+
+    setEditorMode(editing) {
+        document.getElementById('layerEditorTitle').textContent = editing ? 'Edit Layer' : 'New Layer';
+        document.getElementById('layerSaveButton').textContent = editing ? 'Save changes' : 'Create layer';
+        document.getElementById('layerEditorNew').style.display = editing ? '' : 'none';
+        document.getElementById('layerSaveTemplateButton').style.display = editing ? '' : 'none';
+    }
+
+    resetLayerForm() {
+        document.getElementById('layerForm').reset();
+        document.getElementById('layerBgColor').value = '#000000';
+        document.getElementById('layerTextColor').value = '#ffffff';
+        this.setEditorMode(false);
+    }
+
+    fillLayerForm(layer) {
+        if (!layer) return;
+        const content = layer.content || {};
+        const set = (id, value) => { document.getElementById(id).value = value; };
+        set('layerName', layer.name || '');
+        set('layerText', content.text || '');
+        set('layerX', layer.position.x);
+        set('layerY', layer.position.y);
+        set('layerWidth', layer.position.width);
+        set('layerHeight', layer.position.height);
+        set('fontSize', content.fontSize || 24);
+        set('layerAlignment', content.alignment || 'left');
+        set('layerPriority', layer.priority);
+        set('layerOpacity', Math.round((layer.opacity ?? 1) * 100));
+        set('layerBgColor', this.colorToHex(content.backgroundColor));
+        set('layerBgAlpha', Math.round(this.parseColor(content.backgroundColor).a * 100));
+        set('layerTextColor', this.colorToHex(content.textColor));
+        document.getElementById('layerVisible').checked = layer.visible !== false;
+        this.setEditorMode(true);
+    }
+
+    readLayerForm() {
+        const number = id => Number(document.getElementById(id).value);
+        const position = {
+            x: number('layerX'),
+            y: number('layerY'),
+            width: number('layerWidth'),
+            height: number('layerHeight')
+        };
+        if (position.x + position.width > SCREEN_WIDTH || position.y + position.height > SCREEN_HEIGHT) {
+            throw new Error(`The layer must fit on the ${SCREEN_WIDTH}×${SCREEN_HEIGHT} screen`);
+        }
+        return {
+            name: document.getElementById('layerName').value.trim(),
+            layer_type: 'DataRow',
+            content: {
+                text: document.getElementById('layerText').value,
+                backgroundColor: this.hexToRgba(document.getElementById('layerBgColor').value, number('layerBgAlpha') / 100),
+                textColor: this.hexToRgba(document.getElementById('layerTextColor').value, 1),
+                fontSize: number('fontSize'),
+                alignment: document.getElementById('layerAlignment').value
+            },
+            position,
+            visible: document.getElementById('layerVisible').checked,
+            opacity: number('layerOpacity') / 100,
+            priority: number('layerPriority')
+        };
+    }
+
+    async saveLayer(event) {
+        event?.preventDefault();
         if (!this.selectedTvId) {
             this.log('Please select a TV first', 'error');
             return;
         }
-        
-        const name = document.getElementById('layerName').value;
-        const text = document.getElementById('layerText').value;
-        const y = parseInt(document.getElementById('layerY').value);
-        const height = parseInt(document.getElementById('layerHeight').value);
-        const fontSize = parseInt(document.getElementById('fontSize').value);
-        
-        if (!name || !text) {
-            this.log('Please fill in layer name and text', 'error');
+
+        let layerData;
+        try {
+            layerData = this.readLayerForm();
+        } catch (error) {
+            this.log(error.message, 'error');
+            alert(error.message);
             return;
         }
-        
-        const layerData = {
-            name,
-            layer_type: 'DataRow',
-            content: {
-                text,
-                backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                textColor: 'rgba(255, 255, 255, 1)',
-                fontSize,
-                alignment: 'left'
-            },
-            position: {
-                x: 0,
-                y,
-                width: 1920,
-                height
-            },
-            visible: true,
-            opacity: 1.0,
-            priority: 15
-        };
-        
+
+        const editing = this.layers.find(l => l.layer_id === this.selectedLayerId);
+        if (editing) {
+            // Keep fields the editor doesn't show
+            layerData.layer_type = editing.layer_type;
+            layerData.content = { ...editing.content, ...layerData.content };
+        }
+
         try {
-            const response = await fetch(`${this.apiBase}/tvs/${this.selectedTvId}/layers`, {
-                method: 'POST',
+            const response = await fetch(editing ? this.layersUrl(`/${editing.layer_id}`) : this.layersUrl(), {
+                method: editing ? 'PUT' : 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(layerData)
             });
-            
-            if (response.ok) {
-                const layer = await response.json();
-                this.log(`Created layer: ${layer.name}`);
-                await this.loadLayers();
-                
-                // Clear form
-                document.getElementById('layerForm').reset();
-                document.getElementById('layerY').value = 100;
-                document.getElementById('layerHeight').value = 50;
-                document.getElementById('fontSize').value = 24;
-            } else {
-                const error = await response.json();
-                this.log(`Failed to create layer: ${error.error}`, 'error');
-            }
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || response.statusText);
+
+            this.log(`${editing ? 'Updated' : 'Created'} layer: ${result.name}`);
+            this.selectedLayerId = result.layer_id;
+            await this.loadLayers();
+            this.fillLayerForm(this.layers.find(l => l.layer_id === result.layer_id));
         } catch (error) {
-            this.log(`Error creating layer: ${error.message}`, 'error');
+            this.log(`Failed to save layer: ${error.message}`, 'error');
+            alert(`Couldn't save the layer: ${error.message}`);
         }
     }
-    
+
     async animateSelected(animationType) {
         if (!this.selectedLayerId) {
             this.log('Please select a layer first', 'error');
             return;
         }
-        
-        const duration = parseInt(document.getElementById('animDuration').value);
-        
+
         const animationData = {
             type: animationType,
-            duration,
+            duration: parseInt(document.getElementById('animDuration').value) || 500,
             easing: 'ease-in-out'
         };
-        
-        // Add distance for slide animations
         if (animationType.startsWith('slide_')) {
             animationData.distance = 100;
         }
-        
+
         try {
-            const response = await fetch(`${this.apiBase}/tvs/${this.selectedTvId}/layers/${this.selectedLayerId}/animate`, {
+            const response = await fetch(this.layersUrl(`/${this.selectedLayerId}/animate`), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(animationData)
             });
-            
-            if (response.ok) {
-                this.log(`Started ${animationType} animation`);
-            } else {
-                const error = await response.json();
-                this.log(`Failed to animate: ${error.error}`, 'error');
-            }
+            if (!response.ok) throw new Error((await response.json()).error || response.statusText);
+            this.log(`Started ${animationType} animation`);
         } catch (error) {
-            this.log(`Error animating layer: ${error.message}`, 'error');
+            this.log(`Failed to animate: ${error.message}`, 'error');
         }
     }
-    
-    async moveSelected(animate = false) {
-        if (!this.selectedLayerId) {
-            this.log('Please select a layer first', 'error');
-            return;
-        }
-        
-        const x = parseInt(document.getElementById('moveX').value);
-        const y = parseInt(document.getElementById('moveY').value);
-        const duration = parseInt(document.getElementById('animDuration').value);
-        
-        try {
-            const response = await fetch(`${this.apiBase}/tvs/${this.selectedTvId}/layers/${this.selectedLayerId}/move`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ x, y, animate, duration })
-            });
-            
-            if (response.ok) {
-                this.log(`${animate ? 'Animated' : 'Moved'} layer to (${x}, ${y})`);
-            } else {
-                const error = await response.json();
-                this.log(`Failed to move layer: ${error.error}`, 'error');
-            }
-        } catch (error) {
-            this.log(`Error moving layer: ${error.message}`, 'error');
-        }
+
+    async setLayerVisibility(layerId, visible) {
+        const response = await fetch(this.layersUrl(`/${layerId}/visibility`), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ visible })
+        });
+        if (!response.ok) throw new Error((await response.json()).error || response.statusText);
     }
-    
+
     async toggleLayerVisibility(layerId, visible) {
         try {
-            const response = await fetch(`${this.apiBase}/tvs/${this.selectedTvId}/layers/${layerId}/visibility`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    visible, 
-                    transition: { duration: 300 } 
-                })
-            });
-            
-            if (response.ok) {
-                this.log(`Layer ${visible ? 'shown' : 'hidden'}`);
-                await this.loadLayers();
-            } else {
-                const error = await response.json();
-                this.log(`Failed to toggle visibility: ${error.error}`, 'error');
-            }
+            await this.setLayerVisibility(layerId, visible);
+            this.log(`Layer ${visible ? 'shown' : 'hidden'}`);
         } catch (error) {
-            this.log(`Error toggling visibility: ${error.message}`, 'error');
+            this.log(`Failed to toggle visibility: ${error.message}`, 'error');
+        }
+        await this.loadLayers();
+        if (layerId === this.selectedLayerId) {
+            this.fillLayerForm(this.layers.find(l => l.layer_id === layerId));
         }
     }
-    
+
+    async removeLayer(layerId) {
+        const response = await fetch(this.layersUrl(`/${layerId}`), { method: 'DELETE' });
+        if (!response.ok) throw new Error((await response.json()).error || response.statusText);
+    }
+
     async deleteLayer(layerId) {
-        if (!confirm('Are you sure you want to delete this layer?')) return;
-        
+        const layer = this.layers.find(l => l.layer_id === layerId);
+        if (!confirm(`Delete the layer "${layer?.name || layerId}"?`)) return;
+
         try {
-            const response = await fetch(`${this.apiBase}/tvs/${this.selectedTvId}/layers/${layerId}`, {
-                method: 'DELETE'
-            });
-            
-            if (response.ok) {
-                this.log('Layer deleted');
-                await this.loadLayers();
-                
-                if (this.selectedLayerId === layerId) {
-                    this.selectedLayerId = null;
-                }
-            } else {
-                const error = await response.json();
-                this.log(`Failed to delete layer: ${error.error}`, 'error');
-            }
+            await this.removeLayer(layerId);
+            this.log('Layer deleted');
         } catch (error) {
-            this.log(`Error deleting layer: ${error.message}`, 'error');
+            this.log(`Failed to delete layer: ${error.message}`, 'error');
         }
+        if (this.selectedLayerId === layerId) {
+            this.selectedLayerId = null;
+            this.resetLayerForm();
+        }
+        await this.loadLayers();
     }
-    
+
     async createSampleLayers() {
         if (!this.selectedTvId) {
             this.log('Please select a TV first', 'error');
             return;
         }
-        
+
         const sampleLayers = [
-            {
-                name: 'Court Schedule Header',
-                text: 'TODAY\'S COURT SCHEDULE',
-                y: 50,
-                height: 60,
-                fontSize: 32,
-                backgroundColor: 'rgba(0, 0, 128, 0.9)'
-            },
-            {
-                name: 'Court Room 1',
-                text: '9:00 AM - Room 101 - Smith vs. Johnson',
-                y: 150,
-                height: 50,
-                fontSize: 24,
-                backgroundColor: 'rgba(0, 0, 0, 0.8)'
-            },
-            {
-                name: 'Court Room 2', 
-                text: '10:30 AM - Room 205 - State vs. Williams',
-                y: 210,
-                height: 50,
-                fontSize: 24,
-                backgroundColor: 'rgba(0, 0, 0, 0.8)'
-            },
-            {
-                name: 'Alert Message',
-                text: '⚠️ Court Room 205 Delayed by 30 minutes',
-                y: 900,
-                height: 60,
-                fontSize: 28,
-                backgroundColor: 'rgba(255, 0, 0, 0.9)'
-            }
+            { name: 'Court Schedule Header', text: "TODAY'S COURT SCHEDULE", y: 50, height: 60, fontSize: 32, backgroundColor: 'rgba(0, 0, 128, 0.9)', alignment: 'center' },
+            { name: 'Court Room 1', text: '9:00 AM - Room 101 - Smith vs. Johnson', y: 150, height: 50, fontSize: 24, backgroundColor: 'rgba(0, 0, 0, 0.8)' },
+            { name: 'Court Room 2', text: '10:30 AM - Room 205 - State vs. Williams', y: 210, height: 50, fontSize: 24, backgroundColor: 'rgba(0, 0, 0, 0.8)' },
+            { name: 'Delay Notice', text: 'Court Room 205 delayed by 30 minutes', y: 900, height: 60, fontSize: 28, backgroundColor: 'rgba(200, 0, 0, 0.9)', alignment: 'center' }
         ];
-        
+
         this.log('Creating sample layers...');
-        
         for (const sample of sampleLayers) {
-            const layerData = {
-                name: sample.name,
-                layer_type: 'DataRow',
-                content: {
-                    text: sample.text,
-                    backgroundColor: sample.backgroundColor,
-                    textColor: 'rgba(255, 255, 255, 1)',
-                    fontSize: sample.fontSize,
-                    alignment: 'left'
-                },
-                position: {
-                    x: 0,
-                    y: sample.y,
-                    width: 1920,
-                    height: sample.height
-                },
-                visible: true,
-                opacity: 1.0,
-                priority: 15
-            };
-            
             try {
-                await fetch(`${this.apiBase}/tvs/${this.selectedTvId}/layers`, {
+                const response = await fetch(this.layersUrl(), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(layerData)
+                    body: JSON.stringify({
+                        name: sample.name,
+                        layer_type: 'DataRow',
+                        content: {
+                            text: sample.text,
+                            backgroundColor: sample.backgroundColor,
+                            textColor: 'rgba(255, 255, 255, 1)',
+                            fontSize: sample.fontSize,
+                            alignment: sample.alignment || 'left'
+                        },
+                        position: { x: 0, y: sample.y, width: SCREEN_WIDTH, height: sample.height },
+                        visible: true,
+                        opacity: 1.0,
+                        priority: 15
+                    })
                 });
+                if (!response.ok) throw new Error((await response.json()).error || response.statusText);
             } catch (error) {
-                this.log(`Error creating sample layer: ${error.message}`, 'error');
+                this.log(`Error creating sample layer "${sample.name}": ${error.message}`, 'error');
             }
         }
-        
+
         await this.loadLayers();
         this.log('Sample layers created');
     }
-    
-    async hideAllLayers() {
-        if (!this.selectedTvId || this.layers.length === 0) return;
-        
-        for (const layer of this.layers) {
-            if (layer.visible) {
-                await this.toggleLayerVisibility(layer.layer_id, false);
-            }
-        }
+
+    async setAllVisibility(visible) {
+        const targets = this.controlLayers.filter(layer => layer.visible !== visible);
+        if (!this.selectedTvId || targets.length === 0) return;
+
+        const results = await Promise.allSettled(targets.map(layer => this.setLayerVisibility(layer.layer_id, visible)));
+        const failed = results.filter(r => r.status === 'rejected').length;
+        this.log(`${visible ? 'Showed' : 'Hid'} ${targets.length - failed} layer(s)${failed ? `, ${failed} failed` : ''}`, failed ? 'warning' : 'info');
+        await this.loadLayers();
     }
-    
-    async showAllLayers() {
-        if (!this.selectedTvId || this.layers.length === 0) return;
-        
-        for (const layer of this.layers) {
-            if (!layer.visible) {
-                await this.toggleLayerVisibility(layer.layer_id, true);
-            }
-        }
+
+    hideAllLayers() {
+        return this.setAllVisibility(false);
     }
-    
+
+    showAllLayers() {
+        return this.setAllVisibility(true);
+    }
+
     async deleteAllLayers() {
-        if (!this.selectedTvId || this.layers.length === 0) return;
-        
-        if (!confirm(`Are you sure you want to delete all ${this.layers.length} layers?`)) return;
-        
-        for (const layer of this.layers) {
-            await this.deleteLayer(layer.layer_id);
-        }
+        const layers = this.controlLayers;
+        if (!this.selectedTvId || layers.length === 0) return;
+        if (!confirm(`Delete all ${layers.length} layers on this TV? Alert banners are not affected.`)) return;
+
+        const results = await Promise.allSettled(layers.map(layer => this.removeLayer(layer.layer_id)));
+        const failed = results.filter(r => r.status === 'rejected').length;
+        this.log(`Deleted ${layers.length - failed} layer(s)${failed ? `, ${failed} failed` : ''}`, failed ? 'warning' : 'info');
+        this.selectedLayerId = null;
+        this.resetLayerForm();
+        await this.loadLayers();
     }
-    
+
     startStatusUpdates() {
         // Fallback refresh for layers every 60 seconds (primary updates via WebSocket)
         setInterval(() => {
@@ -724,8 +814,8 @@ class MultiLayerManager {
                         <span class="alert-type-badge ${typeClass}">${alert.alert_type}</span>
                         <span class="alert-time">${createdDate}</span>
                     </div>
-                    <div class="alert-title">${alert.title}</div>
-                    <div class="alert-message">${alert.message}</div>
+                    <div class="alert-title">${this.escapeHtml(alert.title)}</div>
+                    <div class="alert-message">${this.escapeHtml(alert.message)}</div>
                     <div class="alert-footer">
                         <span class="alert-delivery">Delivered to ${alert.delivered_to_count} TV(s)</span>
                         <button class="btn btn-small btn-secondary" onclick="dismissAlert('${alert.alert_id}')">
@@ -813,10 +903,10 @@ class MultiLayerManager {
                 <div class="template-card ${isSelected ? 'selected' : ''}"
                      onclick="selectTemplate('${template.preset_id}')">
                     <div class="template-card-header">
-                        <span class="template-card-name">${template.name}</span>
+                        <span class="template-card-name">${this.escapeHtml(template.name)}</span>
                         <span class="template-card-category ${template.category}">${template.category}</span>
                     </div>
-                    <div class="template-card-preview">${preview}</div>
+                    <div class="template-card-preview">${this.escapeHtml(preview)}</div>
                     <div class="template-card-meta">
                         ${template.layers?.length || 0} layer(s) • Used ${template.usage_count || 0} times
                     </div>
@@ -904,7 +994,7 @@ class MultiLayerManager {
         container.innerHTML = this.tvs.map(tv => `
             <label class="tv-checkbox-item">
                 <input type="checkbox" value="${tv._id}" onchange="updateSelectedTvs()">
-                <span>${tv.name} (${tv.location})</span>
+                <span>${this.escapeHtml(tv.name)} (${this.escapeHtml(tv.location)})</span>
             </label>
         `).join('');
 
@@ -1052,7 +1142,7 @@ class MultiLayerManager {
         }
 
         try {
-            const response = await fetch(`${this.apiBase}/tvs/${this.selectedTvId}/layers/${layerId}/save-as-template`, {
+            const response = await fetch(this.layersUrl(`/${layerId}/save-as-template`), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name, description, category })
@@ -1098,16 +1188,16 @@ function selectLayer(layerId) {
     manager.selectLayer(layerId);
 }
 
-function createLayer() {
-    manager.createLayer();
+function saveLayer(event) {
+    manager.saveLayer(event);
+}
+
+function newLayer() {
+    manager.newLayer();
 }
 
 function animateSelected(type) {
     manager.animateSelected(type);
-}
-
-function moveSelected(animate) {
-    manager.moveSelected(animate);
 }
 
 function toggleLayerVisibility(layerId, visible) {
@@ -1283,7 +1373,7 @@ async function loadQueueStatus() {
                 <div style="background: #f8fafc; padding: 10px; border-radius: 6px; margin-bottom: 6px; border-left: 3px solid ${getAlertColor(item.type)};">
                     <div style="display: flex; justify-content: space-between; align-items: start;">
                         <div style="flex: 1;">
-                            <div style="font-weight: 500; font-size: 14px;">${item.title}</div>
+                            <div style="font-weight: 500; font-size: 14px;">${manager.escapeHtml(item.title)}</div>
                             <div style="font-size: 12px; color: #64748b; margin-top: 2px;">
                                 Position: ${index + 1} | Type: ${item.type} | ${item.target_tv_count} TVs
                             </div>
@@ -1363,18 +1453,19 @@ function toggleScheduleForm() {
     container.style.display = container.style.display === 'none' ? 'block' : 'none';
 
     if (container.style.display === 'block') {
-        const now = new Date();
-        now.setMinutes(now.getMinutes() + 10);
-        document.getElementById('scheduleDateTime').value = now.toISOString().slice(0, 16);
+        // datetime-local wants local time, not UTC
+        const inTenMinutes = new Date(Date.now() + 10 * 60000);
+        document.getElementById('scheduleDateTime').value =
+            new Date(inTenMinutes.getTime() - inTenMinutes.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
     }
 }
 
 async function scheduleCurrentAlert() {
     const title = document.getElementById('alertTitle').value.trim();
     const message = document.getElementById('alertMessage').value.trim();
-    const type = currentAlertType;
-    const targetType = currentTargetType;
-    const targetLocation = document.getElementById('targetLocation')?.value?.trim() || null;
+    const type = manager.selectedAlertType;
+    const targetType = manager.selectedTargetType;
+    const targetLocation = document.getElementById('targetLocationInput')?.value?.trim() || null;
 
     if (!title || !message) {
         alert('Please enter alert title and message before scheduling');
@@ -1459,7 +1550,7 @@ async function loadScheduledAlerts() {
                     <div style="background: #f8fafc; padding: 10px; border-radius: 6px; margin-bottom: 6px; border-left: 3px solid ${getAlertColor(alert.alert_type)};">
                         <div style="display: flex; justify-content: space-between; align-items: start;">
                             <div style="flex: 1;">
-                                <div style="font-weight: 500; font-size: 14px;">${alert.title}</div>
+                                <div style="font-weight: 500; font-size: 14px;">${manager.escapeHtml(alert.title)}</div>
                                 <div style="font-size: 12px; color: ${isUrgent ? '#d97706' : '#64748b'}; margin-top: 2px; font-weight: ${isUrgent ? '500' : 'normal'};">
                                     ${isUrgent ? '⏰ ' : ''}${timeUntil} • ${alert.alert_type}${recurrenceLabel}
                                 </div>

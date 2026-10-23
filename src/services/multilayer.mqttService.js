@@ -298,6 +298,44 @@ class MultilayerMqttService extends EventEmitter {
   }
 
   // Jump to an image in the TV's playlist; hold pauses on it
+  // Send the TV its full Layer Control layer list; the Pi replaces its synced
+  // layers with it. Alert layers are excluded (they arrive on the alerts topic).
+  // Bursts (e.g. applying a template) are collapsed into one message per TV.
+  syncLayers(tvId) {
+    this.pendingLayerSyncs = this.pendingLayerSyncs || new Map();
+    clearTimeout(this.pendingLayerSyncs.get(tvId));
+    this.pendingLayerSyncs.set(tvId, setTimeout(async () => {
+      this.pendingLayerSyncs.delete(tvId);
+      try {
+        const Layer = require('../models/Layer');
+        const layers = (await Layer.findByTv(tvId)).filter(layer => !Layer.isAlertLayer(layer));
+        await this.sendCommand(tvId.replace(/^tv_/, ''), 'sync_layers', {
+          layers: layers.map(layer => ({
+            layer_id: layer.layer_id,
+            name: layer.name,
+            layer_type: layer.layer_type,
+            content: layer.content,
+            position: layer.position,
+            visible: layer.visible,
+            opacity: layer.opacity,
+            priority: layer.priority
+          }))
+        });
+      } catch (error) {
+        console.error(`Failed to sync layers to TV ${tvId}:`, error);
+      }
+    }, 250));
+  }
+
+  async animateLayer(tvId, layerId, animation) {
+    return this.sendCommand(tvId.replace(/^tv_/, ''), 'animate_layer', {
+      layer_id: layerId,
+      animation_type: animation.type,
+      duration_ms: animation.duration,
+      distance: animation.distance
+    });
+  }
+
   async showImage(tvId, imageId, hold = false) {
     return this.sendCommand(tvId, 'show_image', { image_id: imageId, hold });
   }

@@ -202,8 +202,10 @@ class BatchScheduler {
 
       console.log(`Setting visibility of ${taggedLayers.length} layers with tag "${tag}" to ${visible}`);
 
+      const mqttService = require('./multilayer.mqttService');
       for (const layer of taggedLayers) {
-        await layer.setVisibility(visible, { duration: 500 });
+        await layer.setVisibility(visible);
+        mqttService.syncLayers(layer.tv_id);
       }
     } catch (error) {
       console.error('Error setting layer visibility:', error);

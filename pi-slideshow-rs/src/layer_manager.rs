@@ -747,6 +747,26 @@ impl LayerManager {
             return Err("Configuration must contain a slideshow layer".to_string());
         }
 
+        // The TV config only owns the slideshow and static overlays; keep alert and
+        // Layer Control layers, and the image currently on the slideshow layer
+        let mut config = config;
+        {
+            let current = self.config.read().await;
+            for (id, layer) in &current.layers {
+                let externally_managed = matches!(layer.layer_type, LayerType::Emergency | LayerType::DataRow);
+                if externally_managed && !config.layers.contains_key(id) {
+                    config.layers.insert(id.clone(), layer.clone());
+                }
+            }
+            if let (Some(new_slideshow), Some(old_slideshow)) =
+                (config.layers.get_mut("slideshow"), current.layers.get("slideshow"))
+            {
+                if matches!(new_slideshow.content, LayerContent::Empty) {
+                    new_slideshow.content = old_slideshow.content.clone();
+                }
+            }
+        }
+
         *self.config.write().await = config;
         *self.composite_dirty.write().await = true;
         Ok(())
@@ -754,6 +774,14 @@ impl LayerManager {
 
     /// Get cache statistics (for future HTTP API)
     #[allow(dead_code)]
+    /// True when layers changed or are animating since the last composite
+    pub async fn needs_redraw(&self) -> bool {
+        if *self.composite_dirty.read().await {
+            return true;
+        }
+        self.config.read().await.layers.values().any(|layer| layer.animation_state.is_some())
+    }
+
     pub async fn get_cache_stats(&self) -> (usize, usize) {
         let cache = self.image_cache.read().await;
         let cached_items = cache.len();

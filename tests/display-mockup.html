@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Court Schedule TV Display Mockup</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background: #1f2937;
+      font-family: 'Courier New', monospace;
+      overflow: hidden;
+    }
+
+    .tv-display {
+      width: 1920px;
+      height: 1080px;
+      background: #1f2937;
+      position: relative;
+      transform-origin: top left;
+    }
+
+    /* Scale to fit screen while maintaining aspect ratio */
+    @media (max-width: 1920px), (max-height: 1080px) {
+      .tv-display {
+        transform: scale(0.5);
+      }
+    }
+
+    .header {
+      background: rgba(30, 58, 138, 0.9);
+      color: rgba(255, 255, 255, 1);
+      padding: 15px;
+      font-size: 32px;
+      font-weight: bold;
+      text-align: center;
+      height: 60px;
+      line-height: 30px;
+      position: absolute;
+      top: 30px;
+      left: 0;
+      right: 0;
+    }
+
+    .hearing-row {
+      position: absolute;
+      left: 0;
+      right: 0;
+      height: 50px;
+      padding: 12px 15px;
+      font-size: 24px;
+      line-height: 26px;
+      color: rgba(255, 255, 255, 1);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      display: grid;
+      grid-template-columns: 110px 20px 80px 20px 200px 20px 320px 20px 1fr;
+      gap: 0;
+      align-items: center;
+    }
+
+    .hearing-row > span {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .hearing-row .sep {
+      text-align: center;
+    }
+
+    /* Color schemes from CourtHearing.getColorScheme() */
+    .urgent {
+      background: rgba(239, 68, 68, 0.8);
+    }
+
+    .warning {
+      background: rgba(217, 119, 6, 0.8);
+    }
+
+    .normal {
+      background: rgba(30, 58, 138, 0.8);
+    }
+
+    .in-progress {
+      background: rgba(34, 197, 94, 0.8);
+    }
+
+    .gray {
+      background: rgba(128, 128, 128, 0.8);
+    }
+
+    .info-panel {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      background: rgba(0, 0, 0, 0.7);
+      color: white;
+      padding: 15px;
+      border-radius: 8px;
+      font-size: 14px;
+      max-width: 400px;
+    }
+
+    .info-panel h3 {
+      margin-bottom: 10px;
+      font-size: 16px;
+    }
+
+    .legend {
+      display: grid;
+      gap: 5px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .legend-color {
+      width: 30px;
+      height: 20px;
+      border-radius: 3px;
+    }
+
+    .instructions {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      background: rgba(0, 0, 0, 0.7);
+      color: white;
+      padding: 15px;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="tv-display">
+    <!-- Header -->
+    <div class="header">TODAY'S COURT SCHEDULE</div>
+
+    <!-- Hearing Rows (starting at y=100, 50px each) -->
+
+    <!-- Room 1 hearings -->
+    <div class="hearing-row urgent" style="top: 100px;">
+      <span>9:00 AM</span>
+      <span class="sep">-</span>
+      <span>Rm 1</span>
+      <span class="sep">-</span>
+      <span>25-00001-TLM</span>
+      <span class="sep">-</span>
+      <span>Savanna G Smith</span>
+      <span class="sep">-</span>
+      <span>Mot. to Redeem Prop. of the Estate (Ch 7, TM Powers) re: 2024 Kia...</span>
+    </div>
+
+    <div class="hearing-row warning" style="top: 150px;">
+      <span>9:30 AM</span>
+      <span class="sep">-</span>
+      <span>Rm 1</span>
+      <span class="sep">-</span>
+      <span>24-01234-TLM</span>
+      <span class="sep">-</span>
+      <span>Andie Arave & McKenzie Atterton</span>
+      <span class="sep">-</span>
+      <span>Obj. to Claim of Capital One Bank (Delayed 15 min)</span>
+    </div>
+
+    <div class="hearing-row normal" style="top: 200px;">
+      <span>10:30 AM</span>
+      <span class="sep">-</span>
+      <span>Rm 1</span>
+      <span class="sep">-</span>
+      <span>24-05678-TLM</span>
+      <span class="sep">-</span>
+      <span>Michael Johnson</span>
+      <span class="sep">-</span>
+      <span>Mot. for Relief from Stay - Real Prop. at 123 Main Street</span>
+    </div>
+
+    <div class="hearing-row normal" style="top: 250px;">
+      <span>11:00 AM</span>
+      <span class="sep">-</span>
+      <span>Rm 1</span>
+      <span class="sep">-</span>
+      <span>25-00789-TLM</span>
+      <span class="sep">-</span>
+      <span>Jennifer Martinez</span>
+      <span class="sep">-</span>
+      <span>Discharge Hearing</span>
+    </div>
+
+    <!-- Room 2 hearings -->
+    <div class="hearing-row in-progress" style="top: 300px;">
+      <span>9:15 AM</span>
+      <span class="sep">-</span>
+      <span>Rm 2</span>
+      <span class="sep">-</span>
+      <span>CV-2025-00123</span>
+      <span class="sep">-</span>
+      <span>State v. Johnson</span>
+      <span class="sep">-</span>
+      <span>Motion Hearing</span>
+    </div>
+
+    <div class="hearing-row normal" style="top: 350px;">
+      <span>10:00 AM</span>
+      <span class="sep">-</span>
+      <span>Rm 2</span>
+      <span class="sep">-</span>
+      <span>CV-2025-00456</span>
+      <span class="sep">-</span>
+      <span>Smith Corp v. Anderson LLC</span>
+      <span class="sep">-</span>
+      <span>Summary Judgment</span>
+    </div>
+
+    <div class="hearing-row normal" style="top: 400px;">
+      <span>11:30 AM</span>
+      <span class="sep">-</span>
+      <span>Rm 2</span>
+      <span class="sep">-</span>
+      <span>CR-2025-00789</span>
+      <span class="sep">-</span>
+      <span>State v. Williams</span>
+      <span class="sep">-</span>
+      <span>Arraignment</span>
+    </div>
+
+    <!-- Room 3 hearings -->
+    <div class="hearing-row normal" style="top: 450px;">
+      <span>9:00 AM</span>
+      <span class="sep">-</span>
+      <span>Rm 3</span>
+      <span class="sep">-</span>
+      <span>25-01111-TLM</span>
+      <span class="sep">-</span>
+      <span>Robert Taylor</span>
+      <span class="sep">-</span>
+      <span>Confirmation Hearing</span>
+    </div>
+
+    <div class="hearing-row warning" style="top: 500px;">
+      <span>10:00 AM</span>
+      <span class="sep">-</span>
+      <span>Rm 3</span>
+      <span class="sep">-</span>
+      <span>25-01222-TLM</span>
+      <span class="sep">-</span>
+      <span>Sarah Davis</span>
+      <span class="sep">-</span>
+      <span>Mot. to Modify Plan</span>
+    </div>
+
+    <div class="hearing-row normal" style="top: 550px;">
+      <span>11:00 AM</span>
+      <span class="sep">-</span>
+      <span>Rm 3</span>
+      <span class="sep">-</span>
+      <span>CV-2025-00999</span>
+      <span class="sep">-</span>
+      <span>Brown v. Green</span>
+      <span class="sep">-</span>
+      <span>Trial</span>
+    </div>
+
+    <!-- Completed/Cancelled example -->
+    <div class="hearing-row gray" style="top: 600px;">
+      <span>8:30 AM</span>
+      <span class="sep">-</span>
+      <span>Rm 1</span>
+      <span class="sep">-</span>
+      <span>CV-2025-00111</span>
+      <span class="sep">-</span>
+      <span>Jones v. Smith</span>
+      <span class="sep">-</span>
+      <span>Motion (Cancelled)</span>
+    </div>
+
+    <!-- Legend -->
+    <div class="info-panel">
+      <h3>Color Legend</h3>
+      <div class="legend">
+        <div class="legend-item">
+          <div class="legend-color" style="background: rgba(239, 68, 68, 0.8);"></div>
+          <span>Starting in &lt;15 min (Urgent)</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-color" style="background: rgba(217, 119, 6, 0.8);"></div>
+          <span>Starting in &lt;30 min / Delayed</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-color" style="background: rgba(34, 197, 94, 0.8);"></div>
+          <span>In Progress</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-color" style="background: rgba(30, 58, 138, 0.8);"></div>
+          <span>Scheduled (Normal)</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-color" style="background: rgba(128, 128, 128, 0.8);"></div>
+          <span>Cancelled/Completed</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Instructions -->
+    <div class="instructions">
+      <strong>Press F11 for fullscreen view</strong><br>
+      This mockup shows a 1920x1080 TV display<br>
+      Hearings are sorted by room, then time<br>
+      Colors update automatically based on status<br>
+      <br>
+      <strong>Column-aligned for easy scanning:</strong><br>
+      Time | Room | Case # | Parties | Matter
+    </div>
+  </div>
+
+  <script>
+    // Auto-scale to fit window
+    function scaleDisplay() {
+      const display = document.querySelector('.tv-display');
+      const scaleX = window.innerWidth / 1920;
+      const scaleY = window.innerHeight / 1080;
+      const scale = Math.min(scaleX, scaleY);
+      display.style.transform = `scale(${scale})`;
+    }
+
+    window.addEventListener('resize', scaleDisplay);
+    scaleDisplay();
+  </script>
+</body>
+</html>

@@ -24,6 +24,7 @@ pub struct ControllerConfig {
     pub couchdb_password: Option<String>,
     pub couchdb_database: String,
     pub couchdb_images_database: String,
+    pub couchdb_layers_database: String,
     pub tv_id: String,
     pub orientation: String,
     pub transition_effect: String,
@@ -54,6 +55,8 @@ pub struct SlideshowController {
     // When next/previous/show_image last moved the slideshow, so auto-advance
     // gives the chosen image its full display time
     manual_change_at: Arc<RwLock<Option<Instant>>>,
+    // Layer Control layers currently applied from the server (by layer_id)
+    synced_layer_ids: Arc<RwLock<HashSet<String>>>,
 }
 
 impl Clone for SlideshowController {
@@ -73,6 +76,7 @@ impl Clone for SlideshowController {
             start_time: self.start_time,
             current_frame: self.current_frame.clone(),
             manual_change_at: self.manual_change_at.clone(),
+            synced_layer_ids: self.synced_layer_ids.clone(),
         }
     }
 }
@@ -104,6 +108,7 @@ impl SlideshowController {
             start_time: Instant::now(),
             current_frame: Arc::new(RwLock::new(None)),
             manual_change_at: Arc::new(RwLock::new(None)),
+            synced_layer_ids: Arc::new(RwLock::new(HashSet::new())),
         }
     }
 
@@ -130,6 +135,7 @@ impl SlideshowController {
                 config.couchdb_password.as_deref(),
                 &config.couchdb_database,
                 &config.couchdb_images_database,
+                &config.couchdb_layers_database,
             )
         ).await {
             Ok(Ok(couchdb_client)) => {
@@ -189,6 +195,11 @@ impl SlideshowController {
             }
         }
         
+        // Fetch Layer Control layers from CouchDB
+        if let Err(e) = self.fetch_layers_from_couchdb().await {
+            eprintln!("Warning: Failed to fetch layers from CouchDB: {}", e);
+        }
+
         // Fetch images from CouchDB
         if let Err(e) = self.fetch_images_from_couchdb().await {
             eprintln!("Warning: Failed to fetch images from CouchDB: {}", e);
@@ -393,6 +404,9 @@ impl SlideshowController {
                 } else {
                     eprintln!("Layer not found for animation: {}", layer_id);
                 }
+            }
+            SlideshowCommand::SyncLayers { layers } => {
+                self.sync_layers(layers).await;
             }
             SlideshowCommand::SyncAlerts { alerts } => {
                 if let Err(e) = self.sync_alerts(alerts).await {
@@ -749,6 +763,9 @@ impl SlideshowController {
             }
             
             // Periodically sync with CouchDB
+            if let Err(e) = self.fetch_layers_from_couchdb().await {
+                eprintln!("Failed to sync layers with CouchDB: {}", e);
+            }
             if let Err(e) = self.fetch_images_from_couchdb().await {
                 eprintln!("Failed to sync with CouchDB: {}", e);
             }
@@ -938,6 +955,82 @@ impl SlideshowController {
         self.layer_manager.write().await.update_config(config).await
     }
 
+    async fn fetch_layers_from_couchdb(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let tv_id = format!("tv_{}", self.config.read().await.tv_id);
+        let layers = match *self.couchdb_client.read().await {
+            Some(ref couchdb_client) => couchdb_client.get_layers_for_tv(&tv_id).await?,
+            None => return Err("CouchDB client not initialized".into()),
+        };
+        self.sync_layers(layers).await;
+        Ok(())
+    }
+
+    /// Replace the Layer Control layers with the server's list for this TV.
+    /// Alert layers and the TV-config layers (slideshow, logo) are left alone.
+    pub async fn sync_layers(&self, server_layers: Vec<serde_json::Value>) {
+        let layers: Vec<Layer> = server_layers.iter().filter_map(Self::server_layer_to_layer).collect();
+        let incoming: HashSet<String> = layers.iter().map(|layer| layer.id.clone()).collect();
+
+        let layer_manager = self.layer_manager.write().await;
+        let mut synced = self.synced_layer_ids.write().await;
+
+        for id in synced.difference(&incoming) {
+            if let Err(e) = layer_manager.remove_layer(id).await {
+                eprintln!("Failed to remove layer {}: {}", id, e);
+            }
+        }
+
+        for layer in layers {
+            let id = layer.id.clone();
+            let result = if layer_manager.get_layer(&id).await.is_some() {
+                layer_manager.update_layer(&id, layer).await
+            } else {
+                layer_manager.add_layer(layer).await
+            };
+            if let Err(e) = result {
+                eprintln!("Failed to apply layer {}: {}", id, e);
+            }
+        }
+
+        println!("🧱 Synced {} Layer Control layer(s)", incoming.len());
+        *synced = incoming;
+    }
+
+    /// Convert a server Layer document into a renderable layer. Every Layer
+    /// Control layer draws as a text/colour block, whatever its layer_type.
+    fn server_layer_to_layer(value: &serde_json::Value) -> Option<Layer> {
+        let id = value["layer_id"].as_str()?.to_string();
+        let content = &value["content"];
+        let position = &value["position"];
+        let as_u32 = |v: &serde_json::Value, default: u32| v.as_f64().map(|n| n.max(0.0) as u32).unwrap_or(default);
+
+        let mut layer = Layer::new(id, LayerType::DataRow)
+            .with_position(
+                as_u32(&position["x"], 0),
+                as_u32(&position["y"], 0),
+                as_u32(&position["width"], 1920),
+                as_u32(&position["height"], 60),
+            )
+            .with_opacity(value["opacity"].as_f64().unwrap_or(1.0) as f32)
+            .with_priority(value["priority"].as_u64().unwrap_or(15).min(255) as u8)
+            .with_data_row(
+                content["text"].as_str().unwrap_or("").to_string(),
+                parse_rgba_string(content["backgroundColor"].as_str().unwrap_or("rgba(0, 0, 0, 0.8)")),
+                parse_rgba_string(content["textColor"].as_str().unwrap_or("rgba(255, 255, 255, 1)")),
+                content["fontSize"].as_u64().unwrap_or(24) as u32,
+                content["alignment"].as_str().unwrap_or("left").to_string(),
+            );
+        layer.visible = value["visible"].as_bool().unwrap_or(true);
+        if let Some(name) = value["name"].as_str() {
+            layer = layer.with_name(name.to_string());
+        }
+        Some(layer)
+    }
+
+    pub async fn layers_need_redraw(&self) -> bool {
+        self.layer_manager.read().await.needs_redraw().await
+    }
+
     /// Sync alerts from server state - adds new alerts, removes dismissed ones
     pub async fn sync_alerts(&self, alerts: Vec<AlertData>) -> Result<(), String> {
         let layer_manager = self.layer_manager.write().await;
@@ -1074,6 +1167,7 @@ impl SlideshowController {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::layer_manager::LayerContent;
 
     fn playlist(ids: &[&str]) -> Vec<ImageInfo> {
         ids.iter()
@@ -1087,6 +1181,37 @@ mod tests {
                 ..Default::default()
             })
             .collect()
+    }
+
+    #[test]
+    fn server_layer_converts_to_data_row() {
+        let doc = serde_json::json!({
+            "layer_id": "layer_1", "name": "Header", "layer_type": "StaticOverlay",
+            "content": { "text": "Hello", "backgroundColor": "rgba(30, 58, 138, 200)",
+                         "textColor": "rgba(255, 255, 255, 1)", "fontSize": 36, "alignment": "center" },
+            "position": { "x": 0, "y": 990, "width": 1920, "height": 90 },
+            "visible": false, "opacity": 0.5, "priority": 300
+        });
+        let layer = SlideshowController::server_layer_to_layer(&doc).unwrap();
+        assert_eq!(layer.id, "layer_1");
+        assert_eq!(layer.layer_type, LayerType::DataRow);
+        assert_eq!((layer.position.y, layer.position.height), (990, 90));
+        assert_eq!(layer.priority, 255);
+        assert!(!layer.visible);
+        match layer.content {
+            LayerContent::DataRow { text, background_color, text_color, font_size, .. } => {
+                assert_eq!(text, "Hello");
+                assert_eq!(background_color, (30, 58, 138, 200)); // 0-255 alpha kept as is
+                assert_eq!(text_color, (255, 255, 255, 255));     // CSS 0-1 alpha scaled
+                assert_eq!(font_size, 36);
+            }
+            other => panic!("unexpected content {:?}", other),
+        }
+    }
+
+    #[test]
+    fn server_layer_without_id_is_skipped() {
+        assert!(SlideshowController::server_layer_to_layer(&serde_json::json!({ "name": "x" })).is_none());
     }
 
     #[test]

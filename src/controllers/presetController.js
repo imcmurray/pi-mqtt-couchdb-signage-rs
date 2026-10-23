@@ -937,6 +937,8 @@ async function applyPresetToTV(req, res) {
       createdLayers.push(layer);
     }
 
+    mqttService.syncLayers(tvId);
+
     // Record preset usage (only if custom preset)
     if (!preset.is_builtin && preset._id) {
       await preset.recordUsage();
@@ -1118,19 +1120,8 @@ async function applyPresetToMultipleTVs(req, res) {
           createdLayers.push(layer);
         }
 
-        // Notify TV via MQTT about new layers
-        if (mqttService.isConnected()) {
-          mqttService.publishLayerBatch(tvId, 'bulk_add', createdLayers.map(l => ({
-            layer_id: l.layer_id,
-            name: l.name,
-            layer_type: l.layer_type,
-            position: l.position,
-            content: l.content,
-            visible: l.visible,
-            opacity: l.opacity,
-            priority: l.priority
-          })));
-        }
+        // Push the TV's new layer list
+        mqttService.syncLayers(tvId);
 
         results.push({
           tv_id: tvId,

@@ -109,6 +109,10 @@ struct Args {
     #[arg(long, default_value = "images_multilayer")]
     couchdb_images_database: String,
 
+    /// CouchDB database name for layers (Layer Control overlays)
+    #[arg(long, default_value = "layers_multilayer")]
+    couchdb_layers_database: String,
+
     /// TV ID (auto-generated if not provided)
     #[arg(long)]
     tv_id: Option<String>,
@@ -1429,6 +1433,7 @@ async fn run_with_mqtt_control(args: Args, tv_id: String, start_time: std::time:
         couchdb_password: args.couchdb_password.clone(),
         couchdb_database: args.couchdb_database.clone(),
         couchdb_images_database: args.couchdb_images_database.clone(),
+        couchdb_layers_database: args.couchdb_layers_database.clone(),
         tv_id: tv_id.clone(),
         orientation: args.orientation.clone(),
         transition_effect: "fade".to_string(), // Default transition effect
@@ -1733,7 +1738,21 @@ async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoRe
                     Some(last_path) => last_path != &current_image_path,
                     None => true,
                 };
-                
+
+                // Layers changed or are animating over the same image: recomposite
+                // without restarting the image's display time
+                if !needs_reload && controller.layers_need_redraw().await {
+                    match controller.render_composite_image().await {
+                        Ok(composite_image) => {
+                            controller.set_current_frame(composite_image.clone()).await;
+                            if let Err(e) = fb.display_image(&composite_image) {
+                                eprintln!("Failed to display layer update: {}", e);
+                            }
+                        }
+                        Err(e) => eprintln!("Failed to render layer update: {}", e),
+                    }
+                }
+
                 if needs_reload {
                     // Update slideshow layer with current image
                     if let Err(e) = controller.update_slideshow_layer(Some(current_image_path.to_string_lossy().to_string())).await {

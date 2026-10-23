@@ -66,6 +66,11 @@ class Layer extends BaseModel {
     return `layer_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 
+  // Alert banners are stored as layers but owned by the alert system
+  static isAlertLayer(layer) {
+    return (layer.tags || []).includes('alert');
+  }
+
   // Get the appropriate database for layers
   static getDb() {
     return multilayerDb.getDatabase('layers');
@@ -216,44 +221,20 @@ class Layer extends BaseModel {
     return this.save();
   }
 
-  async setVisibility(visible, transition = null) {
+  async setVisibility(visible) {
     this.visible = visible;
-    
-    if (transition) {
-      if (visible) {
-        await this.startAnimation('fade_in', transition.duration || 500, transition.easing || 'ease-in-out');
-      } else {
-        await this.startAnimation('fade_out', transition.duration || 500, transition.easing || 'ease-in-out');
-      }
-    } else {
-      await this.save();
-    }
+    await this.save();
   }
 
-  async move(x, y, animate = false, duration = 500) {
-    if (animate) {
-      this.target_position = { ...this.position, x, y };
-      await this.startAnimation('move', duration);
-    } else {
-      this.position.x = x;
-      this.position.y = y;
-      await this.save();
-    }
+  async move(x, y) {
+    this.position = { ...this.position, x, y };
+    this.target_position = null;
+    await this.save();
   }
 
-  async updateContent(content, transition = null) {
+  async updateContent(content) {
     this.content = { ...this.content, ...content };
-    
-    if (transition) {
-      // Fade out, update, fade in
-      await this.startAnimation('fade_out', transition.duration / 2 || 250);
-      setTimeout(async () => {
-        await this.save();
-        await this.startAnimation('fade_in', transition.duration / 2 || 250);
-      }, transition.duration / 2 || 250);
-    } else {
-      await this.save();
-    }
+    await this.save();
   }
 
   // Helper methods

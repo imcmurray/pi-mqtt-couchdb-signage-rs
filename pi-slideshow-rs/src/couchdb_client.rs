@@ -206,6 +206,7 @@ pub struct CouchDbClient {
     server_url: String,
     tv_database_name: String,
     images_database_name: String,
+    layers_database_name: String,
     username: Option<String>,
     password: Option<String>,
 }
@@ -217,6 +218,7 @@ impl CouchDbClient {
         password: Option<&str>,
         tv_database: &str,
         images_database: &str,
+        layers_database: &str,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let client = if let (Some(user), Some(pass)) = (username, password) {
             Client::new(&couchdb_url, user, pass).map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?
@@ -236,6 +238,7 @@ impl CouchDbClient {
             server_url: couchdb_url.to_string(),
             tv_database_name: tv_database.to_string(),
             images_database_name: images_database.to_string(),
+            layers_database_name: layers_database.to_string(),
             username: username.map(|s| s.to_string()),
             password: password.map(|s| s.to_string()),
         })
@@ -482,6 +485,28 @@ impl CouchDbClient {
                 Ok(Some(create_default_tv_config()))
             }
         }
+    }
+
+    /// Layer Control layers for a TV, as stored by the management server
+    pub async fn get_layers_for_tv(&self, tv_id: &str) -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error + Send + Sync>> {
+        let url = format!("{}/{}/_find", self.get_server_url(), self.layers_database_name);
+        let mut request = reqwest::Client::new()
+            .post(&url)
+            .timeout(std::time::Duration::from_secs(10))
+            .json(&serde_json::json!({
+                "selector": { "type": "layer", "tv_id": tv_id },
+                "limit": 500
+            }));
+        if let (Some(user), Some(pass)) = (&self.username, &self.password) {
+            request = request.basic_auth(user, Some(pass));
+        }
+
+        let response = request.send().await?;
+        if !response.status().is_success() {
+            return Err(format!("CouchDB _find on {} failed: {}", self.layers_database_name, response.status()).into());
+        }
+        let body: serde_json::Value = response.json().await?;
+        Ok(body["docs"].as_array().cloned().unwrap_or_default())
     }
 
     fn get_server_url(&self) -> &str {

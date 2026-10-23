@@ -7,7 +7,7 @@ const { imageSchemas } = require('../middleware/validation');
 
 // Resized thumbnails served via /api/images/:id/attachment?width=N, cached in
 // memory by id + revision (oldest evicted first)
-const THUMBNAIL_WIDTHS = [160, 400];
+const THUMBNAIL_WIDTHS = [160, 400, 960];
 const THUMBNAIL_CACHE_MAX = 500;
 const thumbnailCache = new Map();
 
