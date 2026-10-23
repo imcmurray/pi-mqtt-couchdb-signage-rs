@@ -274,8 +274,18 @@
                                     <input type="text" id="layerName" class="form-input" placeholder="e.g., Court Schedule Header" maxlength="100" required>
                                 </div>
                                 <div class="form-group">
+                                    <label for="layerImage">Show</label>
+                                    <div class="layer-image-picker">
+                                        <select id="layerImage" class="form-select" onchange="onLayerImageChange()">
+                                            <option value="">Text</option>
+                                        </select>
+                                        <img id="layerImageThumb" class="layer-image-thumb" alt="" hidden>
+                                    </div>
+                                    <small class="form-hint">Pick an image from the Image Library to show it instead of text. A PNG with a transparent background (like a court seal) blends over the slideshow.</small>
+                                </div>
+                                <div class="form-group text-only">
                                     <label for="layerText">Text</label>
-                                    <textarea id="layerText" class="form-input" rows="2" placeholder="e.g., 9:00 AM - Room 101 - Smith vs. Johnson" required></textarea>
+                                    <textarea id="layerText" class="form-input" rows="2" placeholder="e.g., 9:00 AM - Room 101 - Smith vs. Johnson"></textarea>
                                 </div>
                                 <div class="editor-grid">
                                     <div class="form-group"><label for="layerX">X</label><input type="number" id="layerX" class="form-input" min="0" max="1920" value="0"></div>
@@ -284,8 +294,8 @@
                                     <div class="form-group"><label for="layerHeight">Height</label><input type="number" id="layerHeight" class="form-input" min="1" max="1920" value="60"></div>
                                 </div>
                                 <div class="editor-grid">
-                                    <div class="form-group"><label for="fontSize">Font size</label><input type="number" id="fontSize" class="form-input" min="10" max="100" value="28"></div>
-                                    <div class="form-group">
+                                    <div class="form-group text-only"><label for="fontSize">Font size</label><input type="number" id="fontSize" class="form-input" min="10" max="100" value="28"></div>
+                                    <div class="form-group text-only">
                                         <label for="layerAlignment">Align</label>
                                         <select id="layerAlignment" class="form-select">
                                             <option value="left">Left</option>
@@ -297,9 +307,9 @@
                                     <div class="form-group"><label for="layerOpacity">Opacity</label><input type="number" id="layerOpacity" class="form-input" min="0" max="100" value="100" step="5"></div>
                                 </div>
                                 <div class="editor-grid">
-                                    <div class="form-group"><label for="layerBgColor">Background</label><input type="color" id="layerBgColor" class="form-input color-input" value="#000000"></div>
-                                    <div class="form-group"><label for="layerBgAlpha">Background %</label><input type="number" id="layerBgAlpha" class="form-input" min="0" max="100" value="80" step="5"></div>
-                                    <div class="form-group"><label for="layerTextColor">Text</label><input type="color" id="layerTextColor" class="form-input color-input" value="#ffffff"></div>
+                                    <div class="form-group text-only"><label for="layerBgColor">Background</label><input type="color" id="layerBgColor" class="form-input color-input" value="#000000"></div>
+                                    <div class="form-group text-only"><label for="layerBgAlpha">Background %</label><input type="number" id="layerBgAlpha" class="form-input" min="0" max="100" value="80" step="5"></div>
+                                    <div class="form-group text-only"><label for="layerTextColor">Text</label><input type="color" id="layerTextColor" class="form-input color-input" value="#ffffff"></div>
                                     <div class="form-group checkbox-group"><label><input type="checkbox" id="layerVisible" checked> Visible</label></div>
                                 </div>
                                 <div class="editor-actions">

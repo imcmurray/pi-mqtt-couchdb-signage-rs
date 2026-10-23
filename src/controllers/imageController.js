@@ -209,29 +209,31 @@ class ImageController {
       return res.status(404).json({ error: 'Image not found' });
     }
 
-    // Optional ?width= returns a resized JPEG thumbnail for grids/cards
+    // Optional ?width= returns a resized thumbnail for grids/cards: JPEG, or PNG
+    // when the image has transparency (e.g. a seal or logo)
     const width = THUMBNAIL_WIDTHS.includes(Number(req.query.width)) ? Number(req.query.width) : null;
     const thumbKey = width && `${image._id}:${image._rev}:${width}`;
 
-    let imageBuffer = thumbKey && thumbnailCache.get(thumbKey);
+    let thumbnail = thumbKey && thumbnailCache.get(thumbKey);
+    let imageBuffer = thumbnail?.buffer;
     if (!imageBuffer) {
       imageBuffer = await image.getAttachment();
       if (width) {
-        imageBuffer = await sharp(imageBuffer)
-          .rotate()
-          .resize({ width, withoutEnlargement: true })
-          .jpeg({ quality: 80 })
-          .toBuffer();
+        const source = sharp(imageBuffer).rotate();
+        const { hasAlpha } = await source.metadata();
+        const resized = source.resize({ width, withoutEnlargement: true });
+        imageBuffer = await (hasAlpha ? resized.png() : resized.jpeg({ quality: 80 })).toBuffer();
+        thumbnail = { buffer: imageBuffer, type: hasAlpha ? 'image/png' : 'image/jpeg' };
         if (thumbnailCache.size >= THUMBNAIL_CACHE_MAX) {
           thumbnailCache.delete(thumbnailCache.keys().next().value);
         }
-        thumbnailCache.set(thumbKey, imageBuffer);
+        thumbnailCache.set(thumbKey, thumbnail);
       }
     }
 
     // Set appropriate headers
     res.set({
-      'Content-Type': width ? 'image/jpeg' : image.mimetype,
+      'Content-Type': thumbnail ? thumbnail.type : image.mimetype,
       'Content-Length': imageBuffer.length,
       'Cache-Control': 'public, max-age=31536000', // Cache for 1 year
     });

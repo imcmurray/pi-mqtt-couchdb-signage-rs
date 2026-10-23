@@ -5,7 +5,7 @@ use tokio::sync::{broadcast, mpsc, RwLock};
 use crate::mqtt_client::{AlertData, ImageInfo, MqttClient, SlideshowCommand, SlideshowConfig, TvStatus, parse_rgba_string};
 use std::collections::HashSet;
 use crate::couchdb_client::CouchDbClient;
-use crate::layer_manager::{LayerManager, LayerConfig, Layer, LayerType};
+use crate::layer_manager::{LayerManager, LayerConfig, Layer, LayerContent, LayerType};
 
 #[derive(Debug, Clone)]
 pub enum SlideshowState {
@@ -968,7 +968,13 @@ impl SlideshowController {
     /// Replace the Layer Control layers with the server's list for this TV.
     /// Alert layers and the TV-config layers (slideshow, logo) are left alone.
     pub async fn sync_layers(&self, server_layers: Vec<serde_json::Value>) {
-        let layers: Vec<Layer> = server_layers.iter().filter_map(Self::server_layer_to_layer).collect();
+        let image_dir = self.config.read().await.image_dir.clone();
+        self.download_layer_images(&server_layers, &image_dir).await;
+
+        let layers: Vec<Layer> = server_layers
+            .iter()
+            .filter_map(|value| Self::server_layer_to_layer(value, &image_dir))
+            .collect();
         let incoming: HashSet<String> = layers.iter().map(|layer| layer.id.clone()).collect();
 
         let layer_manager = self.layer_manager.write().await;
@@ -996,9 +1002,34 @@ impl SlideshowController {
         *synced = incoming;
     }
 
-    /// Convert a server Layer document into a renderable layer. Every Layer
-    /// Control layer draws as a text/colour block, whatever its layer_type.
-    fn server_layer_to_layer(value: &serde_json::Value) -> Option<Layer> {
+    /// Where a layer's Image Library image is cached on this TV
+    fn layer_image_path(image_dir: &Path, image_id: &str) -> PathBuf {
+        image_dir.join(format!("{}.layerimg", image_id))
+    }
+
+    fn layer_image_id(value: &serde_json::Value) -> Option<&str> {
+        value["content"]["image_id"].as_str().filter(|id| !id.is_empty())
+    }
+
+    /// Fetch any layer images not already cached locally
+    async fn download_layer_images(&self, server_layers: &[serde_json::Value], image_dir: &Path) {
+        let couchdb_client = self.couchdb_client.read().await;
+        let Some(couchdb_client) = couchdb_client.as_ref() else { return };
+
+        for image_id in server_layers.iter().filter_map(Self::layer_image_id) {
+            let path = Self::layer_image_path(image_dir, image_id);
+            if path.exists() {
+                continue;
+            }
+            if let Err(e) = couchdb_client.download_image_attachment(image_id, &path.to_string_lossy()).await {
+                eprintln!("Failed to download layer image {}: {}", image_id, e);
+            }
+        }
+    }
+
+    /// Convert a server Layer document into a renderable layer: its Image
+    /// Library image if it has one, otherwise a text/colour block.
+    fn server_layer_to_layer(value: &serde_json::Value, image_dir: &Path) -> Option<Layer> {
         let id = value["layer_id"].as_str()?.to_string();
         let content = &value["content"];
         let position = &value["position"];
@@ -1020,6 +1051,9 @@ impl SlideshowController {
                 content["fontSize"].as_u64().unwrap_or(24) as u32,
                 content["alignment"].as_str().unwrap_or("left").to_string(),
             );
+        if let Some(image_id) = Self::layer_image_id(value) {
+            layer.content = LayerContent::ImagePath(Self::layer_image_path(image_dir, image_id).to_string_lossy().to_string());
+        }
         layer.visible = value["visible"].as_bool().unwrap_or(true);
         if let Some(name) = value["name"].as_str() {
             layer = layer.with_name(name.to_string());
@@ -1167,7 +1201,6 @@ impl SlideshowController {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::layer_manager::LayerContent;
 
     fn playlist(ids: &[&str]) -> Vec<ImageInfo> {
         ids.iter()
@@ -1192,7 +1225,7 @@ mod tests {
             "position": { "x": 0, "y": 990, "width": 1920, "height": 90 },
             "visible": false, "opacity": 0.5, "priority": 300
         });
-        let layer = SlideshowController::server_layer_to_layer(&doc).unwrap();
+        let layer = SlideshowController::server_layer_to_layer(&doc, Path::new("/img")).unwrap();
         assert_eq!(layer.id, "layer_1");
         assert_eq!(layer.layer_type, LayerType::DataRow);
         assert_eq!((layer.position.y, layer.position.height), (990, 90));
@@ -1211,7 +1244,21 @@ mod tests {
 
     #[test]
     fn server_layer_without_id_is_skipped() {
-        assert!(SlideshowController::server_layer_to_layer(&serde_json::json!({ "name": "x" })).is_none());
+        assert!(SlideshowController::server_layer_to_layer(&serde_json::json!({ "name": "x" }), Path::new("/img")).is_none());
+    }
+
+    #[test]
+    fn server_layer_with_image_draws_the_image() {
+        let doc = serde_json::json!({
+            "layer_id": "layer_seal", "name": "Court Seal",
+            "content": { "text": "", "image_id": "image_abc", "backgroundColor": "rgba(0, 0, 0, 0)" },
+            "position": { "x": 1632, "y": 918, "width": 288, "height": 162 }
+        });
+        let layer = SlideshowController::server_layer_to_layer(&doc, Path::new("/img")).unwrap();
+        match layer.content {
+            LayerContent::ImagePath(path) => assert_eq!(path, "/img/image_abc.layerimg"),
+            other => panic!("unexpected content {:?}", other),
+        }
     }
 
     #[test]

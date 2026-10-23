@@ -10,6 +10,7 @@ class MultiLayerManager {
         this.selectedTvId = null;
         this.selectedLayerId = null;
         this.layers = [];
+        this.libraryImages = [];
         this.ws = null;
         this.apiBase = '/api';
         this.drag = null;
@@ -30,6 +31,7 @@ class MultiLayerManager {
     }
 
     async init() {
+        await this.loadLibraryImages();
         await this.loadTVs();
         await this.loadActiveAlerts();
         await this.loadTemplates();
@@ -116,6 +118,43 @@ class MultiLayerManager {
         }
     }
 
+    // Image Library images a layer can show instead of text
+    async loadLibraryImages() {
+        try {
+            const response = await fetch(`${this.apiBase}/images`);
+            if (!response.ok) throw new Error(response.statusText);
+            this.libraryImages = (await response.json())
+                .sort((a, b) => a.original_name.localeCompare(b.original_name));
+        } catch (error) {
+            this.libraryImages = [];
+            this.log(`Error loading images: ${error.message}`, 'error');
+        }
+
+        const select = document.getElementById('layerImage');
+        const current = select.value;
+        select.innerHTML = '<option value="">Text</option>' + this.libraryImages.map(img =>
+            `<option value="${this.escapeHtml(img._id)}">${this.escapeHtml(img.original_name)}${img.mimetype === 'image/png' ? '' : ' (no transparency)'}</option>`
+        ).join('');
+        select.value = current;
+    }
+
+    libraryImageName(imageId) {
+        return this.libraryImages.find(img => img._id === imageId)?.original_name || 'Image';
+    }
+
+    // Image layers show only the image on the TV, so hide the text-only fields
+    onLayerImageChange() {
+        const imageId = document.getElementById('layerImage').value;
+        const thumb = document.getElementById('layerImageThumb');
+        document.getElementById('layerForm').classList.toggle('image-mode', !!imageId);
+        thumb.hidden = !imageId;
+        if (imageId) {
+            thumb.src = `/api/images/${encodeURIComponent(imageId)}/attachment?width=160`;
+        } else {
+            thumb.removeAttribute('src');
+        }
+    }
+
     async loadLayers() {
         if (!this.selectedTvId) return;
 
@@ -163,7 +202,9 @@ class MultiLayerManager {
                     <span class="layer-name">${this.escapeHtml(layer.name)}</span>
                     ${layer.visible ? '' : '<span class="layer-badge">Hidden</span>'}
                 </div>
-                <div class="layer-text">${this.escapeHtml(layer.content?.text)}</div>
+                <div class="layer-text">${layer.content?.image_id
+                    ? `🖼 ${this.escapeHtml(this.libraryImageName(layer.content.image_id))}`
+                    : this.escapeHtml(layer.content?.text)}</div>
                 <div class="layer-meta">
                     <span>${x},${y}</span>
                     <span>${width}×${height}</span>
@@ -200,6 +241,7 @@ class MultiLayerManager {
             const { x, y, width, height } = layer.position;
             const content = layer.content || {};
             const isAlert = this.isAlertLayer(layer);
+            const imageId = content.image_id;
             const classes = ['layer-preview',
                 isAlert ? 'alert-layer' : '',
                 layer.layer_id === this.selectedLayerId ? 'selected' : '',
@@ -211,7 +253,7 @@ class MultiLayerManager {
                 `height: ${(height / SCREEN_HEIGHT) * 100}%`,
                 `z-index: ${layer.priority}`,
                 `opacity: ${layer.visible ? layer.opacity : 0.35}`,
-                `background: ${this.cssColor(content.backgroundColor)}`,
+                `background: ${imageId ? 'transparent' : this.cssColor(content.backgroundColor)}`,
                 `color: ${this.cssColor(content.textColor)}`,
                 `font-size: ${Math.max((content.fontSize || 24) * scale, 6)}px`,
                 `justify-content: ${{ center: 'center', right: 'flex-end' }[content.alignment] || 'flex-start'}`,
@@ -219,7 +261,9 @@ class MultiLayerManager {
                 `padding: 0 ${10 * scale}px`
             ].join('; ');
             return `<div class="${classes}" data-layer-id="${this.escapeHtml(layer.layer_id)}" style="${style}"
-                         title="${this.escapeHtml(layer.name)}"><span>${this.escapeHtml(content.text)}</span></div>`;
+                         title="${this.escapeHtml(layer.name)}">${imageId
+                ? `<img class="layer-preview-image" src="/api/images/${encodeURIComponent(imageId)}/attachment?width=400" alt="" draggable="false">`
+                : `<span>${this.escapeHtml(content.text)}</span>`}</div>`;
         }).join('');
 
         document.getElementById('previewLegend').textContent = [
@@ -425,6 +469,7 @@ class MultiLayerManager {
         document.getElementById('layerForm').reset();
         document.getElementById('layerBgColor').value = '#000000';
         document.getElementById('layerTextColor').value = '#ffffff';
+        this.onLayerImageChange();
         this.setEditorMode(false);
     }
 
@@ -446,6 +491,8 @@ class MultiLayerManager {
         set('layerBgAlpha', Math.round(this.parseColor(content.backgroundColor).a * 100));
         set('layerTextColor', this.colorToHex(content.textColor));
         document.getElementById('layerVisible').checked = layer.visible !== false;
+        set('layerImage', content.image_id || '');
+        this.onLayerImageChange();
         this.setEditorMode(true);
     }
 
@@ -460,11 +507,17 @@ class MultiLayerManager {
         if (position.x + position.width > SCREEN_WIDTH || position.y + position.height > SCREEN_HEIGHT) {
             throw new Error(`The layer must fit on the ${SCREEN_WIDTH}×${SCREEN_HEIGHT} screen`);
         }
+        const imageId = document.getElementById('layerImage').value || null;
+        const text = document.getElementById('layerText').value;
+        if (!imageId && !text.trim()) {
+            throw new Error('Enter some text or choose an image');
+        }
         return {
             name: document.getElementById('layerName').value.trim(),
             layer_type: 'DataRow',
             content: {
-                text: document.getElementById('layerText').value,
+                text,
+                image_id: imageId,
                 backgroundColor: this.hexToRgba(document.getElementById('layerBgColor').value, number('layerBgAlpha') / 100),
                 textColor: this.hexToRgba(document.getElementById('layerTextColor').value, 1),
                 fontSize: number('fontSize'),
@@ -1194,6 +1247,10 @@ function saveLayer(event) {
 
 function newLayer() {
     manager.newLayer();
+}
+
+function onLayerImageChange() {
+    manager.onLayerImageChange();
 }
 
 function animateSelected(type) {

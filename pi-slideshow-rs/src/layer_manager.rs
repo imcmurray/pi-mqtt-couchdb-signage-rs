@@ -581,10 +581,11 @@ impl LayerManager {
     }
 
     async fn render_image_layer(&self, layer: &Layer, image_path: &str, composite: &mut RgbaImage) -> Result<(), String> {
-        // Check cache first
+        // Cached per size, since the image is scaled to fit the layer
+        let cache_key = format!("{}@{}x{}", image_path, layer.position.width, layer.position.height);
         let cached_image = {
             let cache = self.image_cache.read().await;
-            cache.get(image_path).cloned()
+            cache.get(&cache_key).cloned()
         };
 
         let layer_image = match cached_image {
@@ -593,7 +594,7 @@ impl LayerManager {
                 // Load and cache image
                 let img = self.load_and_process_image(image_path, &layer.position).await?;
                 let mut cache = self.image_cache.write().await;
-                cache.insert(image_path.to_string(), img.clone());
+                cache.insert(cache_key, img.clone());
                 img
             }
         };
@@ -621,7 +622,12 @@ impl LayerManager {
     }
 
     async fn load_and_process_image(&self, image_path: &str, position: &Position) -> Result<RgbaImage, String> {
-        let img = image::open(image_path)
+        // Detect the format from the file contents: layer images are cached
+        // without their original extension
+        let img = image::io::Reader::open(image_path)
+            .and_then(|reader| reader.with_guessed_format())
+            .map_err(|e| format!("Failed to open image '{}': {}", image_path, e))?
+            .decode()
             .map_err(|e| format!("Failed to load image '{}': {}", image_path, e))?
             .to_rgba8();
 

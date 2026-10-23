@@ -12,14 +12,19 @@ const layerSchema = Joi.object({
   name: Joi.string().required(),
   layer_type: Joi.string().valid('DataRow', 'StaticOverlay', 'DynamicText', 'Emergency').default('DataRow'),
   content: Joi.object({
-    text: Joi.string().required(),
+    text: Joi.string().allow('').default(''),
+    // Image Library image drawn instead of the text (PNG transparency is kept)
+    image_id: Joi.string().max(100).allow(null),
     backgroundColor: Joi.string().pattern(/^rgba?\(\d+,\s*\d+,\s*\d+,\s*[\d.]+\)$/).default('rgba(0, 0, 0, 0.8)'),
     textColor: Joi.string().pattern(/^rgba?\(\d+,\s*\d+,\s*\d+,\s*[\d.]+\)$/).default('rgba(255, 255, 255, 1)'),
     fontSize: Joi.number().min(10).max(100).default(24),
     fontFamily: Joi.string().default('Arial'),
     padding: Joi.number().min(0).max(50).default(10),
     alignment: Joi.string().valid('left', 'center', 'right').default('left')
-  }).required(),
+  }).custom((content, helpers) => (content.text.trim() || content.image_id)
+    ? content
+    : helpers.message('A layer needs text or an image')
+  ).required(),
   position: Joi.object({
     x: Joi.number().min(0).required(),
     y: Joi.number().min(0).required(),
