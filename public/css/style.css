@@ -1,3 +1,13 @@
+/* The TVs' emoji font (pi-slideshow-rs embeds the same file), so previews match the TV.
+   Limited to emoji code points; ordinary text keeps its own font. */
+@font-face {
+    font-family: 'Signage Emoji';
+    src: url('/fonts/NotoColorEmoji.ttf') format('truetype');
+    unicode-range: U+2139, U+2194-2199, U+231A-231B, U+23E9-23FA, U+24C2, U+25FB-25FE, U+2600-27BF,
+        U+2B05-2B07, U+2B1B-2B1C, U+2B50, U+2B55, U+200D, U+FE0F, U+1F000-1FAFF;
+    font-display: swap;
+}
+
 /* Reset and Base Styles */
 * {
     margin: 0;

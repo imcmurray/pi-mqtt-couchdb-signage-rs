@@ -130,7 +130,7 @@ describe('Alert Model', () => {
       expect(layer.priority).toBe(250);
       expect(layer.visible).toBe(true);
       expect(layer.position).toEqual({ x: 0, y: 0, width: 1920, height: 1080 });
-      expect(layer.content.text).toContain('⚠');
+      expect(layer.content.text).toContain('🚨');
       expect(layer.content.text).toContain('CRITICAL ALERT');
       expect(layer.content.text).toContain('Evacuation');
       expect(layer.content.text).toContain('Leave building now');

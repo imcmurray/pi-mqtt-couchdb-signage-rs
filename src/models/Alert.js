@@ -54,19 +54,19 @@ class Alert extends BaseModel {
         priority: 250,
         auto_dismiss_ms: 600000, // 10 minutes
         background_color: 'rgba(220, 38, 38, 0.95)', // Red
-        icon: '⚠'  // U+26A0 WARNING SIGN (DejaVu compatible)
+        icon: '🚨'  // drawn in colour from the TV's bundled emoji font
       },
       URGENT: {
         priority: 200,
         auto_dismiss_ms: 300000, // 5 minutes
         background_color: 'rgba(217, 119, 6, 0.9)', // Orange
-        icon: '⚠'  // U+26A0 WARNING SIGN (DejaVu compatible)
+        icon: '⚠️'
       },
       INFO: {
         priority: 150,
         auto_dismiss_ms: 120000, // 2 minutes
         background_color: 'rgba(37, 99, 235, 0.85)', // Blue
-        icon: 'ℹ'  // U+2139 INFORMATION SOURCE (DejaVu compatible)
+        icon: 'ℹ️'
       }
     };
 

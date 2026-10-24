@@ -53,7 +53,7 @@ module.exports = [
     tags: ['courthouse', 'welcome', 'clock', 'weather', 'scene-starter'],
     layers: [
       block('Welcome Background', { x: 0, y: 0, width: 1920, height: 1080 }, NAVY),
-      text('Building Name', 'FRANK E. MOSS UNITED STATES COURTHOUSE', { x: 0, y: 70, width: 1920, height: 90 },
+      text('Building Name', '🏛️  FRANK E. MOSS UNITED STATES COURTHOUSE', { x: 0, y: 70, width: 1920, height: 90 },
         { font: 'Liberation Serif', weight: 'bold', size: 46, color: GOLD }),
       text('Welcome', 'Welcome', { x: 0, y: 240, width: 1920, height: 220 },
         { font: 'Liberation Serif', weight: 'bold', size: 150 }),
@@ -63,7 +63,7 @@ module.exports = [
       text('Clock', '{time}', { x: 0, y: 640, width: 1920, height: 150 },
         { font: 'DejaVu Sans', weight: 'bold', size: 110 }),
       text('Date', '{date}', { x: 0, y: 790, width: 1920, height: 70 }, { size: 40, color: SOFT_WHITE }),
-      text('Weather Bar', '{location}  ·  {weather}', { x: 0, y: 960, width: 1920, height: 120 },
+      text('Weather Bar', '{location}  ·  {weather_icon} {weather}', { x: 0, y: 960, width: 1920, height: 120 },
         { background: BAR, size: 36 })
     ]
   },
@@ -80,11 +80,11 @@ module.exports = [
       text('Information Header', 'Courthouse Information', { x: 0, y: 0, width: 1920, height: 130 },
         { background: 'rgba(0, 0, 0, 0.25)', font: 'Liberation Serif', weight: 'bold', size: 64 }),
       block('Header Rule', { x: 0, y: 130, width: 1920, height: 6 }, GOLD, 21),
-      card('Building Hours', 'BUILDING HOURS\nMonday – Friday\n8:00 AM – 5:00 PM\nClosed on federal holidays', 60, 190),
-      card('Security Screening', 'SECURITY SCREENING\nAll visitors pass through security.\nPlease have a photo ID ready.\nWeapons and sharp objects are not permitted.', 980, 190),
-      card("Clerk's Offices", "CLERK'S OFFICES\nDistrict Court Clerk's Office\nBankruptcy Court Clerk's Office\nAsk a Court Security Officer for directions.", 60, 580),
-      card('In the Courtroom', 'IN THE COURTROOM\nPlease silence all electronic devices.\nPhotography and recording are prohibited.\nProper attire is expected.', 980, 580),
-      text('Information Footer', '{day}, {short_date}   ·   {time}   ·   {weather}', { x: 0, y: 980, width: 1920, height: 100 },
+      card('Building Hours', '🕗 BUILDING HOURS\nMonday – Friday\n8:00 AM – 5:00 PM\nClosed on federal holidays', 60, 190),
+      card('Security Screening', '🛡️ SECURITY SCREENING\nAll visitors pass through security.\nPlease have a photo ID ready.\nWeapons and sharp objects are not permitted.', 980, 190),
+      card("Clerk's Offices", "📋 CLERK'S OFFICES\nDistrict Court Clerk's Office\nBankruptcy Court Clerk's Office\nAsk a Court Security Officer for directions.", 60, 580),
+      card('In the Courtroom', '⚖️ IN THE COURTROOM\n📵 Please silence all electronic devices.\nPhotography and recording are prohibited.\nProper attire is expected.', 980, 580),
+      text('Information Footer', '{day}, {short_date}   ·   {time}   ·   {weather_icon} {weather}', { x: 0, y: 980, width: 1920, height: 100 },
         { background: BAR, size: 34 })
     ]
   },
@@ -98,7 +98,7 @@ module.exports = [
     tags: ['courthouse', 'calendar', 'hearings', 'data', 'scene-starter'],
     layers: [
       block('Calendar Background', { x: 0, y: 0, width: 1920, height: 1080 }, NAVY),
-      text('Calendar Title', "Today's Court Calendar", { x: 0, y: 0, width: 1920, height: 120 },
+      text('Calendar Title', "📅 Today's Court Calendar", { x: 0, y: 0, width: 1920, height: 120 },
         { background: 'rgba(0, 0, 0, 0.25)', font: 'Liberation Serif', weight: 'bold', size: 56, align: 'left' }),
       text('Calendar Clock', '{day}, {short_date}  ·  {time}', { x: 960, y: 0, width: 960, height: 120 },
         { size: 34, align: 'right', priority: 21 }),
@@ -143,7 +143,7 @@ module.exports = [
         opacity: 1.0,
         tags: ['calendar-table']
       },
-      text('Calendar Footer', 'Hearing times are subject to change. Please check in with the courtroom deputy.', { x: 0, y: 1020, width: 1920, height: 60 },
+      text('Calendar Footer', 'ℹ️ Hearing times are subject to change. Please check in with the courtroom deputy.', { x: 0, y: 1020, width: 1920, height: 60 },
         { background: BAR, size: 26, color: SOFT_WHITE })
     ]
   }

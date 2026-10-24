@@ -1826,3 +1826,52 @@
     font-size: 13px;
     color: var(--ml-text-muted);
 }
+
+/* A layer whose corner is under the pointer comes to the front so it can be resized */
+:is(#layers-section, #scenes-section) .layer-preview.peek {
+    z-index: 100000 !important;
+    outline: 2px dashed #f59e0b;
+    outline-offset: -2px;
+}
+
+:is(#layers-section, #scenes-section) .layer-preview:is(.peek-nw, .peek-se) { cursor: nwse-resize; }
+:is(#layers-section, #scenes-section) .layer-preview:is(.peek-ne, .peek-sw) { cursor: nesw-resize; }
+
+/* Emoji picker under the text box */
+:is(#layers-section, #scenes-section) .emoji-picker {
+    margin-top: 6px;
+    font-size: 0.85rem;
+}
+
+:is(#layers-section, #scenes-section) .emoji-picker summary {
+    cursor: pointer;
+    color: var(--text-secondary, #64748b);
+}
+
+:is(#layers-section, #scenes-section) .emoji-group {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px;
+    margin-top: 4px;
+}
+
+:is(#layers-section, #scenes-section) .emoji-group-label {
+    width: 84px;
+    color: var(--text-secondary, #64748b);
+    font-size: 0.75rem;
+}
+
+:is(#layers-section, #scenes-section) .emoji-chip {
+    padding: 2px 4px;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    background: none;
+    font: 20px/1 'Signage Emoji', sans-serif;
+    cursor: pointer;
+}
+
+:is(#layers-section, #scenes-section) .emoji-chip:hover {
+    border-color: #f59e0b;
+    background: rgba(245, 158, 11, 0.1);
+}

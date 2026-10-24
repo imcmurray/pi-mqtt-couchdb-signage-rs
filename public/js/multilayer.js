@@ -6,17 +6,19 @@ const SCREEN_HEIGHT = 1080;
 const DRAG_SNAP = 10;
 const MIN_LAYER_SIZE = 20;
 const RESIZE_CORNERS = ['nw', 'ne', 'sw', 'se'];
+const CORNER_GRAB_PX = 14;  // how close (screen px) to a layer's corner counts as grabbing it
 // Reordering renumbers priorities in steps: above the slideshow (1), below alerts (150+)
 const PRIORITY_STEP = 10;
 // Browser stand-ins for the fonts the TV draws with (metric-compatible where possible).
 // Single quotes only: these go inside a style="..." attribute
+// 'Signage Emoji' (style.css) is the TV's emoji font; it only covers emoji code points
 const PREVIEW_FONTS = {
-    'DejaVu Sans': "'DejaVu Sans', Verdana, sans-serif",
-    'DejaVu Serif': "'DejaVu Serif', Georgia, serif",
-    'DejaVu Sans Mono': "'DejaVu Sans Mono', Menlo, Consolas, monospace",
-    'Liberation Sans': "'Liberation Sans', Arial, Helvetica, sans-serif",
-    'Liberation Serif': "'Liberation Serif', 'Times New Roman', Times, serif",
-    'Liberation Sans Narrow': "'Liberation Sans Narrow', 'Arial Narrow', sans-serif-condensed, sans-serif"
+    'DejaVu Sans': "'Signage Emoji', 'DejaVu Sans', Verdana, sans-serif",
+    'DejaVu Serif': "'Signage Emoji', 'DejaVu Serif', Georgia, serif",
+    'DejaVu Sans Mono': "'Signage Emoji', 'DejaVu Sans Mono', Menlo, Consolas, monospace",
+    'Liberation Sans': "'Signage Emoji', 'Liberation Sans', Arial, Helvetica, sans-serif",
+    'Liberation Serif': "'Signage Emoji', 'Liberation Serif', 'Times New Roman', Times, serif",
+    'Liberation Sans Narrow': "'Signage Emoji', 'Liberation Sans Narrow', 'Arial Narrow', sans-serif-condensed, sans-serif"
 };
 
 class MultiLayerManager {
@@ -628,10 +630,38 @@ class MultiLayerManager {
         document.getElementById('layerCountText').textContent = count;
     }
 
+    // The layer corner under the pointer, even when another layer covers it.
+    // The selected layer wins, then the frontmost.
+    cornerAt(clientX, clientY) {
+        const candidates = document.elementsFromPoint(clientX, clientY)
+            .filter(el => el.classList.contains('layer-preview') && !el.classList.contains('alert-layer'))
+            .sort((a, b) => b.classList.contains('selected') - a.classList.contains('selected'));
+        for (const element of candidates) {
+            const r = element.getBoundingClientRect();
+            const grab = Math.min(CORNER_GRAB_PX, r.width / 3, r.height / 3);
+            const v = clientY - r.top < grab ? 'n' : r.bottom - clientY < grab ? 's' : '';
+            const h = clientX - r.left < grab ? 'w' : r.right - clientX < grab ? 'e' : '';
+            if (v && h) return { element, corner: v + h };
+        }
+        return null;
+    }
+
+    // Bring a layer to the front while the pointer is on one of its corners (and while
+    // it's being resized), so covered layers can still be resized; back on release
+    setPeek(hit) {
+        if (this.peek?.element === hit?.element && this.peek?.corner === hit?.corner) return;
+        this.peek?.element.classList.remove('peek', ...RESIZE_CORNERS.map(c => `peek-${c}`));
+        this.peek = hit;
+        hit?.element.classList.add('peek', `peek-${hit.corner}`);
+    }
+
     // Drag layers around the preview; a press without movement selects
     onPreviewPointerDown(event) {
         if (event.target.closest('[contenteditable="true"]')) return;
-        const element = event.target.closest('.layer-preview');
+        // Touch has no hover, so look for a corner on the press itself
+        const hit = this.cornerAt(event.clientX, event.clientY);
+        this.setPeek(hit);
+        const element = hit?.element || event.target.closest('.layer-preview');
         if (!element || element.classList.contains('alert-layer') || event.button !== 0) return;
         const layer = this.layers.find(l => l.layer_id === element.dataset.layerId);
         if (!layer) return;
@@ -642,7 +672,7 @@ class MultiLayerManager {
         this.drag = {
             element,
             layer,
-            corner: event.target.closest('.resize-handle')?.dataset.corner || null,
+            corner: hit?.corner || event.target.closest('.resize-handle')?.dataset.corner || null,
             startX: event.clientX,
             startY: event.clientY,
             scale: screen.clientWidth / SCREEN_WIDTH,
@@ -690,7 +720,10 @@ class MultiLayerManager {
 
     onPreviewPointerMove(event) {
         const drag = this.drag;
-        if (!drag) return;
+        if (!drag) {
+            if (event.pointerType === 'mouse') this.setPeek(this.cornerAt(event.clientX, event.clientY));
+            return;
+        }
         const dx = (event.clientX - drag.startX) / drag.scale;
         const dy = (event.clientY - drag.startY) / drag.scale;
         if (!drag.moved && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 4) return;
@@ -722,6 +755,7 @@ class MultiLayerManager {
 
     async onPreviewPointerUp() {
         const drag = this.drag;
+        this.setPeek(null);
         if (!drag) return;
         this.drag = null;
 
@@ -847,7 +881,8 @@ class MultiLayerManager {
         screen.addEventListener('pointerdown', e => this.onPreviewPointerDown(e));
         screen.addEventListener('pointermove', e => this.onPreviewPointerMove(e));
         screen.addEventListener('pointerup', () => this.onPreviewPointerUp());
-        screen.addEventListener('pointercancel', () => { this.drag = null; this.renderLayers(); });
+        screen.addEventListener('pointercancel', () => { this.drag = null; this.setPeek(null); this.renderLayers(); });
+        screen.addEventListener('pointerleave', () => { if (!this.drag) this.setPeek(null); });
 
         // Font sizes in the preview follow its width
         if (window.ResizeObserver) {

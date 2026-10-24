@@ -6,13 +6,21 @@ use tokio::sync::RwLock;
 use crate::layer_animation::{AnimationState, AnimationType, AnimationValue};
 use fontdue::{Font, FontSettings};
 use crate::layer_data::{self, TableSpec};
+use crate::emoji::{self, Piece};
 use crate::mqtt_client::parse_rgba_string;
 
 /// Gap between text and the edge of its layer when aligned to that edge
 const TEXT_INSET: f32 = 10.0;
 
 fn text_width(font: &Font, text: &str, size: f32) -> f32 {
-    text.chars().map(|ch| font.metrics(ch, size).advance_width).sum()
+    emoji::pieces(text).into_iter().map(|piece| piece_advance(font, piece, size)).sum()
+}
+
+fn piece_advance(font: &Font, piece: Piece, size: f32) -> f32 {
+    match piece {
+        Piece::Char(ch) => font.metrics(ch, size).advance_width,
+        Piece::Emoji(ch) => emoji::advance(ch, size),
+    }
 }
 
 /// The text, shortened with an ellipsis if it is wider than max_width
@@ -24,12 +32,16 @@ fn fit_text(font: &Font, text: &str, size: f32, max_width: f32) -> String {
     let budget = max_width - font.metrics(ellipsis, size).advance_width;
     let mut width = 0.0;
     let mut out = String::new();
-    for ch in text.chars() {
-        width += font.metrics(ch, size).advance_width;
+    for piece in emoji::pieces(text) {
+        width += piece_advance(font, piece, size);
         if width > budget {
             break;
         }
-        out.push(ch);
+        match piece {
+            Piece::Char(ch) => out.push(ch),
+            // Keep it an emoji when the shortened text is split again
+            Piece::Emoji(ch) => { out.push(ch); out.push('\u{FE0F}'); }
+        }
     }
     format!("{}{}", out.trim_end(), ellipsis)
 }
@@ -323,7 +335,6 @@ pub struct LayerManager {
     last_composite: Arc<RwLock<Option<RgbaImage>>>,
     composite_dirty: Arc<RwLock<bool>>,
     font_cache: Arc<RwLock<HashMap<String, Font>>>,
-    emoji_font_cache: Arc<RwLock<Option<Font>>>,
     transition_frame: Arc<RwLock<Option<RgbaImage>>>,
     data: Arc<RwLock<LayerData>>,
     // Clock minute + table pages shown in the last composite; a change means redraw
@@ -363,7 +374,6 @@ impl LayerManager {
             last_composite: Arc::new(RwLock::new(None)),
             composite_dirty: Arc::new(RwLock::new(true)),
             font_cache: Arc::new(RwLock::new(HashMap::new())),
-            emoji_font_cache: Arc::new(RwLock::new(None)),
             transition_frame: Arc::new(RwLock::new(None)),
             data: Arc::new(RwLock::new(LayerData::default())),
             last_dynamic_key: Arc::new(RwLock::new(String::new())),
@@ -837,7 +847,18 @@ impl LayerManager {
         let bottom = (top + height).min(composite.height()) as i32;
 
         let mut pen = left;
-        for ch in text.chars() {
+        for piece in emoji::pieces(text) {
+            let ch = match piece {
+                Piece::Char(ch) => ch,
+                Piece::Emoji(ch) => {
+                    if let Some(glyph) = emoji::glyph(ch, size) {
+                        emoji::draw(&glyph, pen, baseline, opacity * color.3 as f32 / 255.0, (0, top as i32, clip_right, bottom),
+                            composite, |a, b| self.blend_pixels(a, b));
+                    }
+                    pen += emoji::advance(ch, size);
+                    continue;
+                }
+            };
             let (metrics, bitmap) = font.rasterize(ch, size);
             let glyph_x = (pen + metrics.xmin as f32).round() as i32;
             let glyph_y = (baseline - metrics.height as f32 - metrics.ymin as f32).round() as i32;
@@ -1112,59 +1133,6 @@ impl LayerManager {
         Err("No system fonts found. Please install DejaVu Sans or another TrueType font.".to_string())
     }
 
-    async fn get_or_load_emoji_font(&self) -> Option<Font> {
-        // Check cache first
-        {
-            let cache = self.emoji_font_cache.read().await;
-            if let Some(ref font) = *cache {
-                return Some(font.clone());
-            }
-        }
-
-        // Try to load emoji font
-        if let Ok(font_data) = self.load_emoji_font_data() {
-            if let Ok(font) = Font::from_bytes(font_data, FontSettings::default()) {
-                println!("Loaded emoji font successfully");
-                let mut cache = self.emoji_font_cache.write().await;
-                *cache = Some(font.clone());
-                return Some(font);
-            }
-        }
-
-        None
-    }
-
-    fn load_emoji_font_data(&self) -> Result<Vec<u8>, String> {
-        let emoji_font_paths = [
-            "/usr/share/fonts/truetype/noto/NotoEmoji-Regular.ttf",
-            "/usr/share/fonts/noto-emoji/NotoEmoji-Regular.ttf",
-            "/usr/share/fonts/google-noto-emoji/NotoEmoji-Regular.ttf",
-            "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",
-            "/usr/share/fonts/noto/NotoEmoji-Regular.ttf",
-            "/usr/share/fonts/opentype/noto/NotoEmoji-Regular.ttf",
-        ];
-
-        for path in &emoji_font_paths {
-            if let Ok(data) = std::fs::read(path) {
-                println!("Loaded emoji font from: {}", path);
-                return Ok(data);
-            }
-        }
-
-        Err("No emoji font found".to_string())
-    }
-
-    fn is_emoji_char(ch: char) -> bool {
-        let code = ch as u32;
-        // Common emoji ranges
-        (0x1F300..=0x1F9FF).contains(&code) ||  // Miscellaneous Symbols and Pictographs, Emoticons, etc.
-        (0x2600..=0x26FF).contains(&code) ||    // Miscellaneous Symbols
-        (0x2700..=0x27BF).contains(&code) ||    // Dingbats
-        (0x1F600..=0x1F64F).contains(&code) ||  // Emoticons
-        (0x1F680..=0x1F6FF).contains(&code) ||  // Transport and Map Symbols
-        (0x1F1E0..=0x1F1FF).contains(&code)     // Flags
-    }
-
     async fn update_all_animations(&self) {
         let mut config = self.config.write().await;
         let mut any_animation_active = false;
@@ -1208,28 +1176,11 @@ impl LayerManager {
                 return Ok(());
             }
         };
-        let emoji_font = self.get_or_load_emoji_font().await;
-
         let scale = font_size as f32;
         let line_spacing = (font_size as f32 * 0.3) as u32;
 
         // Split text into lines
         let lines: Vec<&str> = text.split('\n').collect();
-
-        // Helper to get metrics for a character (with emoji fallback)
-        let get_char_metrics = |ch: char, font: &Font, emoji_font: &Option<Font>| -> (fontdue::Metrics, Vec<u8>) {
-            // Try emoji font first for emoji characters
-            if Self::is_emoji_char(ch) {
-                if let Some(ref ef) = emoji_font {
-                    let (metrics, bitmap) = ef.rasterize(ch, scale);
-                    if !bitmap.is_empty() && metrics.width > 0 {
-                        return (metrics, bitmap);
-                    }
-                }
-            }
-            // Fall back to regular font
-            font.rasterize(ch, scale)
-        };
 
         // Measure each line
         struct LineMeasurement {
@@ -1242,10 +1193,11 @@ impl LayerManager {
         for line in &lines {
             let mut line_width = 0.0f32;
             let mut line_height = 0.0f32;
-            for ch in line.chars() {
-                let (metrics, _) = get_char_metrics(ch, &font, &emoji_font);
-                line_width += metrics.advance_width;
-                line_height = line_height.max(metrics.height as f32);
+            for piece in emoji::pieces(line) {
+                line_width += piece_advance(&font, piece, scale);
+                if let Piece::Char(ch) = piece {
+                    line_height = line_height.max(font.metrics(ch, scale).height as f32);
+                }
             }
             if line_height < font_size as f32 {
                 line_height = font_size as f32;
@@ -1283,8 +1235,21 @@ impl LayerManager {
             // Render each character in the line
             let mut current_x = start_x as f32;
 
-            for ch in line.chars() {
-                let (metrics, bitmap) = get_char_metrics(ch, &font, &emoji_font);
+            for piece in emoji::pieces(line) {
+                let ch = match piece {
+                    Piece::Char(ch) => ch,
+                    Piece::Emoji(ch) => {
+                        if let Some(glyph) = emoji::glyph(ch, scale) {
+                            let pos = &layer.position;
+                            let clip = (pos.x as i32, pos.y as i32, (pos.x + pos.width) as i32, (pos.y + pos.height) as i32);
+                            emoji::draw(&glyph, current_x, (current_y + font_size) as f32, layer.opacity * text_color.3 as f32 / 255.0,
+                                clip, composite, |a, b| self.blend_pixels(a, b));
+                        }
+                        current_x += emoji::advance(ch, scale);
+                        continue;
+                    }
+                };
+                let (metrics, bitmap) = font.rasterize(ch, scale);
 
                 if !bitmap.is_empty() {
                     let glyph_x = (current_x + metrics.xmin as f32) as u32;

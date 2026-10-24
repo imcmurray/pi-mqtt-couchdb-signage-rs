@@ -165,7 +165,7 @@ class DemoService {
           seconds: SCENE_SECONDS,
           run: async () => {
             // Caption first: the TV applies changes in order, so it lands with the scene
-            await setCaption(`Scene ${i + 1} of ${sceneClips.length} · ${scene.name}\nDesigned on the Scenes page; live values update on the TV`);
+            await setCaption(`🎬 Scene ${i + 1} of ${sceneClips.length} · ${scene.name}\nDesigned on the Scenes page; live values update on the TV`);
             if (i === 0) await setOverlays(false);
             await hold(clip);
           }
@@ -175,7 +175,7 @@ class DemoService {
         label: 'Image clip',
         seconds: 8,
         run: async () => {
-          await setCaption('Image clip\nPhotos from the Image Library play between scenes');
+          await setCaption('🖼️ Image clip\nPhotos from the Image Library play between scenes');
           await hold(imageClip);
         }
       }] : []),
@@ -183,7 +183,7 @@ class DemoService {
         label: 'Overlays',
         seconds: 10,
         run: async () => {
-          await setCaption('Overlays (Layer Control)\nSeals, logos and notices sit on top of every clip');
+          await setCaption('🧱 Overlays (Layer Control)\nSeals, logos and notices sit on top of every clip');
           if (sceneClips[0]) await hold(sceneClips[0]);
           await setOverlays(true);
           const ticker = new Layer({
@@ -191,7 +191,7 @@ class DemoService {
             name: 'Demo overlay: notice',
             layer_type: 'DataRow',
             content: {
-              text: 'Overlay notice: Courtroom 205 is running about 30 minutes late',
+              text: '⏱️ Overlay notice: Courtroom 205 is running about 30 minutes late',
               backgroundColor: 'rgba(0, 0, 0, 0.85)', textColor: 'rgba(255, 255, 255, 1)',
               fontSize: 32, fontFamily: 'Liberation Sans', alignment: 'center', verticalAlignment: 'middle'
             },
@@ -207,26 +207,26 @@ class DemoService {
         label: 'Alert: INFO',
         seconds: 8,
         run: async () => {
-          await setCaption('Alerts sit above everything\nINFO: a blue announcement banner');
+          await setCaption('🔔 Alerts sit above everything\nINFO: a blue announcement banner');
           await this.wait(demo, CAPTION_SETTLE_MS);
-          await alert('INFO', 'Announcement', 'The cafeteria closes at 2:00 PM today');
+          await alert('INFO', 'Announcement', '☕ The cafeteria closes at 2:00 PM today');
         }
       },
       {
         label: 'Alert: URGENT',
         seconds: 8,
         run: async () => {
-          await setCaption('Alerts sit above everything\nURGENT: an orange warning banner');
+          await setCaption('🔔 Alerts sit above everything\nURGENT: an orange warning banner');
           await this.wait(demo, CAPTION_SETTLE_MS);
           await dismiss(alerts[alerts.length - 1]);
-          await alert('URGENT', 'Weather Advisory', 'Winter storm warning in effect this afternoon');
+          await alert('URGENT', 'Weather Advisory', '❄️ Winter storm warning in effect this afternoon');
         }
       },
       {
         label: 'Alert: CRITICAL',
         seconds: 8,
         run: async () => {
-          await setCaption('Alerts sit above everything\nCRITICAL: takes over the whole screen');
+          await setCaption('🔔 Alerts sit above everything\nCRITICAL: takes over the whole screen');
           await this.wait(demo, CAPTION_SETTLE_MS);
           await dismiss(alerts[alerts.length - 1]);
           await alert('CRITICAL', 'Emergency', 'This is only a demonstration: CRITICAL alerts take over the whole screen');
@@ -236,7 +236,7 @@ class DemoService {
         label: 'Rotation',
         seconds: 14,
         run: async () => {
-          await setCaption('Sequence rotation\nClips play in a loop with transitions. End of the demo');
+          await setCaption('🔁 Sequence rotation\nClips play in a loop with transitions. End of the demo');
           await this.wait(demo, CAPTION_SETTLE_MS);
           await dismiss(alerts[alerts.length - 1]);
           await mqttService.resume(tvId);

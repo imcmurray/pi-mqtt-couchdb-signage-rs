@@ -28,6 +28,7 @@ couch_rs = { version = "0.10", default-features = false }
 url = "2.0"
 sysinfo = "0.29"
 fontdue = "0.9"
+ttf-parser = "0.21"  # colour emoji bitmaps (CBDT), see src/emoji.rs
 
 [build-dependencies]
 chrono = "0.4"

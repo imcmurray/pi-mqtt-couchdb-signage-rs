@@ -9,6 +9,21 @@ const LOCATION = process.env.WEATHER_LOCATION || 'Salt Lake City';
 const REFRESH_MS = 15 * 60 * 1000;
 const HEADERS = { 'User-Agent': 'pi-signage-fleet (courthouse signage)', Accept: 'application/geo+json' };
 
+// Emoji for an NWS short forecast ("Chance Rain Showers" → 🌧️), for {weather_icon}
+function weatherIcon(forecast = '', isDaytime = true) {
+  const f = forecast.toLowerCase();
+  if (/thunder|t-storm/.test(f)) return '⛈️';
+  if (/snow|flurr|sleet|blizzard|freezing|ice/.test(f)) return '❄️';
+  if (/rain|shower|drizzle/.test(f)) return '🌧️';
+  if (/fog|haze|smoke|mist|dust/.test(f)) return '🌫️';
+  if (/wind|breezy|blustery/.test(f)) return '💨';
+  if (/partly/.test(f)) return isDaytime ? '⛅' : '☁️';
+  if (/mostly (sunny|clear)/.test(f)) return isDaytime ? '🌤️' : '🌙';
+  if (/cloud|overcast/.test(f)) return '☁️';
+  if (/sunny|clear|fair/.test(f)) return isDaytime ? '☀️' : '🌙';
+  return '🌡️';
+}
+
 class WeatherService {
   constructor() {
     this.forecastUrl = null;
@@ -42,6 +57,7 @@ class WeatherService {
         temp: `${now.temperature}°${now.temperatureUnit}`,
         conditions: now.shortForecast,
         weather: `${now.temperature}°${now.temperatureUnit} · ${now.shortForecast}`,
+        weather_icon: weatherIcon(now.shortForecast, now.isDaytime !== false),
         location: LOCATION
       };
 
@@ -60,3 +76,4 @@ class WeatherService {
 }
 
 module.exports = new WeatherService();
+module.exports.weatherIcon = weatherIcon;
