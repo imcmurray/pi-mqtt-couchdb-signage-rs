@@ -1847,7 +1847,7 @@ class DigitalSignageApp {
                 version: 'unknown',
                 is_dirty: false
             };
-            this.updateVersionDisplay('0.3.0');
+            this.updateVersionDisplay('1.0.0');
         }
     }
 
