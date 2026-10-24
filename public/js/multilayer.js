@@ -215,7 +215,7 @@ class MultiLayerManager {
                 </div>
                 <div class="layer-text" title="${layer.content?.image_id ? '' : 'Click to change the text'}">${layer.content?.image_id
                     ? `🖼 ${this.escapeHtml(this.libraryImageName(layer.content.image_id))}`
-                    : this.escapeHtml(layer.content?.text)}</div>
+                    : (layer.content?.text?.trim() ? this.escapeHtml(layer.content.text) : '<em>Colour block (no text)</em>')}</div>
                 <div class="layer-meta">
                     <span>${x},${y}</span>
                     <span>${width}×${height}</span>
@@ -268,8 +268,9 @@ class MultiLayerManager {
                 `color: ${this.cssColor(content.textColor)}`,
                 `font-size: ${Math.max((content.fontSize || 24) * scale, 6)}px`,
                 `justify-content: ${{ center: 'center', right: 'flex-end' }[content.alignment] || 'flex-start'}`,
+                `align-items: ${{ top: 'flex-start', bottom: 'flex-end' }[content.verticalAlignment] || 'center'}`,
                 `text-align: ${content.alignment || 'left'}`,
-                `padding: 0 ${10 * scale}px`
+                `padding: ${10 * scale}px`
             ].join('; ');
             const handles = layer.layer_id === this.selectedLayerId && !isAlert
                 ? RESIZE_CORNERS.map(corner => `<span class="resize-handle ${corner}" data-corner="${corner}"></span>`).join('')
@@ -634,7 +635,7 @@ class MultiLayerManager {
             element.removeEventListener('blur', onBlur);
 
             const text = element.innerText.replace(/\n$/, '');
-            if (save && text.trim() && text !== original) {
+            if (save && text !== original) {
                 await this.saveLayerText(layer, text);
             } else {
                 this.renderLayers();
@@ -703,6 +704,7 @@ class MultiLayerManager {
         set('layerHeight', layer.position.height);
         set('fontSize', content.fontSize || 24);
         set('layerAlignment', content.alignment || 'left');
+        set('layerVerticalAlignment', content.verticalAlignment || 'middle');
         set('layerPriority', layer.priority);
         set('layerOpacity', Math.round((layer.opacity ?? 1) * 100));
         set('layerBgColor', this.colorToHex(content.backgroundColor));
@@ -727,9 +729,6 @@ class MultiLayerManager {
         }
         const imageId = document.getElementById('layerImage').value || null;
         const text = document.getElementById('layerText').value;
-        if (!imageId && !text.trim()) {
-            throw new Error('Enter some text or choose an image');
-        }
         return {
             name: document.getElementById('layerName').value.trim(),
             layer_type: 'DataRow',
@@ -739,7 +738,8 @@ class MultiLayerManager {
                 backgroundColor: this.hexToRgba(document.getElementById('layerBgColor').value, number('layerBgAlpha') / 100),
                 textColor: this.hexToRgba(document.getElementById('layerTextColor').value, 1),
                 fontSize: number('fontSize'),
-                alignment: document.getElementById('layerAlignment').value
+                alignment: document.getElementById('layerAlignment').value,
+                verticalAlignment: document.getElementById('layerVerticalAlignment').value
             },
             position,
             visible: document.getElementById('layerVisible').checked,

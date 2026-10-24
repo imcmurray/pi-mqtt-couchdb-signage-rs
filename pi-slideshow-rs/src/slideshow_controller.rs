@@ -1050,7 +1050,8 @@ impl SlideshowController {
                 parse_rgba_string(content["textColor"].as_str().unwrap_or("rgba(255, 255, 255, 1)")),
                 content["fontSize"].as_u64().unwrap_or(24) as u32,
                 content["alignment"].as_str().unwrap_or("left").to_string(),
-            );
+            )
+            .with_vertical_alignment(content["verticalAlignment"].as_str().unwrap_or("middle"));
         if let Some(image_id) = Self::layer_image_id(value) {
             layer.content = LayerContent::ImagePath(Self::layer_image_path(image_dir, image_id).to_string_lossy().to_string());
         }
@@ -1221,7 +1222,8 @@ mod tests {
         let doc = serde_json::json!({
             "layer_id": "layer_1", "name": "Header", "layer_type": "StaticOverlay",
             "content": { "text": "Hello", "backgroundColor": "rgba(30, 58, 138, 200)",
-                         "textColor": "rgba(255, 255, 255, 1)", "fontSize": 36, "alignment": "center" },
+                         "textColor": "rgba(255, 255, 255, 1)", "fontSize": 36, "alignment": "center",
+                         "verticalAlignment": "bottom" },
             "position": { "x": 0, "y": 990, "width": 1920, "height": 90 },
             "visible": false, "opacity": 0.5, "priority": 300
         });
@@ -1232,8 +1234,9 @@ mod tests {
         assert_eq!(layer.priority, 255);
         assert!(!layer.visible);
         match layer.content {
-            LayerContent::DataRow { text, background_color, text_color, font_size, .. } => {
+            LayerContent::DataRow { text, background_color, text_color, font_size, vertical_alignment, .. } => {
                 assert_eq!(text, "Hello");
+                assert_eq!(vertical_alignment, "bottom");
                 assert_eq!(background_color, (30, 58, 138, 200)); // 0-255 alpha kept as is
                 assert_eq!(text_color, (255, 255, 255, 255));     // CSS 0-1 alpha scaled
                 assert_eq!(font_size, 36);

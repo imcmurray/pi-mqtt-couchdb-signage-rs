@@ -286,7 +286,7 @@
                                     <small class="form-hint">Pick an image from the Image Library to show it instead of text. A PNG with a transparent background (like a court seal) blends over the slideshow.</small>
                                 </div>
                                 <div class="form-group text-only">
-                                    <label for="layerText">Text</label>
+                                    <label for="layerText">Text <span class="optional-label">(optional; leave blank for a plain colour block)</span></label>
                                     <textarea id="layerText" class="form-input" rows="2" placeholder="e.g., 9:00 AM - Room 101 - Smith vs. Johnson"></textarea>
                                 </div>
                                 <div class="editor-grid">
@@ -305,15 +305,23 @@
                                             <option value="right">Right</option>
                                         </select>
                                     </div>
-                                    <div class="form-group"><label for="layerPriority">Priority (higher on top)</label><input type="number" id="layerPriority" class="form-input" min="2" max="199" value="15" title="Higher draws on top. The slideshow is 1; alerts are 150 and up."></div>
+                                    <div class="form-group text-only">
+                                        <label for="layerVerticalAlignment">Vertical</label>
+                                        <select id="layerVerticalAlignment" class="form-select">
+                                            <option value="top">Top</option>
+                                            <option value="middle" selected>Middle</option>
+                                            <option value="bottom">Bottom</option>
+                                        </select>
+                                    </div>
                                     <div class="form-group"><label for="layerOpacity">Opacity</label><input type="number" id="layerOpacity" class="form-input" min="0" max="100" value="100" step="5"></div>
                                 </div>
                                 <div class="editor-grid">
                                     <div class="form-group text-only"><label for="layerBgColor">Background</label><input type="color" id="layerBgColor" class="form-input color-input" value="#000000"></div>
                                     <div class="form-group text-only"><label for="layerBgAlpha">Background %</label><input type="number" id="layerBgAlpha" class="form-input" min="0" max="100" value="80" step="5"></div>
                                     <div class="form-group text-only"><label for="layerTextColor">Text</label><input type="color" id="layerTextColor" class="form-input color-input" value="#ffffff"></div>
-                                    <div class="form-group checkbox-group"><label><input type="checkbox" id="layerVisible" checked> Visible</label></div>
+                                    <div class="form-group"><label for="layerPriority">Priority (higher on top)</label><input type="number" id="layerPriority" class="form-input" min="2" max="199" value="15" title="Higher draws on top. The slideshow is 1; alerts are 150 and up."></div>
                                 </div>
+                                <div class="form-group checkbox-group"><label><input type="checkbox" id="layerVisible" checked> Visible</label></div>
                                 <div class="editor-actions">
                                     <button type="submit" class="btn btn-primary" id="layerSaveButton">Create layer</button>
                                     <button type="button" class="btn btn-secondary" id="layerSaveTemplateButton" onclick="openSaveTemplateModal()" style="display: none;">Save as template</button>

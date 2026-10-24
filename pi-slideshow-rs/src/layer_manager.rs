@@ -6,6 +6,9 @@ use tokio::sync::RwLock;
 use crate::layer_animation::{AnimationState, AnimationType, AnimationValue};
 use fontdue::{Font, FontSettings};
 
+/// Gap between text and the edge of its layer when aligned to that edge
+const TEXT_INSET: f32 = 10.0;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum LayerType {
     Slideshow,     // Background transitioning images
@@ -40,6 +43,8 @@ pub enum LayerContent {
         text_color: (u8, u8, u8, u8),
         font_size: u32,
         alignment: String,  // left, center, right
+        #[serde(default)]
+        vertical_alignment: String,  // top, middle (default), bottom
     },
     Empty,                  // No content
 }
@@ -128,7 +133,15 @@ impl Layer {
             text_color,
             font_size,
             alignment,
+            vertical_alignment: String::new(),
         };
+        self
+    }
+
+    pub fn with_vertical_alignment(mut self, value: &str) -> Self {
+        if let LayerContent::DataRow { ref mut vertical_alignment, .. } = self.content {
+            *vertical_alignment = value.to_string();
+        }
         self
     }
     
@@ -573,8 +586,8 @@ impl LayerManager {
                 // Future implementation for text rendering
                 Ok(())
             }
-            LayerContent::DataRow { text, background_color, text_color, font_size, alignment } => {
-                self.render_data_row_layer(layer, text, *background_color, *text_color, *font_size, alignment, composite).await
+            LayerContent::DataRow { text, background_color, text_color, font_size, alignment, vertical_alignment } => {
+                self.render_data_row_layer(layer, text, *background_color, *text_color, *font_size, alignment, vertical_alignment, composite).await
             }
             LayerContent::Empty => Ok(()),
         }
@@ -915,7 +928,7 @@ impl LayerManager {
         }
     }
     
-    async fn render_data_row_layer(&self, layer: &Layer, text: &str, bg_color: (u8, u8, u8, u8), text_color: (u8, u8, u8, u8), font_size: u32, alignment: &str, composite: &mut RgbaImage) -> Result<(), String> {
+    async fn render_data_row_layer(&self, layer: &Layer, text: &str, bg_color: (u8, u8, u8, u8), text_color: (u8, u8, u8, u8), font_size: u32, alignment: &str, vertical_alignment: &str, composite: &mut RgbaImage) -> Result<(), String> {
         // First render background
         for y in layer.position.y..(layer.position.y + layer.position.height) {
             for x in layer.position.x..(layer.position.x + layer.position.width) {
@@ -928,6 +941,11 @@ impl LayerManager {
                     }
                 }
             }
+        }
+
+        // A layer with no text is just a colour block
+        if text.trim().is_empty() {
+            return Ok(());
         }
 
         // Load fonts
@@ -989,8 +1007,14 @@ impl LayerManager {
             total_height += (lines.len() as u32 - 1) as f32 * line_spacing as f32;
         }
 
-        // Calculate starting Y to vertically center the text block
-        let block_start_y = layer.position.y + ((layer.position.height as f32 - total_height) / 2.0).max(0.0) as u32;
+        // Place the text block: top / bottom keep the same 10px inset as left / right
+        let free_height = (layer.position.height as f32 - total_height).max(0.0);
+        let block_offset = match vertical_alignment {
+            "top" => TEXT_INSET.min(free_height),
+            "bottom" => (free_height - TEXT_INSET).max(0.0),
+            _ => free_height / 2.0,
+        };
+        let block_start_y = layer.position.y + block_offset as u32;
         let mut current_y = block_start_y;
 
         // Render each line
@@ -1000,8 +1024,8 @@ impl LayerManager {
             // Calculate starting X based on alignment
             let start_x = match alignment {
                 "center" => layer.position.x + ((layer.position.width as f32 - measurement.width) / 2.0).max(0.0) as u32,
-                "right" => layer.position.x + (layer.position.width as f32 - measurement.width).max(0.0) as u32,
-                _ => layer.position.x + 10,
+                "right" => layer.position.x + (layer.position.width as f32 - measurement.width - TEXT_INSET).max(0.0) as u32,
+                _ => layer.position.x + TEXT_INSET as u32,
             };
 
             // Render each character in the line

@@ -20,11 +20,9 @@ const layerSchema = Joi.object({
     fontSize: Joi.number().min(10).max(100).default(24),
     fontFamily: Joi.string().default('Arial'),
     padding: Joi.number().min(0).max(50).default(10),
-    alignment: Joi.string().valid('left', 'center', 'right').default('left')
-  }).custom((content, helpers) => (content.text.trim() || content.image_id)
-    ? content
-    : helpers.message('A layer needs text or an image')
-  ).required(),
+    alignment: Joi.string().valid('left', 'center', 'right').default('left'),
+    verticalAlignment: Joi.string().valid('top', 'middle', 'bottom').default('middle')
+  }).required(), // no text and no image = a plain colour block
   position: Joi.object({
     x: Joi.number().min(0).required(),
     y: Joi.number().min(0).required(),
