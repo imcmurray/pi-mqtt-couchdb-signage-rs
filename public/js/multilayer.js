@@ -6,6 +6,8 @@ const SCREEN_HEIGHT = 1080;
 const DRAG_SNAP = 10;
 const MIN_LAYER_SIZE = 20;
 const RESIZE_CORNERS = ['nw', 'ne', 'sw', 'se'];
+// Reordering renumbers priorities in steps: above the slideshow (1), below alerts (150+)
+const PRIORITY_STEP = 10;
 
 class MultiLayerManager {
     constructor() {
@@ -178,7 +180,7 @@ class MultiLayerManager {
 
     renderLayers() {
         // Re-rendering mid-drag or mid-edit would drop the element in use
-        if (this.drag || this.inlineEdit) return;
+        if (this.drag || this.inlineEdit || this.listDrag) return;
         this.updateLayersList();
         this.updateScreenPreview();
         this.updateLayerCount();
@@ -198,8 +200,15 @@ class MultiLayerManager {
             const { x, y, width, height } = layer.position;
             return `
             <div class="layer-item ${this.selectedLayerId === layer.layer_id ? 'selected' : ''} ${layer.visible ? '' : 'hidden-layer'}"
-                 data-layer-id="${id}" onclick="layerItemClicked(event, '${id}')">
+                 data-layer-id="${id}" onclick="layerItemClicked(event, '${id}')"
+                 draggable="true"
+                 ondragstart="manager.onLayerDragStart(event, '${id}')"
+                 ondragover="manager.onLayerDragOver(event)"
+                 ondragleave="this.classList.remove('drop-before', 'drop-after')"
+                 ondrop="manager.onLayerDrop(event, '${id}')"
+                 ondragend="manager.onLayerDragEnd()">
                 <div class="layer-item-header">
+                    <span class="layer-drag-handle" title="Drag to change which layer is on top">⋮⋮</span>
                     <span class="layer-swatch" style="background: ${this.cssColor(layer.content?.backgroundColor)}"></span>
                     <span class="layer-name">${this.escapeHtml(layer.name)}</span>
                     ${layer.visible ? '' : '<span class="layer-badge">Hidden</span>'}
@@ -517,6 +526,82 @@ class MultiLayerManager {
         this.selectedLayerId = layerId;
         this.fillLayerForm(layer);
         this.renderLayers();
+    }
+
+    // --- Reordering the Active Layers list (top = drawn on top) ---
+    onLayerDragStart(event, layerId) {
+        if (this.inlineEdit) {
+            event.preventDefault();
+            return;
+        }
+        this.listDrag = layerId;
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', layerId);
+        event.currentTarget.classList.add('dragging');
+    }
+
+    layerDropSide(event) {
+        const rect = event.currentTarget.getBoundingClientRect();
+        return event.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+    }
+
+    onLayerDragOver(event) {
+        if (!this.listDrag) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+        const side = this.layerDropSide(event);
+        event.currentTarget.classList.toggle('drop-before', side === 'before');
+        event.currentTarget.classList.toggle('drop-after', side === 'after');
+    }
+
+    onLayerDragEnd() {
+        // Also fires after a drop; only needed to clean up a cancelled drag
+        if (!this.listDrag) return;
+        this.listDrag = null;
+        this.renderLayers();
+    }
+
+    async onLayerDrop(event, targetId) {
+        event.preventDefault();
+        const draggedId = this.listDrag;
+        const side = this.layerDropSide(event);
+        this.listDrag = null;
+        if (!draggedId || draggedId === targetId) {
+            this.renderLayers();
+            return;
+        }
+
+        // Same order the list shows: highest priority first
+        const ordered = [...this.controlLayers].sort((a, b) => b.priority - a.priority);
+        const dragged = ordered.find(l => l.layer_id === draggedId);
+        const rest = ordered.filter(l => l.layer_id !== draggedId);
+        rest.splice(rest.findIndex(l => l.layer_id === targetId) + (side === 'after' ? 1 : 0), 0, dragged);
+
+        const changes = rest
+            .map((layer, index) => ({ layer, priority: (rest.length - index) * PRIORITY_STEP }))
+            .filter(({ layer, priority }) => layer.priority !== priority);
+        changes.forEach(({ layer, priority }) => { layer.priority = priority; });
+        this.renderLayers();
+
+        const results = await Promise.allSettled(changes.map(({ layer, priority }) =>
+            fetch(this.layersUrl(`/${layer.layer_id}`), {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ priority })
+            }).then(async response => {
+                if (!response.ok) throw new Error((await response.json()).error || response.statusText);
+            })
+        ));
+        const failed = results.filter(r => r.status === 'rejected');
+        if (failed.length) {
+            this.log(`Reorder: ${failed.length} layer(s) failed to save: ${failed[0].reason.message}`, 'error');
+        } else {
+            this.log(`Moved "${dragged.name}" ${side === 'before' ? 'above' : 'below'} "${rest.find(l => l.layer_id === targetId)?.name}"`);
+        }
+        await this.loadLayers();
+        if (this.selectedLayerId) {
+            this.fillLayerForm(this.layers.find(l => l.layer_id === this.selectedLayerId));
+        }
     }
 
     layerItemClicked(event, layerId) {

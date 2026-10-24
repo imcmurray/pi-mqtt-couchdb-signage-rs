@@ -213,6 +213,32 @@
     box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.15);
 }
 
+#layers-section .layers-order-hint {
+    margin: -4px 0 12px;
+    font-size: 12px;
+    color: var(--ml-text-muted);
+}
+
+#layers-section .layer-drag-handle {
+    flex: none;
+    cursor: grab;
+    color: var(--ml-text-muted);
+    letter-spacing: -2px;
+    user-select: none;
+}
+
+#layers-section .layer-item.dragging {
+    opacity: 0.4;
+}
+
+#layers-section .layer-item.drop-before {
+    box-shadow: 0 -3px 0 #f59e0b;
+}
+
+#layers-section .layer-item.drop-after {
+    box-shadow: 0 3px 0 #f59e0b;
+}
+
 #layers-section .inline-editing {
     outline: 2px solid #f59e0b;
     outline-offset: 2px;
