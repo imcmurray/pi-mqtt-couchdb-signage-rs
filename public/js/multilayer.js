@@ -4,6 +4,8 @@
 const SCREEN_WIDTH = 1920;
 const SCREEN_HEIGHT = 1080;
 const DRAG_SNAP = 10;
+const MIN_LAYER_SIZE = 20;
+const RESIZE_CORNERS = ['nw', 'ne', 'sw', 'se'];
 
 class MultiLayerManager {
     constructor() {
@@ -260,10 +262,14 @@ class MultiLayerManager {
                 `text-align: ${content.alignment || 'left'}`,
                 `padding: 0 ${10 * scale}px`
             ].join('; ');
+            const handles = layer.layer_id === this.selectedLayerId && !isAlert
+                ? RESIZE_CORNERS.map(corner => `<span class="resize-handle ${corner}" data-corner="${corner}"></span>`).join('')
+                    + '<span class="resize-size"></span>'
+                : '';
             return `<div class="${classes}" data-layer-id="${this.escapeHtml(layer.layer_id)}" style="${style}"
-                         title="${this.escapeHtml(layer.name)}">${imageId
+                         title="${this.escapeHtml(layer.name)}">${handles}${imageId
                 ? `<img class="layer-preview-image" src="/api/images/${encodeURIComponent(imageId)}/attachment?width=400" alt="" draggable="false">`
-                : `<span>${this.escapeHtml(content.text)}</span>`}</div>`;
+                : `<span class="layer-preview-text">${this.escapeHtml(content.text)}</span>`}</div>`;
         }).join('');
 
         document.getElementById('previewLegend').textContent = [
@@ -291,12 +297,49 @@ class MultiLayerManager {
         this.drag = {
             element,
             layer,
+            corner: event.target.closest('.resize-handle')?.dataset.corner || null,
             startX: event.clientX,
             startY: event.clientY,
             scale: screen.clientWidth / SCREEN_WIDTH,
             moved: false,
-            x: layer.position.x,
-            y: layer.position.y
+            rect: { ...layer.position }
+        };
+    }
+
+    // New rectangle for a corner drag; the opposite corner stays put. Image
+    // layers keep their proportions unless Shift is held (text layers: the reverse).
+    resizeRect(drag, dx, dy, shiftKey) {
+        const start = drag.layer.position;
+        const west = drag.corner.includes('w');
+        const north = drag.corner.includes('n');
+        const anchorX = west ? start.x + start.width : start.x;
+        const anchorY = north ? start.y + start.height : start.y;
+        const maxWidth = west ? anchorX : SCREEN_WIDTH - anchorX;
+        const maxHeight = north ? anchorY : SCREEN_HEIGHT - anchorY;
+        const snap = value => Math.round(value / DRAG_SNAP) * DRAG_SNAP;
+
+        let width = start.width + (west ? -dx : dx);
+        let height = start.height + (north ? -dy : dy);
+
+        const keepAspect = !!drag.layer.content?.image_id !== shiftKey;
+        if (keepAspect) {
+            const ratio = start.width / start.height;
+            let scale = Math.max(width / start.width, height / start.height);
+            scale = Math.min(scale, maxWidth / start.width, maxHeight / start.height);
+            scale = Math.max(scale, MIN_LAYER_SIZE / Math.min(start.width, start.height));
+            // Snap the width, keep the height in proportion (and still on screen)
+            width = Math.min(snap(start.width * scale), maxWidth, Math.floor(maxHeight * ratio));
+            height = Math.round(width / ratio);
+        } else {
+            width = Math.min(Math.max(snap(width), MIN_LAYER_SIZE), maxWidth);
+            height = Math.min(Math.max(snap(height), MIN_LAYER_SIZE), maxHeight);
+        }
+
+        return {
+            x: west ? anchorX - width : anchorX,
+            y: north ? anchorY - height : anchorY,
+            width,
+            height
         };
     }
 
@@ -308,13 +351,28 @@ class MultiLayerManager {
         if (!drag.moved && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 4) return;
         drag.moved = true;
 
-        const snap = value => Math.round(value / DRAG_SNAP) * DRAG_SNAP;
-        const { width, height } = drag.layer.position;
-        drag.x = Math.min(Math.max(snap(drag.layer.position.x + dx), 0), SCREEN_WIDTH - width);
-        drag.y = Math.min(Math.max(snap(drag.layer.position.y + dy), 0), SCREEN_HEIGHT - height);
-        drag.element.style.left = `${(drag.x / SCREEN_WIDTH) * 100}%`;
-        drag.element.style.top = `${(drag.y / SCREEN_HEIGHT) * 100}%`;
-        drag.element.classList.add('dragging');
+        if (drag.corner) {
+            drag.rect = this.resizeRect(drag, dx, dy, event.shiftKey);
+            const label = drag.element.querySelector('.resize-size');
+            if (label) label.textContent = `${drag.rect.width}×${drag.rect.height}`;
+        } else {
+            const snap = value => Math.round(value / DRAG_SNAP) * DRAG_SNAP;
+            const { width, height } = drag.layer.position;
+            drag.rect = {
+                ...drag.rect,
+                x: Math.min(Math.max(snap(drag.layer.position.x + dx), 0), SCREEN_WIDTH - width),
+                y: Math.min(Math.max(snap(drag.layer.position.y + dy), 0), SCREEN_HEIGHT - height)
+            };
+        }
+
+        const { x, y, width, height } = drag.rect;
+        Object.assign(drag.element.style, {
+            left: `${(x / SCREEN_WIDTH) * 100}%`,
+            top: `${(y / SCREEN_HEIGHT) * 100}%`,
+            width: `${(width / SCREEN_WIDTH) * 100}%`,
+            height: `${(height / SCREEN_HEIGHT) * 100}%`
+        });
+        drag.element.classList.add(drag.corner ? 'resizing' : 'dragging');
     }
 
     async onPreviewPointerUp() {
@@ -326,21 +384,25 @@ class MultiLayerManager {
             this.selectLayer(drag.layer.layer_id);
             return;
         }
-        if (drag.x === drag.layer.position.x && drag.y === drag.layer.position.y) {
+        const { x, y, width, height } = drag.rect;
+        const start = drag.layer.position;
+        if (x === start.x && y === start.y && width === start.width && height === start.height) {
             this.renderLayers();
             return;
         }
 
         try {
-            const response = await fetch(this.layersUrl(`/${drag.layer.layer_id}/move`), {
-                method: 'POST',
+            const response = await fetch(this.layersUrl(`/${drag.layer.layer_id}`), {
+                method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ x: drag.x, y: drag.y })
+                body: JSON.stringify({ position: drag.rect })
             });
             if (!response.ok) throw new Error((await response.json()).error || response.statusText);
-            this.log(`Moved "${drag.layer.name}" to ${drag.x},${drag.y}`);
+            this.log(drag.corner
+                ? `Resized "${drag.layer.name}" to ${width}×${height} at ${x},${y}`
+                : `Moved "${drag.layer.name}" to ${x},${y}`);
         } catch (error) {
-            this.log(`Failed to move layer: ${error.message}`, 'error');
+            this.log(`Failed to ${drag.corner ? 'resize' : 'move'} layer: ${error.message}`, 'error');
         }
         this.selectedLayerId = drag.layer.layer_id;
         await this.loadLayers();

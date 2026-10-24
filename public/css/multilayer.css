@@ -195,7 +195,7 @@
     outline-offset: -1px;
 }
 
-#layers-section .layer-preview span {
+#layers-section .layer-preview-text {
     width: 100%;
 }
 
@@ -211,6 +211,41 @@
 #layers-section .layer-preview.dragging {
     cursor: grabbing;
     box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.15);
+}
+
+#layers-section .resize-handle {
+    position: absolute;
+    z-index: 1;
+    width: 12px;
+    height: 12px;
+    background: #f59e0b;
+    border: 2px solid #fff;
+    border-radius: 2px;
+    box-sizing: border-box;
+}
+
+#layers-section .resize-handle.nw { top: 0; left: 0; cursor: nwse-resize; }
+#layers-section .resize-handle.ne { top: 0; right: 0; cursor: nesw-resize; }
+#layers-section .resize-handle.sw { bottom: 0; left: 0; cursor: nesw-resize; }
+#layers-section .resize-handle.se { bottom: 0; right: 0; cursor: nwse-resize; }
+
+#layers-section .resize-size {
+    display: none;
+    position: absolute;
+    z-index: 1;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: rgba(15, 23, 42, 0.85);
+    color: #fff;
+    font: 600 11px/1.4 system-ui, sans-serif;
+    white-space: nowrap;
+}
+
+#layers-section .layer-preview.resizing .resize-size {
+    display: block;
 }
 
 #layers-section .layer-preview.alert-layer {
