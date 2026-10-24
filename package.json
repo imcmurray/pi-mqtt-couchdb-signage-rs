@@ -1,6 +1,6 @@
 {
   "name": "digital-signage-management",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Digital signage management system with CouchDB, MQTT, court hearings, and emergency alerts",
   "main": "src/server.js",
   "scripts": {
