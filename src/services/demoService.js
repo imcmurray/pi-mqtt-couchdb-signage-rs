@@ -247,6 +247,7 @@ class DemoService {
 
     try {
       await sequenceService.assignTvs(sequence._id, [tvId]);
+      broadcastToClients('sequences_updated', { sequence_id: sequence._id });
       mqttService.syncLayers(tvId);
       demo.label = 'Preparing the TV…';
       this.report(tvId, demo);
@@ -285,6 +286,7 @@ class DemoService {
       await sequenceService.assignTvs(originalId, [...new Set([...(original.tv_ids || []), tvId])]);
     }
     await sequenceService.remove(sequence._id);
+    broadcastToClients('sequences_updated', { sequence_id: sequence._id });
     await mqttService.resume(tvId);
     mqttService.syncLayers(tvId);
     console.log(`🎬 Demo finished; ${tvId} restored`);

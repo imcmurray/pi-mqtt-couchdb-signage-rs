@@ -17,6 +17,9 @@ class DigitalSignageApp {
         this.sequences = [];   // with clips, to show what each TV plays and where images are used
         this.scenes = [];
         this.demos = {};       // tvId -> { step, total, label } while a demo tour runs
+        // TV cards re-render often (heartbeats, clip changes), so live-view state lives here
+        this.liveStreams = new Set();      // TVs showing the full-motion stream
+        this.snapshotFailed = new Set();   // TVs whose screen snapshot couldn't load
         this.currentImageId = null;
         this.darkTheme = localStorage.getItem('darkTheme') === 'true';
         this.mqttMessages = {
@@ -40,6 +43,7 @@ class DigitalSignageApp {
         this.setupUploadArea();
         this.initTheme();
         this.loadVersionInfo();
+        this.startSnapshotRefresh();
     }
 
     setupEventListeners() {
@@ -281,7 +285,21 @@ class DigitalSignageApp {
             : { name: 'None', thumb: null, isScene: false };
     }
 
+    // The TV's own screen (pi-slideshow-rs serves a snapshot), so scenes, overlays,
+    // alerts and demo captions show as they look on the TV
+    snapshotUrl(tv) {
+        return tv.status === 'online' && tv.ip_address && tv.ip_address !== '0.0.0.0' && !this.snapshotFailed.has(tv._id)
+            ? `http://${tv.ip_address}:8080/api/preview`
+            : null;
+    }
+
     nowShowingThumb(tv, imgClass, placeholderHtml) {
+        const snapshot = this.snapshotUrl(tv);
+        if (snapshot) {
+            return `<img src="${snapshot}?t=${Date.now()}" data-snapshot="${snapshot}" data-tv-id="${tv._id}"
+                         class="${imgClass} tv-snapshot" alt="What ${this.escapeHtml(tv.name)} is showing"
+                         onerror="app.snapshotUnavailable('${tv._id}')">`;
+        }
         const showing = this.nowShowing(tv);
         if (showing.thumb) {
             return `<img src="${showing.thumb}" alt="${this.escapeHtml(showing.name)}" class="${imgClass}">`;
@@ -289,6 +307,28 @@ class DigitalSignageApp {
         return showing.isScene
             ? `<div class="tv-thumbnail-placeholder tv-scene-thumb"><i class="fas fa-film"></i><span>${this.escapeHtml(showing.name)}</span></div>`
             : placeholderHtml;
+    }
+
+    snapshotUnavailable(tvId) {
+        if (this.snapshotFailed.has(tvId)) return;
+        this.snapshotFailed.add(tvId);
+        this.updateTvList();
+        this.updateTvOverview(this.tvs);
+    }
+
+    // Refresh screen snapshots every few seconds; preload so the image doesn't flash
+    startSnapshotRefresh() {
+        setInterval(() => {
+            if (document.hidden) return;
+            document.querySelectorAll('img.tv-snapshot').forEach(img => {
+                if (!img.isConnected || img.offsetParent === null) return; // not on screen
+                const next = new Image();
+                next.onload = () => { img.src = next.src; };
+                next.src = `${img.dataset.snapshot}?t=${Date.now()}`;
+            });
+        }, 5000);
+        // Retry TVs whose snapshot failed (e.g. they were rebooting)
+        setInterval(() => this.snapshotFailed.clear(), 60000);
     }
 
     async loadTvs() {
@@ -467,11 +507,14 @@ class DigitalSignageApp {
                     <div class="tv-thumbnail-container">
                         <div class="tv-preview-wrapper">
                             ${thumbnailHtml}
-                            <img src="" class="tv-live-stream hidden" id="live-stream-${tv._id}" alt="Live preview">
-                            <span class="live-indicator hidden" id="live-indicator-${tv._id}">● LIVE</span>
+                            ${this.liveStreams.has(tv._id)
+                                ? `<img src="http://${tv.ip_address}:8080/api/stream" class="tv-live-stream" id="live-stream-${tv._id}" alt="Live preview">
+                                   <span class="live-indicator" id="live-indicator-${tv._id}">● LIVE</span>`
+                                : `<img src="" class="tv-live-stream hidden" id="live-stream-${tv._id}" alt="Live preview">
+                                   <span class="live-indicator hidden" id="live-indicator-${tv._id}">● LIVE</span>`}
                         </div>
-                        <button class="preview-toggle-btn" id="preview-toggle-${tv._id}"
-                                onclick="app.toggleLivePreview('${tv._id}', '${tv.ip_address}')"
+                        <button class="preview-toggle-btn ${this.liveStreams.has(tv._id) ? 'active' : ''}" id="preview-toggle-${tv._id}"
+                                onclick="app.toggleLivePreview('${tv._id}')"
                                 title="Toggle live preview">
                             <i class="fas fa-video"></i>
                         </button>
@@ -1299,32 +1342,16 @@ class DigitalSignageApp {
         });
     }
 
-    toggleLivePreview(tvId, ipAddress) {
-        const staticImg = document.querySelector(`#live-stream-${tvId}`)?.parentElement?.querySelector('.tv-thumbnail');
-        const staticPlaceholder = document.querySelector(`#live-stream-${tvId}`)?.parentElement?.querySelector('.tv-thumbnail-placeholder');
-        const liveStream = document.getElementById(`live-stream-${tvId}`);
-        const indicator = document.getElementById(`live-indicator-${tvId}`);
-        const btn = document.getElementById(`preview-toggle-${tvId}`);
-
-        if (!liveStream) return;
-
-        if (liveStream.classList.contains('hidden')) {
-            staticImg?.classList.add('hidden');
-            staticPlaceholder?.classList.add('hidden');
-            liveStream.classList.remove('hidden');
-            indicator?.classList.remove('hidden');
-            btn?.classList.add('active');
-            liveStream.src = `http://${ipAddress}:8080/api/stream`;
-            this.showToast('Live preview enabled', 'success');
-        } else {
-            liveStream.classList.add('hidden');
-            staticImg?.classList.remove('hidden');
-            staticPlaceholder?.classList.remove('hidden');
-            indicator?.classList.add('hidden');
-            btn?.classList.remove('active');
-            liveStream.src = '';
+    // Full-motion stream instead of the 5-second snapshot; kept on across re-renders
+    toggleLivePreview(tvId) {
+        if (this.liveStreams.has(tvId)) {
+            this.liveStreams.delete(tvId);
             this.showToast('Live preview disabled', 'info');
+        } else {
+            this.liveStreams.add(tvId);
+            this.showToast('Live preview enabled', 'success');
         }
+        this.updateTvList();
     }
 
     updateTvStatus(topic, payload) {

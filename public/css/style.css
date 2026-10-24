@@ -2918,3 +2918,9 @@ body.dark-theme {
     background: #3d3420;
     border-color: #975a16;
 }
+
+/* Screen snapshots of the TV fit its 16:9 frame */
+.tv-snapshot {
+    object-fit: contain;
+    background: #000;
+}
