@@ -1023,6 +1023,7 @@ class DigitalSignageApp {
             tvs: 'TV Management',
             images: 'Image Library',
             upload: 'Upload Images',
+            sequences: 'Sequences',
             scenes: 'Scenes',
             layers: 'Layer Control',
             'alert-templates': 'Alert Templates',

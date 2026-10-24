@@ -28,6 +28,9 @@
                 <li><a href="#upload" class="nav-link" data-section="upload">
                     <i class="fas fa-upload"></i> Upload Images
                 </a></li>
+                <li><a href="#sequences" class="nav-link" data-section="sequences">
+                    <i class="fas fa-stream"></i> Sequences
+                </a></li>
                 <li><a href="#scenes" class="nav-link" data-section="scenes">
                     <i class="fas fa-film"></i> Scenes
                 </a></li>
@@ -204,6 +207,90 @@
             </section>
 
             <!-- Layer Control Section -->
+            <!-- Sequences: the looping timeline of image and scene clips each TV plays -->
+            <section id="sequences-section" class="content-section">
+                <div class="sequences-container">
+                    <div class="sequence-bar">
+                        <label for="sequenceSelect">Sequence:</label>
+                        <select id="sequenceSelect" class="form-select" onchange="sequenceEditor.selectSequence(this.value)"></select>
+                        <button class="btn btn-primary btn-sm" onclick="sequenceEditor.newSequence()">+ New sequence</button>
+                        <button class="btn btn-secondary btn-sm" onclick="sequenceEditor.renameSequence()">Rename</button>
+                        <button class="btn btn-secondary btn-sm" onclick="sequenceEditor.duplicateSequence()">Duplicate</button>
+                        <button class="btn btn-danger btn-sm" onclick="sequenceEditor.deleteSequence()">Delete</button>
+                    </div>
+                    <div class="sequence-tvs" id="sequenceTvs"></div>
+                    <p class="sequence-phase-note">TVs keep playing their TV Management image playlist until sequence playback is switched on in the next update. Each TV's playlist has already been copied here as “&lt;TV&gt; Playlist”.</p>
+
+                    <div class="sequence-empty" id="sequenceEmpty" hidden>No sequences yet. Create one to start building a timeline.</div>
+                    <div id="sequenceEditor" hidden>
+                        <div class="timeline-card">
+                            <div class="timeline-toolbar">
+                                <button class="btn btn-primary btn-sm" onclick="sequenceEditor.openImagePicker()">+ Images</button>
+                                <button class="btn btn-primary btn-sm" onclick="sequenceEditor.openScenePicker()">+ Scene</button>
+                                <span class="timeline-summary" id="sequenceSummary"></span>
+                                <span class="timeline-status" id="sequenceStatus"></span>
+                                <span class="timeline-zoom">
+                                    <button class="btn btn-secondary btn-sm" title="Zoom out" onclick="sequenceEditor.zoom(-1)">−</button>
+                                    <button class="btn btn-secondary btn-sm" title="Zoom in" onclick="sequenceEditor.zoom(1)">+</button>
+                                </span>
+                            </div>
+                            <div class="timeline-scroll">
+                                <div class="timeline-ruler" id="sequenceRuler"></div>
+                                <div class="timeline-track" id="sequenceTrack"></div>
+                            </div>
+                        </div>
+                        <div class="clip-inspector" id="clipInspector"></div>
+                    </div>
+                </div>
+
+                <div class="modal" id="clipImageModal">
+                    <div class="modal-content clip-picker-modal">
+                        <div class="modal-header">
+                            <h3>Add images</h3>
+                            <button class="modal-close">&times;</button>
+                        </div>
+                        <form onsubmit="sequenceEditor.addSelectedImages(event)">
+                            <div class="modal-body">
+                                <div class="clip-picker-grid" id="clipImageGrid"></div>
+                                <div class="form-group">
+                                    <label for="clipImageSeconds">Show each for (seconds)</label>
+                                    <input type="number" id="clipImageSeconds" class="form-input" min="1" max="3600" value="10">
+                                </div>
+                            </div>
+                            <div class="modal-actions">
+                                <button type="button" class="btn btn-secondary modal-cancel">Cancel</button>
+                                <button type="submit" class="btn btn-primary">Add to sequence</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="modal" id="clipSceneModal">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h3>Add a scene</h3>
+                            <button class="modal-close">&times;</button>
+                        </div>
+                        <form onsubmit="sequenceEditor.addSelectedScene(event)">
+                            <div class="modal-body">
+                                <div class="form-group">
+                                    <label for="clipSceneSelect">Scene</label>
+                                    <select id="clipSceneSelect" class="form-select"></select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="clipSceneSeconds">Show for (seconds)</label>
+                                    <input type="number" id="clipSceneSeconds" class="form-input" min="1" max="3600" value="30">
+                                </div>
+                            </div>
+                            <div class="modal-actions">
+                                <button type="button" class="btn btn-secondary modal-cancel">Cancel</button>
+                                <button type="submit" class="btn btn-primary">Add to sequence</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </section>
+
             <!-- Scenes: designed screens (text with live values, images, tables) that sequences play -->
             <section id="scenes-section" class="content-section">
                 <div class="layers-container">
@@ -991,6 +1078,7 @@
     <div id="toast-container" class="toast-container"></div>
 
     <script src="js/multilayer.js"></script>
+    <script src="js/sequences.js"></script>
     <script src="js/alert-templates.js"></script>
     <script src="js/app.js"></script>
 </body>

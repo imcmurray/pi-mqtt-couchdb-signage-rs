@@ -227,6 +227,7 @@ app.use('/api/presets', presetRoutes); // Zone preset templates
 app.use('/api/bulk', bulkRoutes); // Bulk operations for multi-TV management
 app.use('/api/datasets', require('./routes/datasetRoutes')); // Court calendar + weather data for live layers
 app.use('/api/scenes', require('./routes/sceneRoutes')); // Scenes: designed screens that sequences play
+app.use('/api/sequences', require('./routes/sequenceRoutes')); // Sequences: looping image/scene timelines per TV
 
 // WebSocket handling for real-time updates
 wss.on('connection', (ws) => {
@@ -366,11 +367,12 @@ async function startServer() {
     console.log('Starting weather service...');
     require('./services/weatherService').start();
 
-    // First run: the courthouse starter scenes
+    // First run: the courthouse starter scenes, and each TV's image playlist as a sequence
     try {
       await require('./services/sceneService').seedStarters();
+      await require('./services/sequenceService').migratePlaylists();
     } catch (error) {
-      console.error('Could not create starter scenes:', error.message);
+      console.error('Could not create starter scenes / sequences:', error.message);
     }
 
     // Start HTTP server

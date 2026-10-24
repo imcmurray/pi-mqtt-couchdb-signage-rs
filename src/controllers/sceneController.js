@@ -1,5 +1,6 @@
 const Joi = require('joi');
 const sceneService = require('../services/sceneService');
+const sequenceService = require('../services/sequenceService');
 const { elementSchema } = require('../utils/layerSchema');
 const { broadcastToClients } = require('../services/websocketService');
 
@@ -63,6 +64,12 @@ class SceneController {
   }
 
   async deleteScene(req, res) {
+    const usedBy = await sequenceService.usedBy(req.params.sceneId);
+    if (usedBy.length) {
+      return res.status(409).json({
+        error: `This scene is used in ${usedBy.map(s => `"${s.name}"`).join(', ')}. Remove it from those sequences first.`
+      });
+    }
     if (!await sceneService.remove(req.params.sceneId)) return notFound(res);
     broadcastToClients('scenes_updated', { scene_id: req.params.sceneId });
     res.json({ message: 'Scene deleted' });
