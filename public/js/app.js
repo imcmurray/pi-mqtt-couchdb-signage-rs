@@ -1912,7 +1912,7 @@ class DigitalSignageApp {
                 version: 'unknown',
                 is_dirty: false
             };
-            this.updateVersionDisplay('1.1.1');
+            this.updateVersionDisplay('1.2.0');
         }
     }
 
