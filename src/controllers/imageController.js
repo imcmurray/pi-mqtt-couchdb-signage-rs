@@ -12,12 +12,6 @@ const THUMBNAIL_CACHE_MAX = 500;
 const thumbnailCache = new Map();
 
 // Validation schemas
-const playlistEnabledSchema = Joi.object({
-  enabled_ids: Joi.array().items(Joi.string()).min(1).unique().required()
-    .messages({ 'array.min': 'At least one image must stay in rotation' })
-});
-
-
 const assignmentSchema = Joi.object({
   tv_ids: Joi.array().items(Joi.string()).required(),
   order: Joi.number().min(0)
@@ -834,82 +828,6 @@ class ImageController {
       message: `Shuffled ${updatedImages.length} images for TV ${tvId}`,
       images: updatedImages
     });
-  }
-
-  // GET /api/tvs/:id/playlist - every image assigned to the TV, including ones
-  // disabled for it, in playlist order
-  async getTvPlaylist(req, res) {
-    const tv = await TV.findById(req.params.id);
-    if (!tv) {
-      return res.status(404).json({ error: 'TV not found' });
-    }
-
-    const images = await Image.findByTvId(tv._id);
-    res.json(images.map(img => ({
-      _id: img._id,
-      original_name: img.original_name,
-      size: img.size,
-      metadata: img.metadata,
-      order: img.tv_orders[tv._id] ?? null,
-      enabled: img.isEnabledForTv(tv._id),
-      display_duration: img.display_duration,
-      schedule: img.schedule
-    })));
-  }
-
-  // PUT /api/tvs/:id/playlist - keep only enabled_ids in rotation; the TV's
-  // other assigned images stay assigned but are skipped
-  async setTvPlaylistEnabled(req, res) {
-    const { error, value } = playlistEnabledSchema.validate(req.body);
-    if (error) {
-      return res.status(400).json({ error: error.details[0].message });
-    }
-
-    const tv = await TV.findById(req.params.id);
-    if (!tv) {
-      return res.status(404).json({ error: 'TV not found' });
-    }
-
-    const images = await Image.findByTvId(tv._id);
-    const enabledIds = new Set(value.enabled_ids);
-    const notAssigned = value.enabled_ids.filter(id => !images.some(img => img._id === id));
-    if (notAssigned.length > 0) {
-      return res.status(400).json({ error: `Not assigned to this TV: ${notAssigned.join(', ')}` });
-    }
-
-    const changed = images.filter(img => img.isEnabledForTv(tv._id) !== enabledIds.has(img._id));
-    for (const img of changed) {
-      await img.setEnabledForTv(tv._id, enabledIds.has(img._id));
-    }
-    if (changed.length > 0) {
-      await this._updateTvImageList(tv._id);
-    }
-
-    res.json({
-      enabled: enabledIds.size,
-      disabled: images.length - enabledIds.size,
-      changed: changed.length
-    });
-  }
-
-  // POST /api/tvs/:id/playlist/:imageId/show - jump to an image now; hold pauses on it
-  async showTvImage(req, res) {
-    const tv = await TV.findById(req.params.id);
-    if (!tv) {
-      return res.status(404).json({ error: 'TV not found' });
-    }
-
-    const image = await Image.findById(req.params.imageId);
-    if (!image || !image.assigned_tvs.includes(tv._id)) {
-      return res.status(404).json({ error: 'Image is not assigned to this TV' });
-    }
-    if (!image.isEnabledForTv(tv._id)) {
-      return res.status(409).json({ error: 'Image is disabled for this TV; enable it first' });
-    }
-
-    const hold = req.body?.hold === true;
-    await mqttService.showImage(tv._id.replace('tv_', ''), image._id, hold);
-    res.json({ message: `${hold ? 'Holding on' : 'Showing'} ${image.original_name}` });
   }
 
   // Position after the last ordered image on a TV

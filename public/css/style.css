@@ -2851,3 +2851,17 @@ body.dark-theme {
 .assignment-seconds {
     margin-top: 12px;
 }
+
+.tv-sequence-pick {
+    width: auto;
+    min-width: 200px;
+    margin-left: auto;
+}
+
+.clip-schedule .btn {
+    margin-left: 8px;
+}
+
+.clip-live-actions {
+    margin-bottom: 8px;
+}

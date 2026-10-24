@@ -349,8 +349,13 @@ class MultilayerMqttService extends EventEmitter {
     });
   }
 
-  async showImage(tvId, imageId, hold = false) {
-    return this.sendCommand(tvId, 'show_image', { image_id: imageId, hold });
+  // Jump to a sequence clip now; hold pauses on it
+  async showClip(tvId, clipId, hold = false) {
+    return this.sendCommand(tvId.replace(/^tv_/, ''), 'show_image', { clip_id: clipId, hold });
+  }
+
+  async resume(tvId) {
+    return this.sendCommand(tvId.replace(/^tv_/, ''), 'play');
   }
 
   // Layer Management Commands

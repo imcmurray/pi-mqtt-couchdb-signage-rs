@@ -17,12 +17,6 @@ class DigitalSignageApp {
         this.sequences = [];   // with clips, to show what each TV plays and where images are used
         this.scenes = [];
         this.currentImageId = null;
-        // TV Management "Images" section; kept here because the TV list re-renders on every heartbeat
-        this.expandedPlaylists = new Set();
-        this.playlists = {};           // tvId -> [{ _id, original_name, enabled, ... }]
-        this.playlistSelection = {};   // tvId -> Set of selected image ids
-        this.playlistDrag = null;      // { tvId, imageId } while a tile is being dragged
-        this.hideDisabledImages = localStorage.getItem('hideDisabledImages') === 'true';
         this.darkTheme = localStorage.getItem('darkTheme') === 'true';
         this.mqttMessages = {
             general: [],
@@ -72,15 +66,6 @@ class DigitalSignageApp {
         // Add TV button
         document.getElementById('add-tv-btn').addEventListener('click', () => {
             this.showTvModal();
-        });
-
-        // Image schedule & timing
-        document.getElementById('schedule-form').addEventListener('submit', (e) => {
-            e.preventDefault();
-            this.saveImageSchedule(false);
-        });
-        document.getElementById('schedule-clear').addEventListener('click', () => {
-            this.saveImageSchedule(true);
         });
 
         // Image assignment
@@ -317,10 +302,6 @@ class DigitalSignageApp {
             await this.loadSequences();
             this.images = await response.json();
             this.updateImageGrid();
-
-            // Assignments may have changed; refresh any open Images sections
-            this.playlists = {};
-            this.expandedPlaylists.forEach(tvId => this.loadPlaylist(tvId));
         } catch (error) {
             console.error('Error loading images:', error);
         }
@@ -421,9 +402,6 @@ class DigitalSignageApp {
     }
 
     updateTvList() {
-        // Re-rendering mid-drag would destroy the dragged tile; dragend re-renders
-        if (this.playlistDrag) return;
-
         const list = document.getElementById('tv-list');
         list.innerHTML = '';
 
@@ -612,265 +590,36 @@ class DigitalSignageApp {
         const sequence = this.sequenceForTv(tv._id);
         if (sequence) return this.renderTvSequence(tv, sequence);
 
-        const expanded = this.expandedPlaylists.has(tv._id);
-        const playlist = this.playlists[tv._id];
-        const summary = playlist
-            ? `${playlist.filter(img => img.enabled).length} of ${playlist.length} in rotation`
-            : '';
-
+        // No sequence: let the TV pick one here
+        const options = this.sequences.map(sequence =>
+            `<option value="${this.escapeHtml(sequence.sequence_id)}">${this.escapeHtml(sequence.name)}</option>`).join('');
         return `
-            <div class="tv-playlist">
-                <button class="tv-playlist-toggle" onclick="app.togglePlaylist('${tv._id}')">
-                    <i class="fas fa-chevron-${expanded ? 'down' : 'right'}"></i>
-                    <span>Images</span>
-                    <span class="tv-playlist-summary">${summary}</span>
-                </button>
-                ${expanded ? this.renderTvPlaylistBody(tv, playlist) : ''}
-            </div>
-        `;
-    }
-
-    renderTvPlaylistBody(tv, playlist) {
-        if (!playlist) {
-            return '<div class="tv-playlist-body"><div class="tv-playlist-empty">Loading images…</div></div>';
-        }
-        if (playlist.length === 0) {
-            return '<div class="tv-playlist-body"><div class="tv-playlist-empty">No images assigned to this TV</div></div>';
-        }
-
-        const selected = this.playlistSelection[tv._id] || new Set();
-        const allEnabled = playlist.every(img => img.enabled);
-        const isPaused = tv.slideshow_state === 'paused';
-
-        const visible = this.hideDisabledImages ? playlist.filter(img => img.enabled) : playlist;
-        const hiddenCount = playlist.length - visible.length;
-
-        const tiles = visible.map(img => {
-            const isCurrent = img._id === tv.current_image;
-            const name = this.escapeHtml(img.original_name);
-            const classes = ['playlist-tile',
-                img.enabled ? '' : 'disabled',
-                selected.has(img._id) ? 'selected' : '',
-                isCurrent ? 'current' : ''].filter(Boolean).join(' ');
-
-            return `
-                <div class="${classes}" title="${name}" draggable="true"
-                     onclick="app.togglePlaylistSelection('${tv._id}', '${img._id}')"
-                     ondragstart="app.onPlaylistDragStart(event, '${tv._id}', '${img._id}')"
-                     ondragover="app.onPlaylistDragOver(event, '${tv._id}')"
-                     ondragleave="this.classList.remove('drop-before', 'drop-after')"
-                     ondrop="app.onPlaylistDrop(event, '${tv._id}', '${img._id}')"
-                     ondragend="app.onPlaylistDragEnd()">
-                    <div class="playlist-thumb">
-                        <img src="/api/images/${img._id}/attachment?width=160" alt="${name}" loading="lazy" draggable="false">
-                        ${isCurrent ? `<span class="playlist-badge now">${isPaused ? 'Holding' : 'Now showing'}</span>` : ''}
-                        ${img.enabled ? '' : '<span class="playlist-badge off">Off</span>'}
-                        ${this.renderPlaylistScheduleBadge(img)}
-                        <span class="playlist-check"><i class="fas fa-check"></i></span>
-                    </div>
-                    <div class="playlist-tile-name">${name}</div>
-                    <div class="playlist-tile-actions">
-                        <button class="btn btn-sm ${img.enabled ? 'btn-secondary' : 'btn-success'}"
-                                title="${img.enabled ? 'Take out of rotation' : 'Put back in rotation'}"
-                                onclick="event.stopPropagation(); app.setPlaylistImageEnabled('${tv._id}', '${img._id}', ${!img.enabled})">
-                            <i class="fas fa-eye${img.enabled ? '' : '-slash'}"></i>
-                        </button>
-                        <button class="btn btn-sm btn-primary" title="Show now" ${img.enabled ? '' : 'disabled'}
-                                onclick="event.stopPropagation(); app.showPlaylistImage('${tv._id}', '${img._id}', false)">
-                            <i class="fas fa-play"></i>
-                        </button>
-                        <button class="btn btn-sm btn-warning" title="Show and hold (pause on it)" ${img.enabled ? '' : 'disabled'}
-                                onclick="event.stopPropagation(); app.showPlaylistImage('${tv._id}', '${img._id}', true)">
-                            <i class="fas fa-thumbtack"></i>
-                        </button>
-                    </div>
+            <div class="tv-playlist tv-sequence">
+                <div class="tv-sequence-head">
+                    <i class="fas fa-stream"></i>
+                    <span>No sequence assigned</span>
+                    <select class="form-select tv-sequence-pick" onchange="app.assignSequenceToTv('${tv._id}', this.value)">
+                        <option value="">Choose a sequence…</option>${options}
+                    </select>
                 </div>
-            `;
-        }).join('');
-
-        return `
-            <div class="tv-playlist-body">
-                <div class="tv-playlist-toolbar">
-                    <span class="tv-playlist-hint">Click to select, drag to reorder</span>
-                    <label class="tv-playlist-filter" title="Hide images that are out of rotation">
-                        <input type="checkbox" ${this.hideDisabledImages ? 'checked' : ''}
-                               onchange="app.setHideDisabledImages(this.checked)">
-                        Hide disabled${hiddenCount ? ` (${hiddenCount})` : ''}
-                    </label>
-                    <button class="btn btn-sm btn-primary" ${selected.size ? '' : 'disabled'}
-                            onclick="app.cycleOnlySelected('${tv._id}')">
-                        <i class="fas fa-sync-alt"></i> Cycle only selected (${selected.size})
-                    </button>
-                    <button class="btn btn-sm btn-secondary" ${allEnabled ? 'disabled' : ''}
-                            onclick="app.enableAllPlaylist('${tv._id}')">
-                        <i class="fas fa-eye"></i> Enable all
-                    </button>
-                    ${isPaused ? `
-                        <button class="btn btn-sm btn-success" onclick="app.controlTv('${tv._id}', 'play')">
-                            <i class="fas fa-play"></i> Resume rotation
-                        </button>` : ''}
-                </div>
-                <div class="tv-playlist-grid">${tiles || '<div class="tv-playlist-empty">All images are disabled</div>'}</div>
-            </div>
-        `;
+            </div>`;
     }
 
-    async togglePlaylist(tvId) {
-        if (this.expandedPlaylists.has(tvId)) {
-            this.expandedPlaylists.delete(tvId);
-            this.updateTvList();
-            return;
-        }
-
-        this.expandedPlaylists.add(tvId);
-        this.updateTvList();
-        await this.loadPlaylist(tvId);
-    }
-
-    async loadPlaylist(tvId) {
+    async assignSequenceToTv(tvId, sequenceId) {
+        const sequence = this.sequences.find(s => s.sequence_id === sequenceId);
+        if (!sequence) return;
         try {
-            const response = await fetch(`/api/tvs/${tvId}/playlist`);
-            if (!response.ok) throw new Error((await response.json()).error || response.statusText);
-            this.playlists[tvId] = await response.json();
-        } catch (error) {
-            console.error('Error loading playlist:', error);
-            this.showToast(`Couldn't load images: ${error.message}`, 'error');
-            this.playlists[tvId] = this.playlists[tvId] || [];
-        }
-        this.updateTvList();
-    }
-
-    togglePlaylistSelection(tvId, imageId) {
-        const selected = this.playlistSelection[tvId] || (this.playlistSelection[tvId] = new Set());
-        if (selected.has(imageId)) {
-            selected.delete(imageId);
-        } else {
-            selected.add(imageId);
-        }
-        this.updateTvList();
-    }
-
-    async savePlaylistEnabled(tvId, enabledIds, successMessage) {
-        try {
-            const response = await fetch(`/api/tvs/${tvId}/playlist`, {
+            const response = await fetch(`/api/sequences/${sequenceId}/tvs`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ enabled_ids: enabledIds })
+                body: JSON.stringify({ tv_ids: [...(sequence.tv_ids || []), tvId] })
             });
-            const result = await response.json();
-            if (!response.ok) throw new Error(result.error || response.statusText);
-
-            this.showToast(successMessage, 'success');
-            delete this.playlistSelection[tvId];
-            await this.loadPlaylist(tvId);
-        } catch (error) {
-            this.showToast(error.message, 'error');
-        }
-    }
-
-    setPlaylistImageEnabled(tvId, imageId, enabled) {
-        const enabledIds = (this.playlists[tvId] || [])
-            .filter(img => (img._id === imageId ? enabled : img.enabled))
-            .map(img => img._id);
-        return this.savePlaylistEnabled(tvId, enabledIds, enabled ? 'Image back in rotation' : 'Image taken out of rotation');
-    }
-
-    cycleOnlySelected(tvId) {
-        const selected = [...(this.playlistSelection[tvId] || [])];
-        return this.savePlaylistEnabled(tvId, selected, `Now cycling ${selected.length} selected image(s)`);
-    }
-
-    enableAllPlaylist(tvId) {
-        const allIds = (this.playlists[tvId] || []).map(img => img._id);
-        return this.savePlaylistEnabled(tvId, allIds, 'All images back in rotation');
-    }
-
-    setHideDisabledImages(hide) {
-        this.hideDisabledImages = hide;
-        localStorage.setItem('hideDisabledImages', hide);
-        this.updateTvList();
-    }
-
-    onPlaylistDragStart(event, tvId, imageId) {
-        this.playlistDrag = { tvId, imageId };
-        event.dataTransfer.effectAllowed = 'move';
-        event.dataTransfer.setData('text/plain', imageId);
-        event.currentTarget.classList.add('dragging');
-    }
-
-    // Drop indicator: before or after the hovered tile, by which half the pointer is in
-    playlistDropSide(event) {
-        const rect = event.currentTarget.getBoundingClientRect();
-        return event.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
-    }
-
-    onPlaylistDragOver(event, tvId) {
-        if (this.playlistDrag?.tvId !== tvId) return;
-        event.preventDefault();
-        event.dataTransfer.dropEffect = 'move';
-        const side = this.playlistDropSide(event);
-        event.currentTarget.classList.toggle('drop-before', side === 'before');
-        event.currentTarget.classList.toggle('drop-after', side === 'after');
-    }
-
-    async onPlaylistDrop(event, tvId, targetId) {
-        event.preventDefault();
-        const drag = this.playlistDrag;
-        const side = this.playlistDropSide(event);
-        this.playlistDrag = null;
-        if (drag?.tvId !== tvId || drag.imageId === targetId) {
+            if (!response.ok) throw new Error((await response.json()).error || response.statusText);
+            this.showToast(`Now playing “${sequence.name}”`, 'success');
+            await this.loadSequences();
             this.updateTvList();
-            return;
-        }
-
-        // Move within the full playlist so hidden (disabled) images keep their places
-        const playlist = this.playlists[tvId];
-        const moved = playlist.find(img => img._id === drag.imageId);
-        const reordered = playlist.filter(img => img._id !== drag.imageId);
-        const targetIndex = reordered.findIndex(img => img._id === targetId);
-        reordered.splice(targetIndex + (side === 'after' ? 1 : 0), 0, moved);
-
-        const changes = reordered
-            .map((img, order) => ({ image_id: img._id, order, previous: img.order }))
-            .filter(change => change.order !== change.previous);
-        reordered.forEach((img, order) => { img.order = order; });
-        this.playlists[tvId] = reordered;
-        this.updateTvList();
-
-        try {
-            const response = await fetch(`/api/images/reorder/${tvId}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ images: changes.map(({ image_id, order }) => ({ image_id, order })) })
-            });
-            const result = await response.json();
-            if (!response.ok) throw new Error(result.error || response.statusText);
-            this.showToast('Rotation order updated', 'success');
         } catch (error) {
-            this.showToast(`Couldn't reorder: ${error.message}`, 'error');
-        }
-        await this.loadPlaylist(tvId);
-    }
-
-    onPlaylistDragEnd() {
-        // Fires after drop too; only needed to clean up a cancelled drag
-        if (!this.playlistDrag) return;
-        this.playlistDrag = null;
-        this.updateTvList();
-    }
-
-    async showPlaylistImage(tvId, imageId, hold) {
-        try {
-            const response = await fetch(`/api/tvs/${tvId}/playlist/${imageId}/show`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ hold })
-            });
-            const result = await response.json();
-            if (!response.ok) throw new Error(result.error || response.statusText);
-            this.showToast(result.message, 'success');
-        } catch (error) {
-            this.showToast(error.message, 'error');
+            this.showToast(`Couldn't assign the sequence: ${error.message}`, 'error');
         }
     }
 
@@ -944,103 +693,11 @@ class DigitalSignageApp {
         return parts.join(' · ');
     }
 
-    renderScheduleBadges(image) {
-        const state = this.getScheduleState(image.schedule);
-        const badges = [];
-        if (image.display_duration) {
-            badges.push(`<span class="schedule-badge duration"><i class="fas fa-stopwatch"></i> ${image.display_duration / 1000}s</span>`);
-        }
-        if (state !== 'always') {
-            const label = { active: 'Showing now', waiting: 'Not now', ended: 'Ended' }[state];
-            badges.push(`<span class="schedule-badge ${state}" title="${this.escapeHtml(this.describeSchedule(image.schedule))}">
-                <i class="fas fa-calendar-alt"></i> ${label}</span>`);
-        }
-        return badges.length ? `<div class="schedule-badges">${badges.join('')}</div>` : '';
-    }
-
-    renderPlaylistScheduleBadge(img) {
-        const state = this.getScheduleState(img.schedule);
-        const parts = [];
-        if (img.display_duration) parts.push(`${img.display_duration / 1000}s`);
-        if (state === 'waiting') parts.push('Not now');
-        if (state === 'ended') parts.push('Ended');
-        if (!parts.length) return '';
-        const title = this.escapeHtml(this.describeSchedule(img.schedule) || 'Custom display time');
-        return `<span class="playlist-badge schedule ${state}" title="${title}">${parts.join(' · ')}</span>`;
-    }
-
     // datetime-local wants local "YYYY-MM-DDTHH:MM"
     toLocalInputValue(iso) {
         if (!iso) return '';
         const date = new Date(iso);
         return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-    }
-
-    editImageSchedule(imageId) {
-        const image = this.images.find(img => img._id === imageId);
-        if (!image) return;
-        this.currentImageId = imageId;
-        const schedule = image.schedule || {};
-
-        document.getElementById('schedule-image-name').textContent = image.original_name;
-        document.getElementById('schedule-seconds').value = image.display_duration ? image.display_duration / 1000 : '';
-        document.getElementById('schedule-start').value = this.toLocalInputValue(schedule.start_time);
-        document.getElementById('schedule-end').value = this.toLocalInputValue(schedule.end_time);
-        document.getElementById('schedule-daily-start').value = schedule.daily_start || '';
-        document.getElementById('schedule-daily-end').value = schedule.daily_end || '';
-
-        const days = schedule.days_of_week || [];
-        document.getElementById('schedule-days').innerHTML = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-            .map((name, day) => `
-                <label class="schedule-day">
-                    <input type="checkbox" value="${day}" ${days.includes(day) ? 'checked' : ''}>
-                    <span>${name}</span>
-                </label>`).join('');
-
-        document.getElementById('schedule-modal').classList.add('show');
-    }
-
-    async saveImageSchedule(clear) {
-        const value = id => document.getElementById(id).value;
-        const seconds = parseFloat(value('schedule-seconds'));
-        const body = clear
-            ? {
-                display_duration: null,
-                schedule: { start_time: null, end_time: null, days_of_week: [], daily_start: null, daily_end: null }
-            }
-            : {
-                display_duration: seconds > 0 ? Math.round(seconds * 1000) : null,
-                schedule: {
-                    start_time: value('schedule-start') ? new Date(value('schedule-start')).toISOString() : null,
-                    end_time: value('schedule-end') ? new Date(value('schedule-end')).toISOString() : null,
-                    days_of_week: [...document.querySelectorAll('#schedule-days input:checked')].map(cb => Number(cb.value)),
-                    daily_start: value('schedule-daily-start') || null,
-                    daily_end: value('schedule-daily-end') || null
-                }
-            };
-
-        if (body.schedule.start_time && body.schedule.end_time && body.schedule.end_time <= body.schedule.start_time) {
-            this.showToast('"Until" must be after "Show from"', 'warning');
-            return;
-        }
-
-        try {
-            const response = await fetch(`/api/images/${this.currentImageId}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body)
-            });
-            const result = await response.json();
-            if (!response.ok) throw new Error(result.error || response.statusText);
-
-            this.showToast(clear ? 'Schedule cleared' : 'Schedule saved', 'success');
-            this.closeModal();
-            await this.loadImages();
-            // Refresh any open TV playlists so their badges update
-            await Promise.all([...this.expandedPlaylists].map(tvId => this.loadPlaylist(tvId)));
-        } catch (error) {
-            this.showToast(error.message, 'error');
-        }
     }
 
     createImageCard(image) {
@@ -1060,13 +717,9 @@ class DigitalSignageApp {
                 <div class="image-name" title="${name}">${name}</div>
                 <div class="image-meta">${this.formatFileSize(image.size)}${dimensions}</div>
                 <div class="image-assignments">${this.escapeHtml(assignedTvsText)}</div>
-                ${this.renderScheduleBadges(image)}
                 <div class="image-actions">
                     <button class="btn btn-sm btn-primary" title="Add to sequences" onclick="app.assignImage('${image._id}')">
                         <i class="fas fa-stream"></i>
-                    </button>
-                    <button class="btn btn-sm btn-secondary" title="Schedule &amp; timing" onclick="app.editImageSchedule('${image._id}')">
-                        <i class="fas fa-clock"></i>
                     </button>
                     <button class="btn btn-sm btn-danger" onclick="app.deleteImage('${image._id}')">
                         <i class="fas fa-trash"></i>
@@ -1782,8 +1435,8 @@ class DigitalSignageApp {
             // Also refresh dashboard overview
             this.updateTvOverview(this.tvs);
 
-            // Move the "Now showing" badge in an open Images section / sequence strip
-            if (this.expandedPlaylists.has(tv._id) || this.sequenceForTv(tv._id)) {
+            // Move the "Now" badge in the TV's sequence strip
+            if (this.sequenceForTv(tv._id)) {
                 this.updateTvList();
             }
         }

@@ -371,7 +371,7 @@ impl SlideshowController {
             }
             SlideshowCommand::ShowImage { image_id, hold } => {
                 if !self.show_image(&image_id).await {
-                    return Err(format!("Image {} is not in the current playlist", image_id).into());
+                    return Err(format!("{} is not playing now (off, or outside its schedule)", image_id).into());
                 }
                 *self.manual_change_at.write().await = Some(Instant::now());
                 *self.state.write().await = if hold { SlideshowState::Paused } else { SlideshowState::Playing };
@@ -471,9 +471,10 @@ impl SlideshowController {
     }
 
     /// Jump to a specific image by ID. Returns false if it isn't in the playlist.
-    pub async fn show_image(&self, image_id: &str) -> bool {
+    /// Jump to a clip (by clip id) or image (by image id)
+    pub async fn show_image(&self, id: &str) -> bool {
         let images = self.images.read().await;
-        match images.iter().position(|img| img.id == image_id) {
+        match images.iter().position(|img| img.key() == id || img.id == id) {
             Some(position) => {
                 *self.current_index.write().await = position;
                 true

@@ -11,5 +11,7 @@ router.put('/:sequenceId', asyncHandler(sequenceController.updateSequence));
 router.delete('/:sequenceId', asyncHandler(sequenceController.deleteSequence));
 router.post('/:sequenceId/duplicate', asyncHandler(sequenceController.duplicateSequence));
 router.put('/:sequenceId/tvs', asyncHandler(sequenceController.assignTvs));
+router.post('/:sequenceId/clips/:clipId/show', asyncHandler(sequenceController.showClip));
+router.post('/:sequenceId/resume', asyncHandler(sequenceController.resume));
 
 module.exports = router;

@@ -4,6 +4,7 @@ const sceneService = require('../services/sceneService');
 const Image = require('../models/image');
 const TV = require('../models/tv.multilayer');
 const { broadcastToClients } = require('../services/websocketService');
+const { isScheduleActive } = require('../utils/clipSchedule');
 
 const timeOfDay = Joi.string().pattern(/^([01]\d|2[0-3]):[0-5]\d$/).allow(null);
 
@@ -112,6 +113,44 @@ class SequenceController {
     changed(sequence.sequence_id, before?.tv_ids || [], sequence.tv_ids);
     res.json(sequence);
   }
+
+  // POST /api/sequences/:id/clips/:clipId/show { hold } - jump every online TV
+  // playing the sequence to the clip; hold pauses on it
+  async showClip(req, res) {
+    const sequence = await sequenceService.get(req.params.sequenceId);
+    if (!sequence) return notFound(res);
+    const clip = sequence.clips.find(c => c.clip_id === req.params.clipId);
+    if (!clip) return res.status(404).json({ error: 'Clip not found' });
+    if (!clip.enabled) return res.status(409).json({ error: 'This clip is out of rotation; put it back in rotation first' });
+    if (!isScheduleActive(clip.schedule)) {
+      return res.status(409).json({ error: "This clip is outside its schedule right now, so the TVs won't show it" });
+    }
+
+    const tvIds = await onlineTvs(sequence);
+    if (!tvIds.length) return res.status(409).json({ error: 'No online TV is playing this sequence' });
+    const hold = req.body?.hold === true;
+    for (const tvId of tvIds) await mqttService.showClip(tvId, clip.clip_id, hold);
+    res.json({ message: `${hold ? 'Holding on' : 'Showing'} the clip on ${tvIds.length} TV(s)`, tv_ids: tvIds });
+  }
+
+  // POST /api/sequences/:id/resume - continue the rotation after a hold
+  async resume(req, res) {
+    const sequence = await sequenceService.get(req.params.sequenceId);
+    if (!sequence) return notFound(res);
+    const tvIds = await onlineTvs(sequence);
+    for (const tvId of tvIds) await mqttService.resume(tvId);
+    res.json({ message: `Resumed ${tvIds.length} TV(s)`, tv_ids: tvIds });
+  }
+}
+
+// TVs playing the sequence that are online now
+async function onlineTvs(sequence) {
+  const tvIds = [];
+  for (const tvId of sequence.tv_ids || []) {
+    const tv = await TV.findById(tvId);
+    if (tv && mqttService.applyLiveState(tv).status === 'online') tvIds.push(tvId);
+  }
+  return tvIds;
 }
 
 // Clip refs that point at a deleted image or scene

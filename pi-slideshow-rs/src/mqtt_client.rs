@@ -288,9 +288,10 @@ impl MqttClient {
                 SlideshowCommand::UpdateImages { images }
             },
             "show_image" => {
-                let image_id = mqtt_command.payload["image_id"]
-                    .as_str()
-                    .ok_or("show_image requires payload.image_id")?
+                // A sequence clip (clip_id) or, for the image playlist, an image
+                let image_id = mqtt_command.payload["clip_id"].as_str()
+                    .or_else(|| mqtt_command.payload["image_id"].as_str())
+                    .ok_or("show_image requires payload.clip_id or payload.image_id")?
                     .to_string();
                 let hold = mqtt_command.payload["hold"].as_bool().unwrap_or(false);
                 SlideshowCommand::ShowImage { image_id, hold }

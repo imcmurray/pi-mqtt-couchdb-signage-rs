@@ -99,7 +99,8 @@ class SequenceEditor {
         const playing = {};
         for (const tv of this.liveTvs) {
             if (this.sequence.tv_ids.includes(tv._id) && tv.current_clip && tv.status === 'online') {
-                (playing[tv.current_clip] = playing[tv.current_clip] || []).push(tv.name);
+                const label = tv.slideshow_state === 'paused' ? `⏸ ${tv.name}` : `▶ ${tv.name}`;
+                (playing[tv.current_clip] = playing[tv.current_clip] || []).push(label);
             }
         }
         document.querySelectorAll('#sequenceTrack .clip').forEach(element => {
@@ -112,7 +113,7 @@ class SequenceEditor {
                 element.appendChild(badge);
             }
             if (badge) {
-                if (names) badge.textContent = `▶ ${names.join(', ')}`;
+                if (names) badge.textContent = names.join(', ');
                 else badge.remove();
             }
         });
@@ -291,7 +292,15 @@ class SequenceEditor {
                 </div>
                 <label class="clip-enabled"><input type="checkbox" ${clip.enabled ? 'checked' : ''}
                        onchange="sequenceEditor.setClipEnabled(this.checked)"> In rotation</label>
-                <p class="clip-schedule">${clip.schedule ? `🗓 ${this.escape(this.describeSchedule(clip.schedule))}` : 'Plays at any time'}</p>
+                <p class="clip-schedule">${clip.schedule ? `🗓 ${this.escape(this.describeSchedule(clip.schedule))}` : 'Plays at any time'}
+                    <button class="btn btn-secondary btn-sm" onclick="sequenceEditor.openClipSchedule()">${clip.schedule ? 'Edit schedule' : 'Add schedule'}</button></p>
+                <div class="clip-inspector-actions clip-live-actions">
+                    <button class="btn btn-primary btn-sm" ${clip.enabled ? '' : 'disabled'} title="Jump the TVs playing this sequence to this clip"
+                            onclick="sequenceEditor.showClip(false)">▶ Show now</button>
+                    <button class="btn btn-warning btn-sm" ${clip.enabled ? '' : 'disabled'} title="Show this clip and stay on it"
+                            onclick="sequenceEditor.showClip(true)">📌 Hold</button>
+                    <button class="btn btn-success btn-sm" onclick="sequenceEditor.resume()">Resume rotation</button>
+                </div>
                 <div class="clip-inspector-actions">
                     <button class="btn btn-secondary btn-sm" ${index === 0 ? 'disabled' : ''} onclick="sequenceEditor.moveClip(-1)">← Earlier</button>
                     <button class="btn btn-secondary btn-sm" ${index === this.sequence.clips.length - 1 ? 'disabled' : ''} onclick="sequenceEditor.moveClip(1)">Later →</button>
@@ -302,6 +311,74 @@ class SequenceEditor {
 
     describeSchedule(schedule) {
         return this.app?.describeSchedule(schedule) || 'Scheduled';
+    }
+
+    // --- Clip schedule (time window) ---
+
+    openClipSchedule() {
+        const clip = this.selectedClip;
+        if (!clip) return;
+        const schedule = clip.schedule || {};
+        const toInput = iso => this.app?.toLocalInputValue(iso) || '';
+        document.getElementById('schedule-image-name').textContent = this.clipSource(clip).name;
+        document.getElementById('schedule-start').value = toInput(schedule.start_time);
+        document.getElementById('schedule-end').value = toInput(schedule.end_time);
+        document.getElementById('schedule-daily-start').value = schedule.daily_start || '';
+        document.getElementById('schedule-daily-end').value = schedule.daily_end || '';
+        const days = schedule.days_of_week || [];
+        document.getElementById('schedule-days').innerHTML = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+            .map((name, day) => `
+                <label class="schedule-day">
+                    <input type="checkbox" value="${day}" ${days.includes(day) ? 'checked' : ''}>
+                    <span>${name}</span>
+                </label>`).join('');
+        document.getElementById('schedule-modal').classList.add('show');
+    }
+
+    saveClipSchedule(event, clear) {
+        event?.preventDefault();
+        const clip = this.selectedClip;
+        if (!clip) return;
+        const value = id => document.getElementById(id).value;
+        const schedule = clear ? null : {
+            start_time: value('schedule-start') ? new Date(value('schedule-start')).toISOString() : null,
+            end_time: value('schedule-end') ? new Date(value('schedule-end')).toISOString() : null,
+            days_of_week: [...document.querySelectorAll('#schedule-days input:checked')].map(cb => Number(cb.value)),
+            daily_start: value('schedule-daily-start') || null,
+            daily_end: value('schedule-daily-end') || null
+        };
+        if (schedule?.start_time && schedule?.end_time && schedule.end_time <= schedule.start_time) {
+            this.toast('"Until" must be after "Show from"', 'warning');
+            return;
+        }
+        const empty = !schedule || (!schedule.start_time && !schedule.end_time && !schedule.daily_start
+            && !schedule.daily_end && !schedule.days_of_week.length);
+        clip.schedule = empty ? null : schedule;
+        document.getElementById('schedule-modal').classList.remove('show');
+        this.changed();
+    }
+
+    // --- Show now / hold / resume on the TVs playing this sequence ---
+
+    async showClip(hold) {
+        const clip = this.selectedClip;
+        if (!clip) return;
+        this.flushSave();
+        try {
+            const result = await this.request(`/api/sequences/${this.sequence.sequence_id}/clips/${clip.clip_id}/show`, 'POST', { hold });
+            this.toast(result.message);
+        } catch (error) {
+            this.toast(error.message, 'error');
+        }
+    }
+
+    async resume() {
+        try {
+            const result = await this.request(`/api/sequences/${this.sequence.sequence_id}/resume`, 'POST', {});
+            this.toast(result.message);
+        } catch (error) {
+            this.toast(error.message, 'error');
+        }
     }
 
     // --- Clip edits (saved after a short pause) ---

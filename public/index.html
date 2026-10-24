@@ -1018,17 +1018,13 @@
     <div id="schedule-modal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3>Schedule &amp; timing</h3>
+                <h3>Clip schedule</h3>
                 <button class="modal-close">&times;</button>
             </div>
-            <form id="schedule-form">
+            <form id="schedule-form" onsubmit="sequenceEditor.saveClipSchedule(event, false)">
                 <div class="modal-body">
                     <p class="schedule-image-name" id="schedule-image-name"></p>
-                    <div class="form-group">
-                        <label for="schedule-seconds">Seconds on screen</label>
-                        <input type="number" id="schedule-seconds" class="form-input" min="1" max="300" placeholder="TV default">
-                        <small class="form-hint">Leave blank to use each TV's own setting.</small>
-                    </div>
+                    <small class="form-hint">When this clip may play. Outside its window the sequence skips it. Leave everything blank to play it at any time.</small>
                     <div class="schedule-row">
                         <div class="form-group">
                             <label for="schedule-start">Show from</label>
@@ -1057,7 +1053,7 @@
                     <small class="form-hint">Times are the TV's local time. A start later than the end runs overnight.</small>
                 </div>
                 <div class="modal-actions">
-                    <button type="button" class="btn btn-secondary" id="schedule-clear">Clear schedule</button>
+                    <button type="button" class="btn btn-secondary" id="schedule-clear" onclick="sequenceEditor.saveClipSchedule(event, true)">Clear schedule</button>
                     <button type="button" class="btn btn-secondary modal-cancel">Cancel</button>
                     <button type="submit" class="btn btn-primary">Save</button>
                 </div>
