@@ -57,7 +57,7 @@ module.exports = [
         { font: 'Liberation Serif', weight: 'bold', size: 46, color: GOLD }),
       text('Welcome', 'Welcome', { x: 0, y: 240, width: 1920, height: 220 },
         { font: 'Liberation Serif', weight: 'bold', size: 150 }),
-      text('Courts', 'United States District Court  ·  United States Bankruptcy Court', { x: 0, y: 470, width: 1920, height: 70 },
+      text('Courts', 'United States Bankruptcy Court  ·  District of Utah', { x: 0, y: 470, width: 1920, height: 70 },
         { size: 36, color: SOFT_WHITE }),
       block('Gold Rule', { x: 760, y: 580, width: 400, height: 6 }, GOLD, 20),
       text('Clock', '{time}', { x: 0, y: 640, width: 1920, height: 150 },
@@ -82,7 +82,7 @@ module.exports = [
       block('Header Rule', { x: 0, y: 130, width: 1920, height: 6 }, GOLD, 21),
       card('Building Hours', '🕗 BUILDING HOURS\nMonday – Friday\n8:00 AM – 5:00 PM\nClosed on federal holidays', 60, 190),
       card('Security Screening', '🛡️ SECURITY SCREENING\nAll visitors pass through security.\nPlease have a photo ID ready.\nWeapons and sharp objects are not permitted.', 980, 190),
-      card("Clerk's Offices", "📋 CLERK'S OFFICES\nDistrict Court Clerk's Office\nBankruptcy Court Clerk's Office\nAsk a Court Security Officer for directions.", 60, 580),
+      card("Clerk's Offices", "📋 CLERK'S OFFICE\nBankruptcy Court Clerk's Office\nAsk a Court Security Officer for directions.", 60, 580),
       card('In the Courtroom', '⚖️ IN THE COURTROOM\n📵 Please silence all electronic devices.\nPhotography and recording are prohibited.\nProper attire is expected.', 980, 580),
       text('Information Footer', '{day}, {short_date}   ·   {time}   ·   {weather_icon} {weather}', { x: 0, y: 980, width: 1920, height: 100 },
         { background: BAR, size: 34 })
