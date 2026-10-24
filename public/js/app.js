@@ -16,6 +16,7 @@ class DigitalSignageApp {
         this.images = [];
         this.sequences = [];   // with clips, to show what each TV plays and where images are used
         this.scenes = [];
+        this.demos = {};       // tvId -> { step, total, label } while a demo tour runs
         this.currentImageId = null;
         this.darkTheme = localStorage.getItem('darkTheme') === 'true';
         this.mqttMessages = {
@@ -144,6 +145,13 @@ class DigitalSignageApp {
     }
 
     handleWebSocketMessage(data) {
+        if (data.type === 'demo_progress') {
+            const { tv_id: tvId, running, ...progress } = data.data;
+            if (running) this.demos[tvId] = progress; else delete this.demos[tvId];
+            this.updateTvList();
+            this.updateTvOverview(this.tvs);
+            return;
+        }
         if (data.type === 'sequences_updated' || data.type === 'scenes_updated') {
             // TV cards and the Image Library show sequence contents
             this.loadSequences().then(() => {
@@ -287,6 +295,8 @@ class DigitalSignageApp {
         try {
             const response = await fetch('/api/tvs');
             await this.loadSequences();
+            const demos = await fetch('/api/demo').then(r => r.json()).catch(() => []);
+            this.demos = Object.fromEntries(demos.map(({ tv_id, ...progress }) => [tv_id, progress]));
             this.tvs = await response.json();
             this.updateTvList();
             this.populateTvFilters();
@@ -344,6 +354,7 @@ class DigitalSignageApp {
                     <span class="status-dot ${statusClass}"></span>
                     <span>${this.formatTvStatus(tv)}</span>
                 </div>
+                ${this.renderDemoControl(tv)}
                 <div class="tv-current-section">
                     <div class="tv-current-thumbnail-container">
                         ${thumbnailHtml}
@@ -528,6 +539,7 @@ class DigitalSignageApp {
                 </div>
 
                 ${this.renderTvPlaylist(tv)}
+                ${this.renderDemoControl(tv)}
 
                 <div class="tv-actions">
                     <button class="btn btn-sm btn-primary" onclick="app.editTv('${tv._id}')">
@@ -579,6 +591,50 @@ class DigitalSignageApp {
                 </div>
                 <div class="tv-sequence-strip">${strip || '<span class="tv-playlist-empty">Nothing in rotation</span>'}</div>
             </div>`;
+    }
+
+    // Guided tour on the TV: start button, or progress with Stop while it runs
+    renderDemoControl(tv) {
+        const demo = this.demos[tv._id];
+        if (demo) {
+            const percent = demo.total ? Math.round((demo.step / demo.total) * 100) : 0;
+            return `
+                <div class="tv-demo running">
+                    <div class="tv-demo-bar"><span style="width:${percent}%"></span></div>
+                    <span class="tv-demo-label">Demo ${demo.total ? `${demo.step}/${demo.total}` : ''} · ${this.escapeHtml(demo.label)}</span>
+                    <button class="btn btn-sm btn-danger" onclick="app.stopDemo('${tv._id}')">Stop</button>
+                </div>`;
+        }
+        return `
+            <div class="tv-demo">
+                <button class="btn btn-sm btn-info" ${tv.status === 'online' ? '' : 'disabled title="TV is offline"'}
+                        onclick="app.startDemo('${tv._id}')">▶ Demo tour</button>
+                <span class="tv-demo-hint">Scenes, overlays and alerts on this TV (about 2 minutes), then everything is put back.</span>
+            </div>`;
+    }
+
+    async startDemo(tvId) {
+        const tv = this.tvs.find(t => t._id === tvId);
+        if (!confirm(`Run the demo tour on ${tv?.name || 'this TV'}?\n\nIt shows every scene, the overlays and the three alert levels (only on this TV) for about two minutes, then puts the TV back as it was.`)) return;
+        try {
+            const response = await fetch(`/api/demo/${tvId}`, { method: 'POST' });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || response.statusText);
+            this.showToast(result.message, 'success');
+        } catch (error) {
+            this.showToast(`Couldn't start the demo: ${error.message}`, 'error');
+        }
+    }
+
+    async stopDemo(tvId) {
+        try {
+            const response = await fetch(`/api/demo/${tvId}`, { method: 'DELETE' });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || response.statusText);
+            this.showToast(result.message, 'success');
+        } catch (error) {
+            this.showToast(error.message, 'error');
+        }
     }
 
     openSequence(sequenceId) {

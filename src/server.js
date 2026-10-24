@@ -228,6 +228,7 @@ app.use('/api/bulk', bulkRoutes); // Bulk operations for multi-TV management
 app.use('/api/datasets', require('./routes/datasetRoutes')); // Court calendar + weather data for live layers
 app.use('/api/scenes', require('./routes/sceneRoutes')); // Scenes: designed screens that sequences play
 app.use('/api/sequences', require('./routes/sequenceRoutes')); // Sequences: looping image/scene timelines per TV
+app.use('/api/demo', require('./routes/demoRoutes')); // Guided demo tour on a TV
 
 // WebSocket handling for real-time updates
 wss.on('connection', (ws) => {
@@ -371,6 +372,8 @@ async function startServer() {
     try {
       await require('./services/sceneService').seedStarters();
       await require('./services/sequenceService').migratePlaylists();
+      // A demo interrupted by a restart: put its TV back
+      await require('./services/demoService').restoreLeftovers();
     } catch (error) {
       console.error('Could not create starter scenes / sequences:', error.message);
     }

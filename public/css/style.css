@@ -2865,3 +2865,56 @@ body.dark-theme {
 .clip-live-actions {
     margin-bottom: 8px;
 }
+
+/* Demo tour control on TV cards */
+.tv-demo {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin: 0.5rem 0;
+}
+
+.tv-demo-hint {
+    font-size: 0.75rem;
+    color: #718096;
+}
+
+.tv-demo.running {
+    padding: 6px 8px;
+    border-radius: 6px;
+    background: #fffbeb;
+    border: 1px solid #f6e05e;
+}
+
+.tv-demo-bar {
+    flex: 1 1 120px;
+    height: 6px;
+    border-radius: 3px;
+    background: #fefcbf;
+    overflow: hidden;
+}
+
+.tv-demo-bar span {
+    display: block;
+    height: 100%;
+    background: #c9a227;
+    transition: width 0.4s ease;
+}
+
+.tv-demo-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #744210;
+}
+
+.btn-info {
+    background: #0c1e42;
+    color: #f6e05e;
+    border: 1px solid #c9a227;
+}
+
+.dark-theme .tv-demo.running {
+    background: #3d3420;
+    border-color: #975a16;
+}
