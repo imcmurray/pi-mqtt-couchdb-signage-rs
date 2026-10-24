@@ -1023,6 +1023,7 @@ class DigitalSignageApp {
             tvs: 'TV Management',
             images: 'Image Library',
             upload: 'Upload Images',
+            scenes: 'Scenes',
             layers: 'Layer Control',
             'alert-templates': 'Alert Templates',
             mqtt: 'MQTT Activity'
@@ -1030,6 +1031,7 @@ class DigitalSignageApp {
         document.getElementById('page-title').textContent = titles[section];
 
         this.currentSection = section;
+        document.dispatchEvent(new CustomEvent('section-changed', { detail: { section } }));
 
         // Initialize alert templates section on first visit
         if (section === 'alert-templates' && typeof atInitTemplates === 'function') {

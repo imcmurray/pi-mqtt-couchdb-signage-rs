@@ -28,6 +28,9 @@
                 <li><a href="#upload" class="nav-link" data-section="upload">
                     <i class="fas fa-upload"></i> Upload Images
                 </a></li>
+                <li><a href="#scenes" class="nav-link" data-section="scenes">
+                    <i class="fas fa-film"></i> Scenes
+                </a></li>
                 <li><a href="#layers" class="nav-link" data-section="layers">
                     <i class="fas fa-layer-group"></i> Layer Control
                 </a></li>
@@ -201,6 +204,51 @@
             </section>
 
             <!-- Layer Control Section -->
+            <!-- Scenes: designed screens (text with live values, images, tables) that sequences play -->
+            <section id="scenes-section" class="content-section">
+                <div class="layers-container">
+                    <div class="layers-header">
+                        <h2>🎬 Scenes</h2>
+                        <p>Design full screens from text, live values, images and tables. Sequences will play scenes and images in turn; Layer Control overlays sit on top.</p>
+                    </div>
+                    <div class="quick-actions scene-bar">
+                        <label for="sceneSelect">Scene:</label>
+                        <select id="sceneSelect" class="form-select" onchange="selectScene(this.value)"></select>
+                        <button class="btn btn-primary btn-sm" onclick="openNewSceneModal()">+ New scene</button>
+                        <button class="btn btn-secondary btn-sm" onclick="renameScene()">Rename</button>
+                        <button class="btn btn-secondary btn-sm" onclick="duplicateScene()">Duplicate</button>
+                        <button class="btn btn-danger btn-sm" onclick="deleteScene()">Delete</button>
+                        <span class="scene-meta" id="sceneMeta"></span>
+                    </div>
+                    <div id="sceneWorkspaceSlot"></div>
+                </div>
+
+                <div class="modal" id="newSceneModal">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h3>New scene</h3>
+                            <button class="modal-close">&times;</button>
+                        </div>
+                        <form id="newSceneForm" onsubmit="createScene(event)">
+                            <div class="modal-body">
+                                <div class="form-group">
+                                    <label for="newSceneName">Name</label>
+                                    <input type="text" id="newSceneName" class="form-input" required maxlength="100" placeholder="e.g., Lobby Welcome">
+                                </div>
+                                <div class="form-group">
+                                    <label for="newSceneStarter">Start from</label>
+                                    <select id="newSceneStarter" class="form-select"></select>
+                                </div>
+                            </div>
+                            <div class="modal-actions">
+                                <button type="button" class="btn btn-secondary modal-cancel">Cancel</button>
+                                <button type="submit" class="btn btn-primary">Create</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </section>
+
             <section id="layers-section" class="content-section">
                 <div class="layers-container">
                     <div class="layers-header">
@@ -248,158 +296,164 @@
                         <button class="btn btn-secondary" onclick="openSaveLayoutModal()">Save Layout as Template</button>
                     </div>
 
-                    <div class="layers-display">
-                        <div class="layers-list">
-                            <h3>Active Layers <span class="layer-count" id="layerCountText">0</span></h3>
-                            <p class="layers-order-hint">Top of the list draws on top. Drag to reorder.</p>
-                            <div id="layersList"></div>
-                        </div>
-                        <div class="preview-canvas">
-                            <div class="preview-header">
-                                <h3>Screen Preview</h3>
-                                <span class="preview-hint">Click a layer to edit it; click it again to change its text. Drag to move; drag a corner to resize (Shift to change proportions).</span>
+                    <div id="layerWorkspaceSlot">
+                    <!-- Shared editor: moved between Scenes and Layer Control (see multilayer.js mountWorkspace) -->
+                    <div id="layerWorkspace" class="layer-workspace">
+                        <div class="layers-display">
+                            <div class="layers-list">
+                                <h3><span id="layerListTitle">Active Layers</span> <span class="layer-count" id="layerCountText">0</span></h3>
+                                <p class="layers-order-hint">Top of the list draws on top. Drag to reorder.</p>
+                                <div id="layersList"></div>
                             </div>
-                            <div class="screen-mockup" id="screenPreview"></div>
-                            <div class="preview-legend" id="previewLegend"></div>
+                            <div class="preview-canvas">
+                                <div class="preview-header">
+                                    <h3>Screen Preview</h3>
+                                    <span class="preview-hint">Click an item to edit it; click it again to change its text. Drag to move; drag a corner to resize (Shift to change proportions).</span>
+                                </div>
+                                <div class="screen-mockup" id="screenPreview"></div>
+                                <div class="preview-legend" id="previewLegend"></div>
+                            </div>
                         </div>
-                    </div>
 
-                    <div class="controls">
-                        <div class="control-panel">
-                            <div class="editor-header">
-                                <h3 id="layerEditorTitle">New Layer</h3>
-                                <button type="button" class="btn btn-secondary btn-sm" id="layerEditorNew" onclick="newLayer()" style="display: none;">+ New layer</button>
+                        <div class="controls">
+                            <div class="control-panel">
+                                <div class="editor-header">
+                                    <h3 id="layerEditorTitle">New Layer</h3>
+                                    <button type="button" class="btn btn-secondary btn-sm" id="layerEditorNew" onclick="newLayer()" style="display: none;">+ New layer</button>
+                                </div>
+                                <form id="layerForm" onsubmit="saveLayer(event)">
+                                    <div class="form-group">
+                                        <label for="layerName">Name</label>
+                                        <input type="text" id="layerName" class="form-input" placeholder="e.g., Court Schedule Header" maxlength="100" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="layerImage">Show</label>
+                                        <div class="layer-image-picker">
+                                            <select id="layerImage" class="form-select" onchange="onLayerImageChange()">
+                                                <option value="">Text</option>
+                                            </select>
+                                            <img id="layerImageThumb" class="layer-image-thumb" alt="" hidden>
+                                        </div>
+                                        <small class="form-hint">Pick an image from the Image Library to show it instead of text. A PNG with a transparent background (like a court seal) blends over the slideshow.</small>
+                                    </div>
+                                    <div class="form-group text-only">
+                                        <label for="layerText">Text <span class="optional-label">(optional; leave blank for a plain colour block)</span></label>
+                                        <textarea id="layerText" class="form-input" rows="2" placeholder="e.g., 9:00 AM - Room 101 - Smith vs. Johnson"></textarea>
+                                        <div class="token-chips" aria-label="Insert a live value">
+                                            <span class="token-chips-label">Live values:</span>
+                                            <button type="button" class="token-chip" onclick="insertToken('{time}')">{time}</button>
+                                            <button type="button" class="token-chip" onclick="insertToken('{date}')">{date}</button>
+                                            <button type="button" class="token-chip" onclick="insertToken('{day}')">{day}</button>
+                                            <button type="button" class="token-chip" onclick="insertToken('{short_date}')">{short_date}</button>
+                                            <button type="button" class="token-chip" onclick="insertToken('{weather}')">{weather}</button>
+                                            <button type="button" class="token-chip" onclick="insertToken('{temp}')">{temp}</button>
+                                            <button type="button" class="token-chip" onclick="insertToken('{conditions}')">{conditions}</button>
+                                        </div>
+                                    </div>
+                                    <p class="table-layer-note" id="tableLayerNote" hidden></p>
+                                    <div class="editor-grid">
+                                        <div class="form-group"><label for="layerX">X</label><input type="number" id="layerX" class="form-input" min="0" max="1920" value="0"></div>
+                                        <div class="form-group"><label for="layerY">Y</label><input type="number" id="layerY" class="form-input" min="0" max="1920" value="100"></div>
+                                        <div class="form-group"><label for="layerWidth">Width</label><input type="number" id="layerWidth" class="form-input" min="1" max="1920" value="1920"></div>
+                                        <div class="form-group"><label for="layerHeight">Height</label><input type="number" id="layerHeight" class="form-input" min="1" max="1920" value="60"></div>
+                                    </div>
+                                    <div class="editor-grid">
+                                        <div class="form-group text-only span-2">
+                                            <label for="layerFontFamily">Font</label>
+                                            <select id="layerFontFamily" class="form-select">
+                                                <option value="DejaVu Sans">Sans (default)</option>
+                                                <option value="Liberation Sans">Arial style</option>
+                                                <option value="Liberation Sans Narrow">Arial Narrow style</option>
+                                                <option value="Liberation Serif">Times New Roman style</option>
+                                                <option value="DejaVu Serif">Serif</option>
+                                                <option value="DejaVu Sans Mono">Monospace</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group text-only">
+                                            <label for="layerFontWeight">Weight</label>
+                                            <select id="layerFontWeight" class="form-select">
+                                                <option value="normal">Normal</option>
+                                                <option value="bold">Bold</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group text-only"><label for="fontSize">Font size</label><input type="number" id="fontSize" class="form-input" min="10" max="100" value="28"></div>
+                                    </div>
+                                    <div class="editor-grid">
+                                        <div class="form-group text-only">
+                                            <label for="layerAlignment">Align</label>
+                                            <select id="layerAlignment" class="form-select">
+                                                <option value="left">Left</option>
+                                                <option value="center">Center</option>
+                                                <option value="right">Right</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group text-only">
+                                            <label for="layerVerticalAlignment">Vertical</label>
+                                            <select id="layerVerticalAlignment" class="form-select">
+                                                <option value="top">Top</option>
+                                                <option value="middle" selected>Middle</option>
+                                                <option value="bottom">Bottom</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group"><label for="layerOpacity">Opacity</label><input type="number" id="layerOpacity" class="form-input" min="0" max="100" value="100" step="5"></div>
+                                        <div class="form-group"><label for="layerPriority">Priority (higher on top)</label><input type="number" id="layerPriority" class="form-input" min="2" max="199" value="15" title="Higher draws on top. The slideshow is 1; alerts are 150 and up."></div>
+                                    </div>
+                                    <div class="editor-grid">
+                                        <div class="form-group text-only"><label for="layerBgColor">Background</label><input type="color" id="layerBgColor" class="form-input color-input" value="#000000"></div>
+                                        <div class="form-group text-only"><label for="layerBgAlpha">Background %</label><input type="number" id="layerBgAlpha" class="form-input" min="0" max="100" value="80" step="5"></div>
+                                        <div class="form-group text-only"><label for="layerTextColor">Text</label><input type="color" id="layerTextColor" class="form-input color-input" value="#ffffff"></div>
+                                    </div>
+                                    <div class="form-group checkbox-group"><label><input type="checkbox" id="layerVisible" checked> Visible</label></div>
+                                    <div class="editor-actions">
+                                        <button type="submit" class="btn btn-primary" id="layerSaveButton">Create layer</button>
+                                        <button type="button" class="btn btn-secondary tv-only" id="layerSaveTemplateButton" onclick="openSaveTemplateModal()" style="display: none;">Save as template</button>
+                                    </div>
+                                </form>
                             </div>
-                            <form id="layerForm" onsubmit="saveLayer(event)">
+
+                            <div class="control-panel tv-only">
+                                <h3>Animation Controls</h3>
+                                <p style="margin-bottom: 16px; color: var(--ml-text-muted);">Plays once on the TV for the selected layer; the next change puts it back.</p>
+                                <div class="animation-controls">
+                                    <button class="btn btn-primary btn-sm" onclick="animateSelected('slide_up')">↑ Slide Up</button>
+                                    <button class="btn btn-primary btn-sm" onclick="animateSelected('slide_down')">↓ Slide Down</button>
+                                    <button class="btn btn-primary btn-sm" onclick="animateSelected('slide_left')">← Slide Left</button>
+                                    <button class="btn btn-primary btn-sm" onclick="animateSelected('slide_right')">→ Slide Right</button>
+                                    <button class="btn btn-primary btn-sm" onclick="animateSelected('fade_in')">Fade In</button>
+                                    <button class="btn btn-primary btn-sm" onclick="animateSelected('fade_out')">Fade Out</button>
+                                </div>
                                 <div class="form-group">
-                                    <label for="layerName">Name</label>
-                                    <input type="text" id="layerName" class="form-input" placeholder="e.g., Court Schedule Header" maxlength="100" required>
+                                    <label for="animDuration">Duration (ms):</label>
+                                    <input type="number" id="animDuration" class="form-input" value="500" min="100" max="3000">
                                 </div>
-                                <div class="form-group">
-                                    <label for="layerImage">Show</label>
-                                    <div class="layer-image-picker">
-                                        <select id="layerImage" class="form-select" onchange="onLayerImageChange()">
-                                            <option value="">Text</option>
-                                        </select>
-                                        <img id="layerImageThumb" class="layer-image-thumb" alt="" hidden>
-                                    </div>
-                                    <small class="form-hint">Pick an image from the Image Library to show it instead of text. A PNG with a transparent background (like a court seal) blends over the slideshow.</small>
-                                </div>
-                                <div class="form-group text-only">
-                                    <label for="layerText">Text <span class="optional-label">(optional; leave blank for a plain colour block)</span></label>
-                                    <textarea id="layerText" class="form-input" rows="2" placeholder="e.g., 9:00 AM - Room 101 - Smith vs. Johnson"></textarea>
-                                    <div class="token-chips" aria-label="Insert a live value">
-                                        <span class="token-chips-label">Live values:</span>
-                                        <button type="button" class="token-chip" onclick="insertToken('{time}')">{time}</button>
-                                        <button type="button" class="token-chip" onclick="insertToken('{date}')">{date}</button>
-                                        <button type="button" class="token-chip" onclick="insertToken('{day}')">{day}</button>
-                                        <button type="button" class="token-chip" onclick="insertToken('{short_date}')">{short_date}</button>
-                                        <button type="button" class="token-chip" onclick="insertToken('{weather}')">{weather}</button>
-                                        <button type="button" class="token-chip" onclick="insertToken('{temp}')">{temp}</button>
-                                        <button type="button" class="token-chip" onclick="insertToken('{conditions}')">{conditions}</button>
-                                    </div>
-                                </div>
-                                <p class="table-layer-note" id="tableLayerNote" hidden></p>
-                                <div class="editor-grid">
-                                    <div class="form-group"><label for="layerX">X</label><input type="number" id="layerX" class="form-input" min="0" max="1920" value="0"></div>
-                                    <div class="form-group"><label for="layerY">Y</label><input type="number" id="layerY" class="form-input" min="0" max="1920" value="100"></div>
-                                    <div class="form-group"><label for="layerWidth">Width</label><input type="number" id="layerWidth" class="form-input" min="1" max="1920" value="1920"></div>
-                                    <div class="form-group"><label for="layerHeight">Height</label><input type="number" id="layerHeight" class="form-input" min="1" max="1920" value="60"></div>
-                                </div>
-                                <div class="editor-grid">
-                                    <div class="form-group text-only span-2">
-                                        <label for="layerFontFamily">Font</label>
-                                        <select id="layerFontFamily" class="form-select">
-                                            <option value="DejaVu Sans">Sans (default)</option>
-                                            <option value="Liberation Sans">Arial style</option>
-                                            <option value="Liberation Sans Narrow">Arial Narrow style</option>
-                                            <option value="Liberation Serif">Times New Roman style</option>
-                                            <option value="DejaVu Serif">Serif</option>
-                                            <option value="DejaVu Sans Mono">Monospace</option>
-                                        </select>
-                                    </div>
-                                    <div class="form-group text-only">
-                                        <label for="layerFontWeight">Weight</label>
-                                        <select id="layerFontWeight" class="form-select">
-                                            <option value="normal">Normal</option>
-                                            <option value="bold">Bold</option>
-                                        </select>
-                                    </div>
-                                    <div class="form-group text-only"><label for="fontSize">Font size</label><input type="number" id="fontSize" class="form-input" min="10" max="100" value="28"></div>
-                                </div>
-                                <div class="editor-grid">
-                                    <div class="form-group text-only">
-                                        <label for="layerAlignment">Align</label>
-                                        <select id="layerAlignment" class="form-select">
-                                            <option value="left">Left</option>
-                                            <option value="center">Center</option>
-                                            <option value="right">Right</option>
-                                        </select>
-                                    </div>
-                                    <div class="form-group text-only">
-                                        <label for="layerVerticalAlignment">Vertical</label>
-                                        <select id="layerVerticalAlignment" class="form-select">
-                                            <option value="top">Top</option>
-                                            <option value="middle" selected>Middle</option>
-                                            <option value="bottom">Bottom</option>
-                                        </select>
-                                    </div>
-                                    <div class="form-group"><label for="layerOpacity">Opacity</label><input type="number" id="layerOpacity" class="form-input" min="0" max="100" value="100" step="5"></div>
-                                    <div class="form-group"><label for="layerPriority">Priority (higher on top)</label><input type="number" id="layerPriority" class="form-input" min="2" max="199" value="15" title="Higher draws on top. The slideshow is 1; alerts are 150 and up."></div>
-                                </div>
-                                <div class="editor-grid">
-                                    <div class="form-group text-only"><label for="layerBgColor">Background</label><input type="color" id="layerBgColor" class="form-input color-input" value="#000000"></div>
-                                    <div class="form-group text-only"><label for="layerBgAlpha">Background %</label><input type="number" id="layerBgAlpha" class="form-input" min="0" max="100" value="80" step="5"></div>
-                                    <div class="form-group text-only"><label for="layerTextColor">Text</label><input type="color" id="layerTextColor" class="form-input color-input" value="#ffffff"></div>
-                                </div>
-                                <div class="form-group checkbox-group"><label><input type="checkbox" id="layerVisible" checked> Visible</label></div>
-                                <div class="editor-actions">
-                                    <button type="submit" class="btn btn-primary" id="layerSaveButton">Create layer</button>
-                                    <button type="button" class="btn btn-secondary" id="layerSaveTemplateButton" onclick="openSaveTemplateModal()" style="display: none;">Save as template</button>
-                                </div>
-                            </form>
+                            </div>
                         </div>
 
-                        <div class="control-panel">
-                            <h3>Animation Controls</h3>
-                            <p style="margin-bottom: 16px; color: var(--ml-text-muted);">Plays once on the TV for the selected layer; the next change puts it back.</p>
-                            <div class="animation-controls">
-                                <button class="btn btn-primary btn-sm" onclick="animateSelected('slide_up')">↑ Slide Up</button>
-                                <button class="btn btn-primary btn-sm" onclick="animateSelected('slide_down')">↓ Slide Down</button>
-                                <button class="btn btn-primary btn-sm" onclick="animateSelected('slide_left')">← Slide Left</button>
-                                <button class="btn btn-primary btn-sm" onclick="animateSelected('slide_right')">→ Slide Right</button>
-                                <button class="btn btn-primary btn-sm" onclick="animateSelected('fade_in')">Fade In</button>
-                                <button class="btn btn-primary btn-sm" onclick="animateSelected('fade_out')">Fade Out</button>
-                            </div>
-                            <div class="form-group">
-                                <label for="animDuration">Duration (ms):</label>
-                                <input type="number" id="animDuration" class="form-input" value="500" min="100" max="3000">
+                        <div class="data-panel">
+                            <h3>Live Data</h3>
+                            <p class="data-panel-hint">Feeds the Court Calendar template's table and the live values in layer text. TVs refresh within seconds of a change and keep the last data if the network drops.</p>
+                            <div class="data-cards">
+                                <div class="data-card">
+                                    <div class="data-card-title">📅 Court Calendar</div>
+                                    <div class="data-card-status" id="calendarStatus">No calendar uploaded yet</div>
+                                    <div class="data-card-actions">
+                                        <label class="btn btn-primary btn-sm">
+                                            Upload calendar JSON
+                                            <input type="file" id="calendarFile" accept=".json,application/json" hidden onchange="uploadCalendar(this)">
+                                        </label>
+                                        <a class="btn btn-secondary btn-sm" href="/api/datasets/court_calendar/sample" download>Download sample</a>
+                                    </div>
+                                    <small class="form-hint">One entry per hearing with: courtroom, date, time, case_number, case_title, reason, movant. Common alternatives (e.g. "Courtroom Name", "Hearing Date", "Reason for Hearing", "moving party") are recognised.</small>
+                                </div>
+                                <div class="data-card">
+                                    <div class="data-card-title">🌤️ Weather</div>
+                                    <div class="data-card-status" id="weatherStatus">Waiting for the first update…</div>
+                                    <small class="form-hint">National Weather Service, refreshed every 15 minutes. Use {weather}, {temp}, {conditions} or {location} in layer text.</small>
+                                </div>
                             </div>
                         </div>
+
                     </div>
-
-                    <div class="data-panel">
-                        <h3>Live Data</h3>
-                        <p class="data-panel-hint">Feeds the Court Calendar template's table and the live values in layer text. TVs refresh within seconds of a change and keep the last data if the network drops.</p>
-                        <div class="data-cards">
-                            <div class="data-card">
-                                <div class="data-card-title">📅 Court Calendar</div>
-                                <div class="data-card-status" id="calendarStatus">No calendar uploaded yet</div>
-                                <div class="data-card-actions">
-                                    <label class="btn btn-primary btn-sm">
-                                        Upload calendar JSON
-                                        <input type="file" id="calendarFile" accept=".json,application/json" hidden onchange="uploadCalendar(this)">
-                                    </label>
-                                    <a class="btn btn-secondary btn-sm" href="/api/datasets/court_calendar/sample" download>Download sample</a>
-                                </div>
-                                <small class="form-hint">One entry per hearing with: courtroom, date, time, case_number, case_title, reason, movant. Common alternatives (e.g. "Courtroom Name", "Hearing Date", "Reason for Hearing", "moving party") are recognised.</small>
-                            </div>
-                            <div class="data-card">
-                                <div class="data-card-title">🌤️ Weather</div>
-                                <div class="data-card-status" id="weatherStatus">Waiting for the first update…</div>
-                                <small class="form-hint">National Weather Service, refreshed every 15 minutes. Use {weather}, {temp}, {conditions} or {location} in layer text.</small>
-                            </div>
-                        </div>
                     </div>
 
                     <div class="alert-panel">

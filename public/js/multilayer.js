@@ -23,6 +23,10 @@ class MultiLayerManager {
     constructor() {
         this.selectedTvId = null;
         this.selectedLayerId = null;
+        // The editor works on a TV's overlays (Layer Control) or a scene's elements (Scenes)
+        this.mode = 'tv';
+        this.sceneId = null;
+        this.scenes = [];
         this.layers = [];
         this.libraryImages = [];
         this.liveValues = {};       // weather values for {tokens}
@@ -49,6 +53,12 @@ class MultiLayerManager {
     async init() {
         await this.loadLibraryImages();
         await this.loadLiveData();
+        await this.loadScenes();
+        document.addEventListener('section-changed', (event) => {
+            const { section } = event.detail;
+            if (section === 'scenes') this.mountWorkspace('scene');
+            if (section === 'layers') this.mountWorkspace('tv');
+        });
         await this.loadTVs();
         await this.loadActiveAlerts();
         await this.loadTemplates();
@@ -61,9 +71,154 @@ class MultiLayerManager {
     }
 
     // Layer Control API lives under /api/layers (the /api/tvs/:id/layers routes
-    // are the older per-TV slideshow/logo config)
+    // are the older per-TV slideshow/logo config); scene elements use the same shape
     layersUrl(path = '', tvId = this.selectedTvId) {
+        if (this.mode === 'scene') {
+            return `${this.apiBase}/scenes/${this.sceneId}/elements${path}`;
+        }
         return `${this.apiBase}/layers/tvs/${tvId}/layers${path}`;
+    }
+
+    // What the editor is working on: the selected TV or the selected scene
+    get targetId() {
+        return this.mode === 'scene' ? this.sceneId : this.selectedTvId;
+    }
+
+    get noun() {
+        return this.mode === 'scene' ? 'element' : 'layer';
+    }
+
+    // Move the shared editor into the page being shown and point it at that page's target
+    mountWorkspace(mode) {
+        const slot = document.getElementById(mode === 'scene' ? 'sceneWorkspaceSlot' : 'layerWorkspaceSlot');
+        const workspace = document.getElementById('layerWorkspace');
+        if (!slot || !workspace) return;
+        if (workspace.parentElement !== slot) slot.appendChild(workspace);
+        if (this.mode === mode) return;
+
+        this.mode = mode;
+        this.selectedLayerId = null;
+        this.layers = [];
+        workspace.classList.toggle('scene-mode', mode === 'scene');
+        document.getElementById('layerListTitle').textContent = mode === 'scene' ? 'Elements' : 'Active Layers';
+        document.querySelector('#layerWorkspace .layers-order-hint').textContent =
+            `Top of the list draws on top. Drag to reorder.`;
+        this.resetLayerForm();
+        this.renderLayers();
+        this.loadLayers();
+    }
+
+    // --- Scenes ---
+    async loadScenes() {
+        try {
+            this.scenes = await (await fetch(`${this.apiBase}/scenes`)).json();
+        } catch (error) {
+            this.log(`Error loading scenes: ${error.message}`, 'error');
+            this.scenes = [];
+        }
+        if (!this.scenes.some(scene => scene.scene_id === this.sceneId)) {
+            this.sceneId = this.scenes[0]?.scene_id || null;
+        }
+        const select = document.getElementById('sceneSelect');
+        select.innerHTML = this.scenes.length
+            ? this.scenes.map(scene => `<option value="${this.escapeHtml(scene.scene_id)}">${this.escapeHtml(scene.name)}</option>`).join('')
+            : '<option value="">No scenes yet</option>';
+        select.value = this.sceneId || '';
+        this.updateSceneMeta();
+        if (this.mode === 'scene') await this.loadLayers();
+    }
+
+    get selectedScene() {
+        return this.scenes.find(scene => scene.scene_id === this.sceneId);
+    }
+
+    updateSceneMeta() {
+        const scene = this.selectedScene;
+        document.getElementById('sceneMeta').textContent = scene
+            ? `${scene.element_count} element(s)${scene.description ? ' · ' + scene.description : ''}`
+            : '';
+    }
+
+    async selectScene(sceneId) {
+        this.sceneId = sceneId || null;
+        this.selectedLayerId = null;
+        this.resetLayerForm();
+        this.updateSceneMeta();
+        await this.loadLayers();
+    }
+
+    async openNewSceneModal() {
+        const starters = await (await fetch(`${this.apiBase}/scenes/starters`)).json();
+        document.getElementById('newSceneStarter').innerHTML = '<option value="">Blank scene</option>' +
+            starters.map(s => `<option value="${this.escapeHtml(s.preset_id)}">${this.escapeHtml(s.name)} (${s.element_count} elements)</option>`).join('');
+        document.getElementById('newSceneName').value = '';
+        document.getElementById('newSceneModal').classList.add('show');
+        document.getElementById('newSceneName').focus();
+    }
+
+    async sceneRequest(url, method, body) {
+        const response = await fetch(url, {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            body: body ? JSON.stringify(body) : undefined
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || response.statusText);
+        return result;
+    }
+
+    async createScene(event) {
+        event.preventDefault();
+        const name = document.getElementById('newSceneName').value.trim();
+        const fromPreset = document.getElementById('newSceneStarter').value;
+        try {
+            const scene = await this.sceneRequest(`${this.apiBase}/scenes`, 'POST', { name, ...(fromPreset ? { from_preset: fromPreset } : {}) });
+            document.getElementById('newSceneModal').classList.remove('show');
+            this.sceneId = scene.scene_id;
+            this.log(`Created scene "${scene.name}"`);
+            await this.loadScenes();
+        } catch (error) {
+            alert(`Couldn't create the scene: ${error.message}`);
+        }
+    }
+
+    async renameScene() {
+        const scene = this.selectedScene;
+        if (!scene) return;
+        const name = prompt('Scene name', scene.name);
+        if (!name || name.trim() === scene.name) return;
+        try {
+            await this.sceneRequest(`${this.apiBase}/scenes/${scene.scene_id}`, 'PUT', { name: name.trim() });
+            await this.loadScenes();
+        } catch (error) {
+            alert(`Couldn't rename the scene: ${error.message}`);
+        }
+    }
+
+    async duplicateScene() {
+        const scene = this.selectedScene;
+        if (!scene) return;
+        try {
+            const copy = await this.sceneRequest(`${this.apiBase}/scenes/${scene.scene_id}/duplicate`, 'POST', {});
+            this.sceneId = copy.scene_id;
+            this.log(`Duplicated "${scene.name}"`);
+            await this.loadScenes();
+        } catch (error) {
+            alert(`Couldn't duplicate the scene: ${error.message}`);
+        }
+    }
+
+    async deleteScene() {
+        const scene = this.selectedScene;
+        if (!scene || !confirm(`Delete the scene "${scene.name}" and its ${scene.element_count} element(s)?`)) return;
+        try {
+            await this.sceneRequest(`${this.apiBase}/scenes/${scene.scene_id}`, 'DELETE');
+            this.sceneId = null;
+            this.log(`Deleted scene "${scene.name}"`);
+            await this.loadScenes();
+        } catch (error) {
+            alert(`Couldn't delete the scene: ${error.message}`);
+        }
     }
 
     escapeHtml(value) {
@@ -105,7 +260,7 @@ class MultiLayerManager {
     }
 
     get controlLayers() {
-        return this.layers.filter(layer => !this.isAlertLayer(layer));
+        return this.mode === 'scene' ? this.layers : this.layers.filter(layer => !this.isAlertLayer(layer));
     }
 
     async loadTVs() {
@@ -317,12 +472,20 @@ class MultiLayerManager {
     }
 
     async loadLayers() {
-        if (!this.selectedTvId) return;
+        if (!this.targetId) {
+            this.layers = [];
+            this.renderLayers();
+            return;
+        }
+        const target = `${this.mode}:${this.targetId}`;
 
         try {
             const response = await fetch(this.layersUrl());
             if (!response.ok) throw new Error((await response.json()).error || response.statusText);
-            this.layers = await response.json();
+            const layers = await response.json();
+            // Ignore a slow reply for a TV/scene the editor has since moved away from
+            if (target !== `${this.mode}:${this.targetId}`) return;
+            this.layers = layers;
         } catch (error) {
             this.layers = [];
             this.log(`Error loading layers: ${error.message}`, 'error');
@@ -348,7 +511,9 @@ class MultiLayerManager {
         const layers = [...this.controlLayers].sort((a, b) => b.priority - a.priority);
 
         if (layers.length === 0) {
-            layersList.innerHTML = '<p class="layers-empty">No layers yet. Create one, apply a template, or add the sample layers.</p>';
+            layersList.innerHTML = this.mode === 'scene'
+                ? `<p class="layers-empty">${this.sceneId ? 'No elements yet. Create one with the editor below.' : 'Create a scene to start.'}</p>`
+                : '<p class="layers-empty">No layers yet. Create one, apply a template, or add the sample layers.</p>';
             return;
         }
 
@@ -398,7 +563,10 @@ class MultiLayerManager {
         const scale = (screen.clientWidth || 600) / SCREEN_WIDTH;
         const alerts = this.layers.filter(layer => this.isAlertLayer(layer) && layer.visible);
 
-        const background = tv?.current_image
+        // Overlays preview over what the TV is playing; a scene is the full screen itself
+        const background = this.mode === 'scene'
+            ? (this.layers.length ? '' : '<div class="preview-empty">Empty scene: add an element, or start from a courthouse starter</div>')
+            : tv?.current_image
             ? `<img class="preview-background" src="/api/images/${encodeURIComponent(tv.current_image)}/attachment?width=960" alt="" draggable="false">`
             : '<div class="preview-empty">No image showing</div>';
 
@@ -446,7 +614,7 @@ class MultiLayerManager {
                 : `<span class="layer-preview-text">${this.escapeHtml(this.expandTokens(content.text))}</span>`}</div>`;
         }).join('');
 
-        document.getElementById('previewLegend').textContent = [
+        document.getElementById('previewLegend').textContent = this.mode === 'scene' ? '' : [
             tv?.config?.orientation && tv.config.orientation !== 'landscape' ? `TV orientation: ${tv.config.orientation}` : '',
             alerts.length ? `${alerts.length} alert banner(s) showing (managed under Emergency Alerts)` : ''
         ].filter(Boolean).join(' · ');
@@ -454,7 +622,9 @@ class MultiLayerManager {
 
     updateLayerCount() {
         const count = this.controlLayers.length;
-        document.getElementById('layerCount').textContent = `${count} layer${count === 1 ? '' : 's'}`;
+        if (this.mode === 'tv') {
+            document.getElementById('layerCount').textContent = `${count} layer${count === 1 ? '' : 's'}`;
+        }
         document.getElementById('layerCountText').textContent = count;
     }
 
@@ -630,7 +800,13 @@ class MultiLayerManager {
                 if (data.data?.type === 'scheduled' && typeof loadScheduledAlerts === 'function') loadScheduledAlerts();
                 break;
             case 'layers_updated':
-                if (data.data?.tv_id === this.selectedTvId) this.loadLayers();
+                if (this.mode === 'tv' && data.data?.tv_id === this.selectedTvId) this.loadLayers();
+                break;
+            case 'scene_elements_updated':
+                if (this.mode === 'scene' && data.data?.scene_id === this.sceneId) this.loadLayers();
+                break;
+            case 'scenes_updated':
+                this.loadScenes();
                 break;
         }
     }
@@ -656,6 +832,7 @@ class MultiLayerManager {
     setupEventListeners() {
         document.getElementById('tvSelect').addEventListener('change', async (e) => {
             this.selectedTvId = e.target.value;
+            if (this.mode !== 'tv') return;
             this.selectedLayerId = null;
             this.resetLayerForm();
             if (this.selectedTvId) {
@@ -842,9 +1019,11 @@ class MultiLayerManager {
     }
 
     setEditorMode(editing) {
-        document.getElementById('layerEditorTitle').textContent = editing ? 'Edit Layer' : 'New Layer';
-        document.getElementById('layerSaveButton').textContent = editing ? 'Save changes' : 'Create layer';
+        const noun = this.noun;
+        document.getElementById('layerEditorTitle').textContent = `${editing ? 'Edit' : 'New'} ${noun[0].toUpperCase()}${noun.slice(1)}`;
+        document.getElementById('layerSaveButton').textContent = editing ? 'Save changes' : `Create ${noun}`;
         document.getElementById('layerEditorNew').style.display = editing ? '' : 'none';
+        document.getElementById('layerEditorNew').textContent = `+ New ${noun}`;
         document.getElementById('layerSaveTemplateButton').style.display = editing ? '' : 'none';
     }
 
@@ -920,8 +1099,8 @@ class MultiLayerManager {
 
     async saveLayer(event) {
         event?.preventDefault();
-        if (!this.selectedTvId) {
-            this.log('Please select a TV first', 'error');
+        if (!this.targetId) {
+            this.log(this.mode === 'scene' ? 'Please create or select a scene first' : 'Please select a TV first', 'error');
             return;
         }
 
@@ -1079,7 +1258,7 @@ class MultiLayerManager {
 
     async setAllVisibility(visible) {
         const targets = this.controlLayers.filter(layer => layer.visible !== visible);
-        if (!this.selectedTvId || targets.length === 0) return;
+        if (!this.targetId || targets.length === 0) return;
 
         const results = await Promise.allSettled(targets.map(layer => this.setLayerVisibility(layer.layer_id, visible)));
         const failed = results.filter(r => r.status === 'rejected').length;
@@ -1097,8 +1276,10 @@ class MultiLayerManager {
 
     async deleteAllLayers() {
         const layers = this.controlLayers;
-        if (!this.selectedTvId || layers.length === 0) return;
-        if (!confirm(`Delete all ${layers.length} layers on this TV? Alert banners are not affected.`)) return;
+        if (!this.targetId || layers.length === 0) return;
+        if (!confirm(this.mode === 'scene'
+            ? `Delete all ${layers.length} elements in this scene?`
+            : `Delete all ${layers.length} layers on this TV? Alert banners are not affected.`)) return;
 
         const results = await Promise.allSettled(layers.map(layer => this.removeLayer(layer.layer_id)));
         const failed = results.filter(r => r.status === 'rejected').length;
@@ -1112,7 +1293,7 @@ class MultiLayerManager {
         // Fallback refresh for layers and live data every 60 seconds (primary updates via WebSocket)
         setInterval(async () => {
             await this.loadLiveData();
-            if (this.selectedTvId) {
+            if (this.targetId) {
                 this.loadLayers();
             }
         }, 60000);
@@ -1656,6 +1837,30 @@ function newLayer() {
 
 function onLayerImageChange() {
     manager.onLayerImageChange();
+}
+
+function selectScene(sceneId) {
+    manager.selectScene(sceneId);
+}
+
+function openNewSceneModal() {
+    manager.openNewSceneModal();
+}
+
+function createScene(event) {
+    manager.createScene(event);
+}
+
+function renameScene() {
+    manager.renameScene();
+}
+
+function duplicateScene() {
+    manager.duplicateScene();
+}
+
+function deleteScene() {
+    manager.deleteScene();
 }
 
 function insertToken(token) {
