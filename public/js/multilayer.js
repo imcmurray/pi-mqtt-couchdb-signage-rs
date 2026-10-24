@@ -8,6 +8,16 @@ const MIN_LAYER_SIZE = 20;
 const RESIZE_CORNERS = ['nw', 'ne', 'sw', 'se'];
 // Reordering renumbers priorities in steps: above the slideshow (1), below alerts (150+)
 const PRIORITY_STEP = 10;
+// Browser stand-ins for the fonts the TV draws with (metric-compatible where possible).
+// Single quotes only: these go inside a style="..." attribute
+const PREVIEW_FONTS = {
+    'DejaVu Sans': "'DejaVu Sans', Verdana, sans-serif",
+    'DejaVu Serif': "'DejaVu Serif', Georgia, serif",
+    'DejaVu Sans Mono': "'DejaVu Sans Mono', Menlo, Consolas, monospace",
+    'Liberation Sans': "'Liberation Sans', Arial, Helvetica, sans-serif",
+    'Liberation Serif': "'Liberation Serif', 'Times New Roman', Times, serif",
+    'Liberation Sans Narrow': "'Liberation Sans Narrow', 'Arial Narrow', sans-serif-condensed, sans-serif"
+};
 
 class MultiLayerManager {
     constructor() {
@@ -270,6 +280,8 @@ class MultiLayerManager {
                 `justify-content: ${{ center: 'center', right: 'flex-end' }[content.alignment] || 'flex-start'}`,
                 `align-items: ${{ top: 'flex-start', bottom: 'flex-end' }[content.verticalAlignment] || 'center'}`,
                 `text-align: ${content.alignment || 'left'}`,
+                `font-family: ${PREVIEW_FONTS[content.fontFamily] || PREVIEW_FONTS['DejaVu Sans']}`,
+                `font-weight: ${content.fontWeight === 'bold' ? 700 : 400}`,
                 `padding: ${10 * scale}px`
             ].join('; ');
             const handles = layer.layer_id === this.selectedLayerId && !isAlert
@@ -705,6 +717,8 @@ class MultiLayerManager {
         set('fontSize', content.fontSize || 24);
         set('layerAlignment', content.alignment || 'left');
         set('layerVerticalAlignment', content.verticalAlignment || 'middle');
+        set('layerFontFamily', PREVIEW_FONTS[content.fontFamily] ? content.fontFamily : 'DejaVu Sans');
+        set('layerFontWeight', content.fontWeight === 'bold' ? 'bold' : 'normal');
         set('layerPriority', layer.priority);
         set('layerOpacity', Math.round((layer.opacity ?? 1) * 100));
         set('layerBgColor', this.colorToHex(content.backgroundColor));
@@ -739,7 +753,9 @@ class MultiLayerManager {
                 textColor: this.hexToRgba(document.getElementById('layerTextColor').value, 1),
                 fontSize: number('fontSize'),
                 alignment: document.getElementById('layerAlignment').value,
-                verticalAlignment: document.getElementById('layerVerticalAlignment').value
+                verticalAlignment: document.getElementById('layerVerticalAlignment').value,
+                fontFamily: document.getElementById('layerFontFamily').value,
+                fontWeight: document.getElementById('layerFontWeight').value
             },
             position,
             visible: document.getElementById('layerVisible').checked,

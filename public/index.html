@@ -296,7 +296,27 @@
                                     <div class="form-group"><label for="layerHeight">Height</label><input type="number" id="layerHeight" class="form-input" min="1" max="1920" value="60"></div>
                                 </div>
                                 <div class="editor-grid">
+                                    <div class="form-group text-only span-2">
+                                        <label for="layerFontFamily">Font</label>
+                                        <select id="layerFontFamily" class="form-select">
+                                            <option value="DejaVu Sans">Sans (default)</option>
+                                            <option value="Liberation Sans">Arial style</option>
+                                            <option value="Liberation Sans Narrow">Arial Narrow style</option>
+                                            <option value="Liberation Serif">Times New Roman style</option>
+                                            <option value="DejaVu Serif">Serif</option>
+                                            <option value="DejaVu Sans Mono">Monospace</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group text-only">
+                                        <label for="layerFontWeight">Weight</label>
+                                        <select id="layerFontWeight" class="form-select">
+                                            <option value="normal">Normal</option>
+                                            <option value="bold">Bold</option>
+                                        </select>
+                                    </div>
                                     <div class="form-group text-only"><label for="fontSize">Font size</label><input type="number" id="fontSize" class="form-input" min="10" max="100" value="28"></div>
+                                </div>
+                                <div class="editor-grid">
                                     <div class="form-group text-only">
                                         <label for="layerAlignment">Align</label>
                                         <select id="layerAlignment" class="form-select">
@@ -314,12 +334,12 @@
                                         </select>
                                     </div>
                                     <div class="form-group"><label for="layerOpacity">Opacity</label><input type="number" id="layerOpacity" class="form-input" min="0" max="100" value="100" step="5"></div>
+                                    <div class="form-group"><label for="layerPriority">Priority (higher on top)</label><input type="number" id="layerPriority" class="form-input" min="2" max="199" value="15" title="Higher draws on top. The slideshow is 1; alerts are 150 and up."></div>
                                 </div>
                                 <div class="editor-grid">
                                     <div class="form-group text-only"><label for="layerBgColor">Background</label><input type="color" id="layerBgColor" class="form-input color-input" value="#000000"></div>
                                     <div class="form-group text-only"><label for="layerBgAlpha">Background %</label><input type="number" id="layerBgAlpha" class="form-input" min="0" max="100" value="80" step="5"></div>
                                     <div class="form-group text-only"><label for="layerTextColor">Text</label><input type="color" id="layerTextColor" class="form-input color-input" value="#ffffff"></div>
-                                    <div class="form-group"><label for="layerPriority">Priority (higher on top)</label><input type="number" id="layerPriority" class="form-input" min="2" max="199" value="15" title="Higher draws on top. The slideshow is 1; alerts are 150 and up."></div>
                                 </div>
                                 <div class="form-group checkbox-group"><label><input type="checkbox" id="layerVisible" checked> Visible</label></div>
                                 <div class="editor-actions">

@@ -394,6 +394,10 @@
     gap: 10px;
 }
 
+#layers-section .editor-grid .span-2 {
+    grid-column: span 2;
+}
+
 #layers-section .editor-grid .form-group {
     margin-bottom: 12px;
 }

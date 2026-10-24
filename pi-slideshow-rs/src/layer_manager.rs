@@ -9,6 +9,27 @@ use fontdue::{Font, FontSettings};
 /// Gap between text and the edge of its layer when aligned to that edge
 const TEXT_INSET: f32 = 10.0;
 
+/// Fonts the Layer Control editor offers: (name, regular file, bold file).
+/// These ship with Raspberry Pi OS (fonts-dejavu-core, fonts-liberation2).
+const FONT_FILES: &[(&str, &str, &str)] = &[
+    ("DejaVu Sans", "dejavu/DejaVuSans.ttf", "dejavu/DejaVuSans-Bold.ttf"),
+    ("DejaVu Serif", "dejavu/DejaVuSerif.ttf", "dejavu/DejaVuSerif-Bold.ttf"),
+    ("DejaVu Sans Mono", "dejavu/DejaVuSansMono.ttf", "dejavu/DejaVuSansMono-Bold.ttf"),
+    ("Liberation Sans", "liberation/LiberationSans-Regular.ttf", "liberation/LiberationSans-Bold.ttf"),
+    ("Liberation Serif", "liberation/LiberationSerif-Regular.ttf", "liberation/LiberationSerif-Bold.ttf"),
+    ("Liberation Sans Narrow", "liberation/LiberationSansNarrow-Regular.ttf", "liberation/LiberationSansNarrow-Bold.ttf"),
+];
+const FONT_DIR: &str = "/usr/share/fonts/truetype";
+
+/// Font file for a family name and weight; unknown names (e.g. the old
+/// "Arial" default) use DejaVu Sans, which is what the TV always drew
+fn font_file(family: &str, bold: bool) -> String {
+    let (_, regular, bold_file) = FONT_FILES.iter()
+        .find(|(name, _, _)| name.eq_ignore_ascii_case(family))
+        .unwrap_or(&FONT_FILES[0]);
+    format!("{}/{}", FONT_DIR, if bold { bold_file } else { regular })
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum LayerType {
     Slideshow,     // Background transitioning images
@@ -45,6 +66,10 @@ pub enum LayerContent {
         alignment: String,  // left, center, right
         #[serde(default)]
         vertical_alignment: String,  // top, middle (default), bottom
+        #[serde(default)]
+        font_family: String,  // one of FONT_FILES' names; anything else = DejaVu Sans
+        #[serde(default)]
+        bold: bool,
     },
     Empty,                  // No content
 }
@@ -134,7 +159,17 @@ impl Layer {
             font_size,
             alignment,
             vertical_alignment: String::new(),
+            font_family: String::new(),
+            bold: false,
         };
+        self
+    }
+
+    pub fn with_font(mut self, family: &str, is_bold: bool) -> Self {
+        if let LayerContent::DataRow { ref mut font_family, ref mut bold, .. } = self.content {
+            *font_family = family.to_string();
+            *bold = is_bold;
+        }
         self
     }
 
@@ -301,7 +336,12 @@ impl LayerManager {
 
         let mut config = self.config.write().await;
 
-        if config.layers.len() >= config.max_layers as usize {
+        // Same rule as the management server: the limit covers the TV's own layers,
+        // not the slideshow, and alerts must always be able to appear
+        let counts_toward_limit = |l: &Layer| !matches!(l.layer_type, LayerType::Slideshow | LayerType::Emergency);
+        if counts_toward_limit(&layer)
+            && config.layers.values().filter(|l| counts_toward_limit(l)).count() >= config.max_layers as usize
+        {
             return Err(format!("Maximum number of layers ({}) reached", config.max_layers));
         }
 
@@ -586,8 +626,9 @@ impl LayerManager {
                 // Future implementation for text rendering
                 Ok(())
             }
-            LayerContent::DataRow { text, background_color, text_color, font_size, alignment, vertical_alignment } => {
-                self.render_data_row_layer(layer, text, *background_color, *text_color, *font_size, alignment, vertical_alignment, composite).await
+            LayerContent::DataRow { text, background_color, text_color, font_size, alignment, vertical_alignment, font_family, bold } => {
+                let font = self.get_or_load_font(font_family, *bold).await;
+                self.render_data_row_layer(layer, text, *background_color, *text_color, *font_size, alignment, vertical_alignment, font, composite).await
             }
             LayerContent::Empty => Ok(()),
         }
@@ -815,8 +856,8 @@ impl LayerManager {
         (cached_items, memory_usage)
     }
 
-    async fn get_or_load_font(&self) -> Result<Font, String> {
-        let font_key = "default".to_string();
+    async fn get_or_load_font(&self, family: &str, bold: bool) -> Result<Font, String> {
+        let font_key = font_file(family, bold);
 
         // Check cache first
         {
@@ -826,8 +867,14 @@ impl LayerManager {
             }
         }
 
-        // Try to load a system font or embedded fallback
-        let font_data = self.load_font_data()?;
+        // The chosen font, else the system default
+        let font_data = match std::fs::read(&font_key) {
+            Ok(data) => data,
+            Err(e) => {
+                eprintln!("Font {} unavailable ({}), using the default font", font_key, e);
+                self.load_font_data()?
+            }
+        };
         let font = Font::from_bytes(font_data, FontSettings::default())
             .map_err(|e| format!("Failed to parse font: {:?}", e))?;
 
@@ -928,7 +975,7 @@ impl LayerManager {
         }
     }
     
-    async fn render_data_row_layer(&self, layer: &Layer, text: &str, bg_color: (u8, u8, u8, u8), text_color: (u8, u8, u8, u8), font_size: u32, alignment: &str, vertical_alignment: &str, composite: &mut RgbaImage) -> Result<(), String> {
+    async fn render_data_row_layer(&self, layer: &Layer, text: &str, bg_color: (u8, u8, u8, u8), text_color: (u8, u8, u8, u8), font_size: u32, alignment: &str, vertical_alignment: &str, font: Result<Font, String>, composite: &mut RgbaImage) -> Result<(), String> {
         // First render background
         for y in layer.position.y..(layer.position.y + layer.position.height) {
             for x in layer.position.x..(layer.position.x + layer.position.width) {
@@ -948,8 +995,7 @@ impl LayerManager {
             return Ok(());
         }
 
-        // Load fonts
-        let font = match self.get_or_load_font().await {
+        let font = match font {
             Ok(f) => f,
             Err(e) => {
                 eprintln!("Warning: Could not load font: {}. Text will not be rendered.", e);
@@ -1125,5 +1171,21 @@ impl LayerManager {
             .with_priority(15);
 
         self.add_layer(layer).await
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn font_file_picks_family_and_weight() {
+        assert_eq!(font_file("Liberation Serif", true), "/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf");
+        assert_eq!(font_file("liberation sans narrow", false), "/usr/share/fonts/truetype/liberation/LiberationSansNarrow-Regular.ttf");
+    }
+
+    #[test]
+    fn unknown_font_family_keeps_the_default() {
+        assert_eq!(font_file("Arial", false), "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
+        assert_eq!(font_file("", true), "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf");
     }
 }

@@ -1051,7 +1051,11 @@ impl SlideshowController {
                 content["fontSize"].as_u64().unwrap_or(24) as u32,
                 content["alignment"].as_str().unwrap_or("left").to_string(),
             )
-            .with_vertical_alignment(content["verticalAlignment"].as_str().unwrap_or("middle"));
+            .with_vertical_alignment(content["verticalAlignment"].as_str().unwrap_or("middle"))
+            .with_font(
+                content["fontFamily"].as_str().unwrap_or(""),
+                content["fontWeight"].as_str() == Some("bold"),
+            );
         if let Some(image_id) = Self::layer_image_id(value) {
             layer.content = LayerContent::ImagePath(Self::layer_image_path(image_dir, image_id).to_string_lossy().to_string());
         }

@@ -18,7 +18,10 @@ const layerSchema = Joi.object({
     backgroundColor: Joi.string().pattern(/^rgba?\(\d+,\s*\d+,\s*\d+,\s*[\d.]+\)$/).default('rgba(0, 0, 0, 0.8)'),
     textColor: Joi.string().pattern(/^rgba?\(\d+,\s*\d+,\s*\d+,\s*[\d.]+\)$/).default('rgba(255, 255, 255, 1)'),
     fontSize: Joi.number().min(10).max(100).default(24),
-    fontFamily: Joi.string().default('Arial'),
+    // Fonts installed on the TVs (see FONT_FILES in pi-slideshow-rs layer_manager.rs);
+    // other names, like the old 'Arial' default, render as DejaVu Sans
+    fontFamily: Joi.string().max(50).default('DejaVu Sans'),
+    fontWeight: Joi.string().valid('normal', 'bold').default('normal'),
     padding: Joi.number().min(0).max(50).default(10),
     alignment: Joi.string().valid('left', 'center', 'right').default('left'),
     verticalAlignment: Joi.string().valid('top', 'middle', 'bottom').default('middle')
