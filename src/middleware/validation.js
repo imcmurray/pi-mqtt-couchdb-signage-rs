@@ -150,20 +150,6 @@ const imageSchemas = {
     display_duration: Joi.number().integer().min(1000).max(300000).allow(null).optional()
   }).min(1), // At least one field required
 
-  assignment: Joi.object({
-    tv_ids: Joi.array().items(Joi.string().min(1).max(100)).min(1).max(50).required(),
-    order: Joi.number().min(0).max(999) // omitted = append to the end of each TV's rotation
-  }),
-
-  reorder: Joi.object({
-    images: Joi.array().items(
-      Joi.object({
-        image_id: Joi.string().min(1).max(100).required(),
-        order: Joi.number().min(0).max(999).required()
-      })
-    ).min(1).max(100).required()
-  }),
-
   upload: Joi.object({
     description: Joi.string().max(1000).allow('').optional(),
     tags: Joi.string().max(500).optional() // Comma-separated string

@@ -1533,6 +1533,7 @@ async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoRe
         };
 
         let _ = fb.display_image(&placeholder);
+        controller.set_current_frame(placeholder).await; // keep /api/preview truthful
         has_displayed_placeholder = true;
     }
     
@@ -1810,6 +1811,7 @@ async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoRe
                 };
 
                 let _ = fb.display_image(&placeholder);
+                controller.set_current_frame(placeholder).await; // keep /api/preview truthful
                 has_displayed_placeholder = true;
             }
         } else {
@@ -1875,68 +1877,38 @@ fn create_info_placeholder_with_orientation(tv_id: &str, ip_address: &str, width
 }
 
 fn create_info_placeholder(tv_id: &str, ip_address: &str, width: u32, height: u32) -> RgbaImage {
-    let mut image = RgbaImage::new(width, height);
-    
-    // Fill with dark blue background
-    for pixel in image.pixels_mut() {
-        *pixel = Rgba([25, 25, 50, 255]);
+    let mut image = RgbaImage::from_pixel(width, height, Rgba([25, 25, 50, 255]));
+
+    // Block font: each character is 8 * size wide (7 + 1 spacing) and 5 * size tall
+    let text_width = |text: &str, size: u32| text.len() as u32 * 8 * size;
+    let draw_centered = |image: &mut RgbaImage, text: &str, y: u32, size: u32, color: Rgba<u8>| {
+        let x = width.saturating_sub(text_width(text, size)) / 2;
+        draw_text(image, text, x, y, size, color);
+    };
+    // Largest size (up to `max`) at which the text fits in 90% of the width
+    let fit = |text: &str, max: u32| (1..=max).rev().find(|&size| text_width(text, size) <= width * 9 / 10).unwrap_or(1);
+
+    // Shown when the TV has no sequence, or nothing in it is on / scheduled now
+    let lines = [
+        ("NOTHING TO SHOW".to_string(), 8, Rgba([255, 255, 255, 255])),
+        (format!("TV ID {}", tv_id), 5, Rgba([255, 255, 0, 255])),
+        (format!("IP {}", ip_address), 6, Rgba([0, 255, 255, 255])),
+    ];
+    let instructions = ["Assign a sequence to this TV,", "or put its clips in rotation,", "on the manager's Sequences page"];
+
+    let mut y = height / 2 - 220;
+    for (text, max_size, color) in lines {
+        let size = fit(&text, max_size);
+        draw_centered(&mut image, &text, y, size, color);
+        y += 5 * size + 40;
     }
-    
-    let char_size = 8;
-    let line_height = char_size * 7; // Slightly tighter spacing
-    let center_x = width / 2;
-    let center_y = height / 2;
-    
-    // Title - establish maximum width
-    let title = "NO IMAGES AVAILABLE";
-    let title_width = title.len() as u32 * (7 * char_size + char_size);
-    let max_chars_for_title_width = title.len();
-    draw_text(&mut image, title, center_x - title_width / 2, center_y - line_height * 3, char_size, Rgba([255, 255, 255, 255]));
-    
-    // TV ID - wrap if longer than title
-    let tv_line = format!("TV ID: {}", tv_id);
-    if tv_line.len() <= max_chars_for_title_width {
-        let tv_width = tv_line.len() as u32 * (7 * char_size + char_size);
-        draw_text(&mut image, &tv_line, center_x - tv_width / 2, center_y - line_height, char_size, Rgba([255, 255, 0, 255]));
-    } else {
-        let tv_lines = wrap_text(&tv_line, max_chars_for_title_width);
-        for (i, line) in tv_lines.iter().enumerate() {
-            let line_width = line.len() as u32 * (7 * char_size + char_size);
-            let y_pos = center_y - line_height + (i as u32 * (5 * char_size + char_size));
-            draw_text(&mut image, line, center_x - line_width / 2, y_pos, char_size, Rgba([255, 255, 0, 255]));
-        }
+    y += 30;
+    for text in instructions {
+        let size = fit(text, 5);
+        draw_centered(&mut image, text, y, size, Rgba([200, 200, 200, 255]));
+        y += 5 * size + 16;
     }
-    
-    // IP Address - wrap if longer than title  
-    let ip_line = format!("IP: {}", ip_address);
-    if ip_line.len() <= max_chars_for_title_width {
-        let ip_width = ip_line.len() as u32 * (7 * char_size + char_size);
-        draw_text(&mut image, &ip_line, center_x - ip_width / 2, center_y, char_size, Rgba([0, 255, 255, 255]));
-    } else {
-        let ip_lines = wrap_text(&ip_line, max_chars_for_title_width);
-        for (i, line) in ip_lines.iter().enumerate() {
-            let line_width = line.len() as u32 * (7 * char_size + char_size);
-            let y_pos = center_y + (i as u32 * (5 * char_size + char_size));
-            draw_text(&mut image, line, center_x - line_width / 2, y_pos, char_size, Rgba([0, 255, 255, 255]));
-        }
-    }
-    
-    // Instructions - wrapped text using title width as constraint
-    let instruction_char_size = char_size - 1;
-    let max_chars_for_instruction = (title_width / (7 * instruction_char_size + instruction_char_size)) as usize;
-    let instruction = "Contact staff to assign images to this display";
-    let instruction_lines = wrap_text(instruction, max_chars_for_instruction);
-    
-    let _total_instruction_height = instruction_lines.len() as u32 * (5 * instruction_char_size + instruction_char_size);
-    let instruction_start_y = center_y + line_height * 2;
-    
-    for (line_idx, line) in instruction_lines.iter().enumerate() {
-        let line_width = line.len() as u32 * (7 * instruction_char_size + instruction_char_size);
-        let line_x = center_x - line_width / 2;
-        let line_y = instruction_start_y + (line_idx as u32 * (5 * instruction_char_size + instruction_char_size));
-        draw_text(&mut image, line, line_x, line_y, instruction_char_size, Rgba([200, 200, 200, 255]));
-    }
-    
+
     image
 }
 

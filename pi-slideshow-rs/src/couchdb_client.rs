@@ -2,8 +2,6 @@ use couch_rs::{Client, database::Database, document::TypedCouchDocument};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::borrow::Cow;
-use crate::image_schedule::ImageSchedule;
-use crate::mqtt_client::ImageInfo;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CouchImage {
@@ -16,17 +14,6 @@ pub struct CouchImage {
     pub original_name: String,
     pub size: u64,
     pub metadata: ImageMetadata,
-    pub assigned_tvs: Vec<String>,
-    // Per-TV playlist position set by the management server ("tv_<id>" -> order)
-    #[serde(default)]
-    pub tv_orders: HashMap<String, u32>,
-    // TVs this image is assigned to but temporarily left out of the rotation
-    #[serde(default)]
-    pub disabled_tvs: Vec<String>,
-    #[serde(default)]
-    pub display_duration: Option<u64>,
-    #[serde(default)]
-    pub schedule: Option<ImageSchedule>,
     #[serde(alias = "upload_date")]
     pub created_at: String,
     #[serde(rename = "_attachments", skip_serializing_if = "Option::is_none")]
@@ -267,54 +254,6 @@ impl CouchDbClient {
             username: username.map(|s| s.to_string()),
             password: password.map(|s| s.to_string()),
         })
-    }
-
-    pub async fn get_images_for_tv(&self, tv_id: &str) -> Result<Vec<ImageInfo>, Box<dyn std::error::Error + Send + Sync>> {
-        println!("Fetching images for TV: {}", tv_id);
-        
-        // Get all documents and filter for images assigned to this TV with timeout
-        let all_docs = tokio::time::timeout(
-            std::time::Duration::from_secs(30),
-            self.images_db.get_all::<serde_json::Value>()
-        ).await
-            .map_err(|_| "CouchDB get_all query timeout after 30 seconds")?
-            .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
-        
-        let mut images_for_tv = Vec::new();
-        
-        for doc in all_docs.rows {
-            // Parse as CouchImage directly
-            if let Ok(image_doc) = serde_json::from_value::<CouchImage>(doc) {
-                // Check if this is an image document assigned to this TV and not disabled for it
-                if image_doc.doc_type == "image"
-                    && image_doc.assigned_tvs.contains(&tv_id.to_string())
-                    && !image_doc.disabled_tvs.contains(&tv_id.to_string())
-                {
-                    let extension = image_doc.extension();
-
-                    let image_info = ImageInfo {
-                        id: image_doc.id.clone(),
-                        path: format!("{}{}", image_doc.id, extension),
-                        // Images without an order for this TV go last
-                        order: image_doc.tv_orders.get(tv_id).copied().unwrap_or(u32::MAX),
-                        url: None, // Not needed for CouchDB attachments
-                        extension: Some(extension),
-                        display_duration: image_doc.display_duration,
-                        schedule: image_doc.schedule.clone(),
-                        clip_id: None,
-                        scene_id: None,
-                    };
-
-                    images_for_tv.push(image_info);
-                }
-            }
-        }
-
-        // Stable sort: images sharing an order keep their CouchDB (_id) order
-        images_for_tv.sort_by(|a, b| a.order.cmp(&b.order));
-        
-        println!("Found {} images for TV {}", images_for_tv.len(), tv_id);
-        Ok(images_for_tv)
     }
 
     pub async fn download_image_attachment(&self, image_id: &str, local_path: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {

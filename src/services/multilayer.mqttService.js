@@ -242,30 +242,6 @@ class MultilayerMqttService extends EventEmitter {
 
   // Send image updates to TV slideshow (uses base 'signage' prefix, not 'signage_dev')
   // This is the command format the Rust slideshow client expects
-  async updateImages(tvId, imageList) {
-    const topic = `signage/tv/${tvId}/command`;
-    const message = JSON.stringify({
-      command: 'update_images',
-      payload: { images: imageList },
-      timestamp: new Date().toISOString()
-    });
-
-    console.log(`📤 MQTT: Sending update_images to ${topic} with ${imageList.length} images`);
-
-    if (!this.connected) {
-      console.warn(`⚠️ MQTT not connected, cannot send update_images to TV ${tvId}`);
-      return;
-    }
-
-    this.client.publish(topic, message, { qos: 1 }, (error) => {
-      if (error) {
-        console.error(`❌ MQTT: Failed to send update_images to ${topic}:`, error);
-      } else {
-        console.log(`✅ MQTT: update_images sent to ${topic}`);
-      }
-    });
-  }
-
   // Generic command sender (uses base 'signage' prefix for Rust client compatibility)
   async sendCommand(tvId, command, payload = {}) {
     const topic = `signage/tv/${tvId}/command`;

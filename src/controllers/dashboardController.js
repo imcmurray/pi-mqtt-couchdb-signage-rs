@@ -52,8 +52,6 @@ class DashboardController {
    *                         type: string
    *                       last_heartbeat:
    *                         type: string
-   *                       assigned_images_count:
-   *                         type: integer
    */
   async getOverview(req, res) {
     const [storedTvs, allImages] = await Promise.all([
@@ -75,8 +73,7 @@ class DashboardController {
     const tvStatus = allTvs.map(tv => ({
       ...tv.toJSON(),
       id: tv._id,
-      current_image_id: tv.current_image,
-      assigned_images_count: allImages.filter(img => img.assigned_tvs.includes(tv._id)).length
+      current_image_id: tv.current_image
     }));
 
     res.json({

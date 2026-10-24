@@ -551,9 +551,6 @@ class DigitalSignageApp {
                     <button class="btn btn-sm btn-warning" onclick="app.controlTv('${tv._id}', 'pause')">
                         <i class="fas fa-pause"></i>
                     </button>
-                    <button class="btn btn-sm btn-secondary" onclick="app.shuffleTvImages('${tv._id}')">
-                        <i class="fas fa-random"></i> Shuffle
-                    </button>
                     <button class="btn btn-sm btn-danger" onclick="app.deleteTv('${tv._id}')">
                         <i class="fas fa-trash"></i>
                     </button>
@@ -975,23 +972,6 @@ class DigitalSignageApp {
         this.showToast(`Failed to ${action} TV`, 'error');
     }
 
-    async shuffleTvImages(tvId) {
-        try {
-            const response = await fetch(`/api/images/shuffle/${tvId}`, { method: 'POST' });
-            
-            if (response.ok) {
-                this.showToast('Images shuffled successfully', 'success');
-                await this.loadImages();
-            } else {
-                const error = await response.json();
-                this.showToast(error.error || 'Failed to shuffle images', 'error');
-            }
-        } catch (error) {
-            console.error('Error shuffling images:', error);
-            this.showToast('Failed to shuffle images', 'error');
-        }
-    }
-
     // Image Management
     assignImage(imageId) {
         this.currentImageId = imageId;
@@ -1095,8 +1075,10 @@ class DigitalSignageApp {
         const query = (document.getElementById('search-images')?.value || '').trim().toLowerCase();
         const tvId = document.getElementById('filter-tv')?.value || '';
 
+        // A TV shows the images in its sequence
+        const sequence = tvId ? this.sequenceForTv(tvId) : null;
         return this.images.filter(image =>
-            (!tvId || image.assigned_tvs.includes(tvId)) &&
+            (!tvId || (sequence?.clips || []).some(clip => clip.ref === image._id)) &&
             (!query ||
                 image.original_name.toLowerCase().includes(query) ||
                 (image.metadata?.description || '').toLowerCase().includes(query))

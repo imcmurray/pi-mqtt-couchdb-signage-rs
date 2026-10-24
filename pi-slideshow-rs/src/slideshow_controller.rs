@@ -31,6 +31,19 @@ pub struct ControllerConfig {
     pub transition_effect: String,
 }
 
+/// The last sequence played, saved in the image folder so the TV can start
+/// playing it without the network
+const SEQUENCE_CACHE_FILE: &str = "sequence-cache.json";
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct SequenceCache {
+    name: String,
+    items: Vec<ImageInfo>,
+    scenes: HashMap<String, Vec<serde_json::Value>>,
+    overlays: Vec<serde_json::Value>,
+    data: LayerData,
+}
+
 #[derive(Debug, Clone)]
 pub struct RegistrationStatus {
     pub is_new: bool,
@@ -58,9 +71,10 @@ pub struct SlideshowController {
     manual_change_at: Arc<RwLock<Option<Instant>>>,
     // Layer Control layers currently applied from the server (by layer_id)
     synced_layer_ids: Arc<RwLock<HashSet<String>>>,
-    // Sequence playback: true while the TV plays a sequence (the old image
-    // playlist and update_images are then ignored)
-    sequence_active: Arc<RwLock<bool>>,
+    // Name of the sequence being played (None: no sequence assigned)
+    sequence_name: Arc<RwLock<Option<String>>>,
+    // Data last loaded for tokens and tables, kept for the offline cache
+    last_data: Arc<RwLock<LayerData>>,
     // Elements of each scene in the sequence, ready to draw
     scene_layers: Arc<RwLock<HashMap<String, Vec<Layer>>>>,
     // Raw layer documents (overlays, scene elements) for image downloads and data sets
@@ -90,7 +104,8 @@ impl Clone for SlideshowController {
             current_frame: self.current_frame.clone(),
             manual_change_at: self.manual_change_at.clone(),
             synced_layer_ids: self.synced_layer_ids.clone(),
-            sequence_active: self.sequence_active.clone(),
+            sequence_name: self.sequence_name.clone(),
+            last_data: self.last_data.clone(),
             scene_layers: self.scene_layers.clone(),
             overlay_values: self.overlay_values.clone(),
             scene_values: self.scene_values.clone(),
@@ -128,7 +143,8 @@ impl SlideshowController {
             current_frame: Arc::new(RwLock::new(None)),
             manual_change_at: Arc::new(RwLock::new(None)),
             synced_layer_ids: Arc::new(RwLock::new(HashSet::new())),
-            sequence_active: Arc::new(RwLock::new(false)),
+            sequence_name: Arc::new(RwLock::new(None)),
+            last_data: Arc::new(RwLock::new(LayerData::default())),
             scene_layers: Arc::new(RwLock::new(HashMap::new())),
             overlay_values: Arc::new(RwLock::new(Vec::new())),
             scene_values: Arc::new(RwLock::new(Vec::new())),
@@ -184,8 +200,11 @@ impl SlideshowController {
             println!("Continuing without registration - TV may not appear in management UI");
         }
         
-        // Load initial images from directory
-        self.scan_local_images().await?;
+        // Play the last known sequence straight away, even if CouchDB is unreachable;
+        // without CouchDB or a cache (standalone use), show the image folder
+        if !self.load_cached_sequence().await && self.couchdb_client.read().await.is_none() {
+            self.scan_local_images().await?;
+        }
         
         // Check if we have images before setting to playing
         if self.images.read().await.is_empty() {
@@ -248,6 +267,9 @@ impl SlideshowController {
         if let Ok(entries) = std::fs::read_dir(&config.image_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
+                if path.file_name().is_some_and(|name| name.to_string_lossy().starts_with("scene-")) {
+                    continue; // a scene snapshot, not an image
+                }
                 if let Some(ext) = path.extension() {
                     if ext.to_string_lossy().to_lowercase() == "png" || 
                        ext.to_string_lossy().to_lowercase() == "jpg" ||
@@ -276,59 +298,6 @@ impl SlideshowController {
         drop(config);
         self.set_all_images(images).await;
         Ok(())
-    }
-
-    async fn fetch_images_from_couchdb(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let config = self.config.read().await;
-        let tv_id = format!("tv_{}", config.tv_id);
-        
-        if let Some(ref couchdb_client) = *self.couchdb_client.read().await {
-            let couchdb_images = couchdb_client.get_images_for_tv(&tv_id).await?;
-            
-            // Always replace local images when CouchDB is available - we only show what's assigned
-            let mut local_images = Vec::new();
-
-            if !couchdb_images.is_empty() {
-                println!("Received {} images from CouchDB for {}", couchdb_images.len(), tv_id);
-
-                for image_info in couchdb_images {
-                    // Get extension from image info
-                    let original_ext = image_info.extension
-                        .as_deref()
-                        .and_then(|ext| if ext.starts_with('.') { Some(&ext[1..]) } else { Some(ext) })
-                        .unwrap_or("png");
-                    
-                    // Use image ID with original extension as local filename
-                    let local_filename = format!("{}.{}", image_info.id, original_ext);
-                    let local_path = Path::new(&config.image_dir).join(&local_filename);
-                    
-                    // Download image attachment from CouchDB if it doesn't exist locally
-                    if !local_path.exists() {
-                        if let Err(e) = couchdb_client.download_image_attachment(&image_info.id, &local_path.to_string_lossy()).await {
-                            eprintln!("Failed to download image attachment {}: {}", image_info.id, e);
-                            continue;
-                        }
-                    }
-
-                    local_images.push(ImageInfo {
-                        path: local_path.to_string_lossy().to_string(),
-                        url: None, // Not needed for CouchDB attachments
-                        ..image_info
-                    });
-                }
-
-                local_images.sort_by(|a, b| a.order.cmp(&b.order));
-                println!("Updated to {} images from CouchDB", local_images.len());
-            } else {
-                println!("No images assigned to {} in CouchDB", tv_id);
-            }
-
-            drop(config);
-            self.set_all_images(local_images).await;
-            Ok(())
-        } else {
-            Err("CouchDB client not initialized".into())
-        }
     }
 
     pub async fn run_command_handler(&mut self) {
@@ -361,13 +330,6 @@ impl SlideshowController {
             SlideshowCommand::Previous => {
                 self.advance_to_previous_image().await;
                 *self.manual_change_at.write().await = Some(Instant::now());
-            }
-            SlideshowCommand::UpdateImages { images } => {
-                if *self.sequence_active.read().await {
-                    println!("Ignoring update_images: this TV plays a sequence");
-                } else {
-                    self.update_images(images).await?;
-                }
             }
             SlideshowCommand::ShowImage { image_id, hold } => {
                 if !self.show_image(&image_id).await {
@@ -542,69 +504,6 @@ impl SlideshowController {
         } else if *current_index >= images.len() {
             *current_index = 0;
         }
-    }
-
-    async fn update_images(&self, new_images: Vec<ImageInfo>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let config = self.config.read().await;
-
-        println!("Updating images: received {} new images", new_images.len());
-
-        // Download new images from CouchDB
-        if let Some(ref couchdb_client) = *self.couchdb_client.read().await {
-            for image_info in &new_images {
-                // Get extension from image info
-                let original_ext = image_info.extension
-                    .as_deref()
-                    .and_then(|ext| if ext.starts_with('.') { Some(&ext[1..]) } else { Some(ext) })
-                    .unwrap_or("png");
-                
-                // Use image ID with original extension as local filename
-                let local_filename = format!("{}.{}", image_info.id, original_ext);
-                let local_path = Path::new(&config.image_dir).join(&local_filename);
-                
-                if !local_path.exists() {
-                    if let Err(e) = couchdb_client.download_image_attachment(&image_info.id, &local_path.to_string_lossy()).await {
-                        eprintln!("Failed to download image attachment {}: {}", image_info.id, e);
-                        continue;
-                    }
-                }
-            }
-        }
-
-        // Update image list with corrected local paths
-        let mut updated_images = Vec::new();
-        for image_info in new_images {
-            // Get extension from image info
-            let original_ext = image_info.extension
-                .as_deref()
-                .and_then(|ext| if ext.starts_with('.') { Some(&ext[1..]) } else { Some(ext) })
-                .unwrap_or("png");
-            
-            let local_filename = format!("{}.{}", image_info.id, original_ext);
-            let local_path = Path::new(&config.image_dir).join(&local_filename);
-            
-            updated_images.push(ImageInfo {
-                path: local_path.to_string_lossy().to_string(),
-                url: None, // Not needed for CouchDB attachments
-                ..image_info
-            });
-        }
-
-        updated_images.sort_by(|a, b| a.order.cmp(&b.order));
-        drop(config);
-        self.set_all_images(updated_images).await;
-
-        // Update state based on image availability
-        let images = self.images.read().await;
-        if images.is_empty() {
-            *self.state.write().await = SlideshowState::Stopped;
-            println!("Image list updated: 0 images - slideshow stopped");
-        } else {
-            *self.state.write().await = SlideshowState::Playing;
-            println!("Image list updated: {} images - slideshow playing", images.len());
-        }
-        
-        Ok(())
     }
 
     async fn update_config(&self, new_config: SlideshowConfig) {
@@ -1086,6 +985,7 @@ impl SlideshowController {
             }
         }
 
+        *self.last_data.write().await = data.clone();
         self.layer_manager.read().await.set_data(data).await;
     }
 
@@ -1309,23 +1209,80 @@ impl SlideshowController {
         values
     }
 
-    /// Play the TV's sequence if it has one; otherwise its image playlist
+    /// Play the TV's sequence; with none assigned the TV shows its info placeholder
     pub async fn refresh_playlist(&self) {
         match self.load_sequence().await {
             Ok(true) => {}
             Ok(false) => {
-                if *self.sequence_active.read().await {
-                    println!("🎞️ No sequence assigned any more; back to the image playlist");
+                if self.sequence_name.write().await.take().is_some() || !self.images.read().await.is_empty() {
+                    println!("🎞️ No sequence assigned; nothing to play");
                 }
-                *self.sequence_active.write().await = false;
                 self.scene_values.write().await.clear();
-                if let Err(e) = self.fetch_images_from_couchdb().await {
-                    eprintln!("Failed to fetch images from CouchDB: {}", e);
+                self.scene_layers.write().await.clear();
+                self.set_all_images(Vec::new()).await;
+                *self.state.write().await = SlideshowState::Stopped;
+                let cache = self.sequence_cache_path().await;
+                if cache.exists() {
+                    let _ = std::fs::remove_file(cache);
                 }
             }
-            // Keep playing what we have (e.g. CouchDB unreachable)
+            // Keep playing what we have (CouchDB unreachable): offline playback
             Err(e) => eprintln!("Failed to load sequence: {}", e),
         }
+    }
+
+    async fn sequence_cache_path(&self) -> PathBuf {
+        self.config.read().await.image_dir.join(SEQUENCE_CACHE_FILE)
+    }
+
+    /// Remember the playing sequence on disk so the TV can start without the network
+    async fn save_sequence_cache(&self, cache: &SequenceCache) {
+        let path = self.sequence_cache_path().await;
+        let temp = path.with_extension("json.tmp");
+        let result = serde_json::to_vec(cache)
+            .map_err(|e| e.to_string())
+            .and_then(|bytes| std::fs::write(&temp, bytes).map_err(|e| e.to_string()))
+            .and_then(|_| std::fs::rename(&temp, &path).map_err(|e| e.to_string()));
+        if let Err(e) = result {
+            eprintln!("Failed to save the sequence cache: {}", e);
+        }
+    }
+
+    /// Start playing the cached sequence (overlays and data included). Returns
+    /// false if there is no usable cache.
+    async fn load_cached_sequence(&self) -> bool {
+        let path = self.sequence_cache_path().await;
+        let cache: SequenceCache = match std::fs::read(&path).map(|bytes| serde_json::from_slice(&bytes)) {
+            Ok(Ok(cache)) => cache,
+            Ok(Err(e)) => {
+                eprintln!("Ignoring unreadable sequence cache: {}", e);
+                return false;
+            }
+            Err(_) => return false,
+        };
+        let image_dir = self.config.read().await.image_dir.clone();
+
+        self.sync_layers(cache.overlays).await;
+        *self.scene_values.write().await = cache.scenes.values().flatten().cloned().collect();
+        *self.scene_layers.write().await = cache.scenes.iter()
+            .map(|(id, elements)| (id.clone(), elements.iter().filter_map(|e| Self::server_layer_to_layer(e, &image_dir)).collect()))
+            .collect();
+        self.layer_manager.read().await.set_data(cache.data.clone()).await;
+        *self.last_data.write().await = cache.data;
+
+        let items: Vec<ImageInfo> = cache.items.into_iter().filter(|item| Path::new(&item.path).exists() || item.scene_id.is_some()).collect();
+        for item in items.iter().filter(|item| item.scene_id.is_some() && !Path::new(&item.path).exists()) {
+            self.save_scene_snapshot(item.scene_id.as_deref().unwrap_or_default(), &item.path).await;
+        }
+        let count = items.len();
+        self.set_all_images(items).await;
+        *self.state.write().await = if count > 0 { SlideshowState::Playing } else { SlideshowState::Stopped };
+        if let Err(e) = self.apply_current_clip().await {
+            eprintln!("Failed to apply current clip: {}", e);
+        }
+        println!("🎞️ Playing cached sequence \"{}\" ({} clips) until CouchDB is reachable", cache.name, count);
+        *self.sequence_name.write().await = Some(cache.name);
+        true
     }
 
     /// Build the play list from the TV's sequence. Ok(false) when none is assigned.
@@ -1340,7 +1297,7 @@ impl SlideshowController {
         let sequence_name;
         {
             let couchdb_client = self.couchdb_client.read().await;
-            let Some(couchdb_client) = couchdb_client.as_ref() else { return Ok(false) };
+            let Some(couchdb_client) = couchdb_client.as_ref() else { return Err("CouchDB is not connected".into()) };
             let Some(sequence) = couchdb_client.get_sequence_for_tv(&tv_id).await? else { return Ok(false) };
             sequence_name = sequence["name"].as_str().unwrap_or("sequence").to_string();
             let clips = sequence["clips"].as_array().cloned().unwrap_or_default();
@@ -1426,9 +1383,15 @@ impl SlideshowController {
             }
         }
 
-        let was_active = *self.sequence_active.read().await;
-        *self.sequence_active.write().await = true;
         let count = items.len();
+        self.save_sequence_cache(&SequenceCache {
+            name: sequence_name.clone(),
+            items: items.clone(),
+            scenes: scene_docs.clone(),
+            overlays: self.overlay_values.read().await.clone(),
+            data: self.last_data.read().await.clone(),
+        }).await;
+        let previous = self.sequence_name.write().await.replace(sequence_name.clone());
         self.set_all_images(items).await;
         if !self.images.read().await.is_empty() && matches!(*self.state.read().await, SlideshowState::Stopped) {
             *self.state.write().await = SlideshowState::Playing;
@@ -1437,7 +1400,7 @@ impl SlideshowController {
         if let Err(e) = self.apply_current_clip().await {
             eprintln!("Failed to apply current clip: {}", e);
         }
-        if !was_active {
+        if previous.as_deref() != Some(sequence_name.as_str()) {
             println!("🎞️ Playing sequence \"{}\" ({} clips)", sequence_name, count);
         }
         Ok(true)
@@ -1578,6 +1541,36 @@ mod tests {
         let previous = SlideshowController::current_image_id(&before, index);
         SlideshowController::restore_current_index(&after, &mut index, previous);
         assert_eq!(index, 3);
+    }
+
+    #[test]
+    fn sequence_cache_round_trips() {
+        use crate::image_schedule::ImageSchedule;
+        let cache = SequenceCache {
+            name: "Lobby".into(),
+            items: vec![
+                ImageInfo {
+                    id: "image_1".into(), path: "/img/image_1.jpg".into(), clip_id: Some("c1".into()),
+                    display_duration: Some(8000),
+                    schedule: Some(ImageSchedule { days_of_week: vec![1, 5], ..Default::default() }),
+                    ..Default::default()
+                },
+                ImageInfo { id: "scene_1".into(), path: "/img/scene-scene_1.png".into(), clip_id: Some("c2".into()), scene_id: Some("scene_1".into()), ..Default::default() },
+            ],
+            scenes: HashMap::from([("scene_1".to_string(), vec![serde_json::json!({ "layer_id": "e1", "content": { "text": "{time}" } })])]),
+            overlays: vec![serde_json::json!({ "layer_id": "seal" })],
+            data: LayerData {
+                values: HashMap::from([("weather".to_string(), "49°F".to_string())]),
+                datasets: HashMap::from([("court_calendar".to_string(), vec![serde_json::json!({ "date": "2026-10-23" })])]),
+            },
+        };
+        let restored: SequenceCache = serde_json::from_slice(&serde_json::to_vec(&cache).unwrap()).unwrap();
+        assert_eq!(restored.name, "Lobby");
+        assert_eq!(restored.items, cache.items);
+        assert_eq!(restored.scenes["scene_1"][0]["content"]["text"], "{time}");
+        assert_eq!(restored.overlays.len(), 1);
+        assert_eq!(restored.data.values["weather"], "49°F");
+        assert_eq!(restored.data.datasets["court_calendar"].len(), 1);
     }
 
     #[test]

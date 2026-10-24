@@ -334,7 +334,7 @@ pub struct LayerManager {
 }
 
 /// Values for {tokens} (weather) and data set rows (court calendar)
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct LayerData {
     pub values: HashMap<String, String>,
     pub datasets: HashMap<String, Vec<serde_json::Value>>,

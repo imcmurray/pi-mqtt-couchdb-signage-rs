@@ -238,39 +238,6 @@ class Image extends BaseModel {
     }
   }
 
-  async updateOrderForTv(tvId, newOrder) {
-    const tv_orders = { ...this.tv_orders, [tvId]: newOrder };
-    return this.update({ tv_orders });
-  }
-
-  async assignToTv(tvId, order = 0) {
-    const assigned_tvs = [...new Set([...this.assigned_tvs, tvId])];
-    const tv_orders = { ...this.tv_orders, [tvId]: order };
-    return this.update({ assigned_tvs, tv_orders });
-  }
-
-  async unassignFromTv(tvId) {
-    const assigned_tvs = this.assigned_tvs.filter(id => id !== tvId);
-    const tv_orders = { ...this.tv_orders };
-    delete tv_orders[tvId];
-    const disabled_tvs = this.disabled_tvs.filter(id => id !== tvId);
-    return this.update({ assigned_tvs, tv_orders, disabled_tvs });
-  }
-
-  async setEnabledForTv(tvId, enabled) {
-    const disabled_tvs = enabled
-      ? this.disabled_tvs.filter(id => id !== tvId)
-      : [...new Set([...this.disabled_tvs, tvId])];
-    return this.update({ disabled_tvs });
-  }
-
-  // tvOrders maps TV ID -> playlist position; TVs left out keep their current position
-  async bulkAssignToTvs(tvIds, tvOrders = {}) {
-    const assigned_tvs = [...new Set([...this.assigned_tvs, ...tvIds])];
-    const tv_orders = { ...this.tv_orders, ...tvOrders };
-    return this.update({ assigned_tvs, tv_orders });
-  }
-
   /**
    * Get image statistics
    * @returns {Promise<Object>} Statistics object
@@ -325,19 +292,6 @@ class Image extends BaseModel {
     }
 
     return true;
-  }
-
-  /**
-   * Get a summary of TV assignments
-   * @returns {Object} Assignment summary
-   */
-  getAssignmentSummary() {
-    return {
-      assignedCount: this.assigned_tvs.length,
-      tvIds: this.assigned_tvs,
-      ordersByTv: this.tv_orders,
-      isAssigned: this.assigned_tvs.length > 0
-    };
   }
 
   /**

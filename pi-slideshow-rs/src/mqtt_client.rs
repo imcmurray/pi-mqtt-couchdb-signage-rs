@@ -82,7 +82,6 @@ pub enum SlideshowCommand {
     Pause,
     Next,
     Previous,
-    UpdateImages { images: Vec<ImageInfo> },
     /// Jump to an image; `hold` pauses on it
     ShowImage { image_id: String, hold: bool },
     UpdateConfig { config: SlideshowConfig },
@@ -282,11 +281,6 @@ impl MqttClient {
             "previous" => SlideshowCommand::Previous,
             "reboot" => SlideshowCommand::Reboot,
             "shutdown" => SlideshowCommand::Shutdown,
-            "update_images" => {
-                let images: Vec<ImageInfo> = serde_json::from_value(mqtt_command.payload["images"].clone())?;
-                println!("📥 MQTT: Received update_images with {} images", images.len());
-                SlideshowCommand::UpdateImages { images }
-            },
             "show_image" => {
                 // A sequence clip (clip_id) or, for the image playlist, an image
                 let image_id = mqtt_command.payload["clip_id"].as_str()
