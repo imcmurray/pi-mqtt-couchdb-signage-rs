@@ -25,6 +25,8 @@ class MultiLayerManager {
         this.selectedLayerId = null;
         this.layers = [];
         this.libraryImages = [];
+        this.liveValues = {};       // weather values for {tokens}
+        this.calendarRows = [];     // court_calendar data set
         this.ws = null;
         this.apiBase = '/api';
         this.drag = null;
@@ -46,6 +48,7 @@ class MultiLayerManager {
 
     async init() {
         await this.loadLibraryImages();
+        await this.loadLiveData();
         await this.loadTVs();
         await this.loadActiveAlerts();
         await this.loadTemplates();
@@ -152,8 +155,152 @@ class MultiLayerManager {
         select.value = current;
     }
 
+    // --- Live data: court calendar rows and weather values ---
+    async loadLiveData() {
+        try {
+            const datasets = await (await fetch(`${this.apiBase}/datasets`)).json();
+            const weather = datasets.find(d => d.dataset_id === 'weather');
+            const calendar = datasets.find(d => d.dataset_id === 'court_calendar');
+            this.liveValues = weather?.values || {};
+
+            document.getElementById('weatherStatus').textContent = weather
+                ? `${weather.values?.location || ''}: ${weather.values?.weather || ''} (updated ${this.timeAgo(weather.updated_at)})`
+                : 'Waiting for the first update…';
+
+            if (calendar) {
+                const full = await (await fetch(`${this.apiBase}/datasets/court_calendar`)).json();
+                this.calendarRows = full.rows || [];
+                const today = this.localDate(new Date());
+                const todayCount = this.calendarRows.filter(r => r.date === today).length;
+                document.getElementById('calendarStatus').textContent =
+                    `${calendar.row_count} hearing(s) loaded, ${todayCount} today · ${calendar.source || 'upload'} · updated ${this.timeAgo(calendar.updated_at)}`;
+            } else {
+                this.calendarRows = [];
+            }
+        } catch (error) {
+            this.log(`Error loading live data: ${error.message}`, 'error');
+        }
+    }
+
+    async uploadCalendar(input) {
+        const file = input.files[0];
+        input.value = '';
+        if (!file) return;
+
+        let json;
+        try {
+            json = JSON.parse(await file.text());
+        } catch (error) {
+            alert(`"${file.name}" isn't valid JSON: ${error.message}`);
+            return;
+        }
+
+        try {
+            const response = await fetch(`${this.apiBase}/datasets/court_calendar?filename=${encodeURIComponent(file.name)}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(json)
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || response.statusText);
+
+            this.log(`Calendar: ${result.message}`);
+            const skipped = result.errors?.length ? `\n\nSkipped:\n${result.errors.join('\n')}` : '';
+            alert(`✅ ${result.message}.${skipped}`);
+            await this.loadLiveData();
+            this.updateScreenPreview();
+        } catch (error) {
+            this.log(`Calendar upload failed: ${error.message}`, 'error');
+            alert(`❌ Calendar upload failed: ${error.message}`);
+        }
+    }
+
+    timeAgo(iso) {
+        const minutes = Math.round((Date.now() - Date.parse(iso)) / 60000);
+        if (!Number.isFinite(minutes)) return 'unknown';
+        if (minutes < 1) return 'just now';
+        if (minutes < 60) return `${minutes} min ago`;
+        return new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    }
+
+    localDate(date) {
+        return [date.getFullYear(), date.getMonth() + 1, date.getDate()]
+            .map((n, i) => (i ? String(n).padStart(2, '0') : n)).join('-');
+    }
+
+    // Mirrors pi-slideshow-rs layer_data::expand_tokens, in the browser's time zone
+    expandTokens(text) {
+        if (!text || !text.includes('{')) return text || '';
+        const now = new Date();
+        const clock = {
+            time: now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
+            time24: now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
+            date: now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }),
+            short_date: now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+            day: now.toLocaleDateString('en-US', { weekday: 'long' }),
+            month: now.toLocaleDateString('en-US', { month: 'long' }),
+            year: String(now.getFullYear())
+        };
+        return text.replace(/\{([A-Za-z0-9_]+)\}/g, (match, name) => clock[name] ?? this.liveValues[name] ?? match);
+    }
+
+    insertToken(token) {
+        const textarea = document.getElementById('layerText');
+        const { selectionStart: start, selectionEnd: end, value } = textarea;
+        textarea.value = value.slice(0, start) + token + value.slice(end);
+        textarea.focus();
+        textarea.selectionStart = textarea.selectionEnd = start + token.length;
+    }
+
+    // First page of a table layer, laid out like the TV draws it
+    renderTablePreview(layer, scale) {
+        const spec = layer.content.table;
+        const today = this.localDate(new Date());
+        const rows = this.calendarRows.filter(row =>
+            spec.filter === 'all' ? true
+                : spec.filter === 'upcoming' ? row.date >= today
+                    : row.date === today);
+        const rowHeight = (spec.rowHeight || 70) * scale;
+        const perPage = Math.max(1, Math.floor((layer.position.height - (spec.rowHeight || 70) * 1.5) / (spec.rowHeight || 70)));
+        const columns = spec.columns.map(c => `${c.width}fr`).join(' ');
+        const cell = (value, field) => {
+            if (field === 'time' && /^\d{2}:\d{2}$/.test(value || '')) {
+                const [h, m] = value.split(':').map(Number);
+                return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+            }
+            return value || '';
+        };
+        const header = spec.columns.map(c => `<span>${this.escapeHtml(c.label)}</span>`).join('');
+        const body = rows.slice(0, perPage).map((row, i) => `
+            <div class="table-preview-row" style="height:${rowHeight}px; grid-template-columns:${columns};
+                 background:${this.cssColor(i % 2 ? spec.altRowBackground : spec.rowBackground)}">
+                ${spec.columns.map(c => `<span>${this.escapeHtml(cell(row[c.field], c.field))}</span>`).join('')}
+            </div>`).join('');
+        const pages = Math.max(1, Math.ceil(rows.length / perPage));
+
+        return `<div class="table-preview" style="color:${this.cssColor(spec.textColor)}; font-size:${(spec.fontSize || 28) * scale}px">
+            <div class="table-preview-row header" style="height:${rowHeight}px; grid-template-columns:${columns};
+                 background:${this.cssColor(spec.headerBackground)}; color:${this.cssColor(spec.headerTextColor)};
+                 font-size:${(spec.headerFontSize || 26) * scale}px">${header}</div>
+            ${body || `<div class="table-preview-empty" style="height:${rowHeight * 2}px">${this.escapeHtml(spec.emptyText || 'Nothing scheduled.')}</div>`}
+            ${pages > 1 ? `<div class="table-preview-page" style="height:${rowHeight / 2}px">Page 1 of ${pages}</div>` : ''}
+        </div>`;
+    }
+
     libraryImageName(imageId) {
         return this.libraryImages.find(img => img._id === imageId)?.original_name || 'Image';
+    }
+
+    // Table layers are laid out by their template; the editor moves/sizes them only
+    setTableMode(table) {
+        const note = document.getElementById('tableLayerNote');
+        document.getElementById('layerForm').classList.toggle('table-mode', !!table);
+        note.hidden = !table;
+        if (table) {
+            note.textContent = `This layer is a table showing the ${table.dataset === 'court_calendar' ? 'Court Calendar' : table.dataset} data set ` +
+                `(${table.filter === 'all' ? 'all dates' : table.filter === 'upcoming' ? 'today and later' : "today's hearings"}, ` +
+                `${table.columns.map(c => c.label).join(', ')}). Upload new data under Live Data; long lists page every ${table.pageSeconds || 12} seconds.`;
+        }
     }
 
     // Image layers show only the image on the TV, so hide the text-only fields
@@ -223,7 +370,9 @@ class MultiLayerManager {
                     <span class="layer-name">${this.escapeHtml(layer.name)}</span>
                     ${layer.visible ? '' : '<span class="layer-badge">Hidden</span>'}
                 </div>
-                <div class="layer-text" title="${layer.content?.image_id ? '' : 'Click to change the text'}">${layer.content?.image_id
+                <div class="layer-text" title="${layer.content?.image_id || layer.content?.table ? '' : 'Click to change the text'}">${layer.content?.table
+                    ? `📅 Table: ${this.escapeHtml(layer.content.table.dataset === 'court_calendar' ? 'Court Calendar' : layer.content.table.dataset)}`
+                    : layer.content?.image_id
                     ? `🖼 ${this.escapeHtml(this.libraryImageName(layer.content.image_id))}`
                     : (layer.content?.text?.trim() ? this.escapeHtml(layer.content.text) : '<em>Colour block (no text)</em>')}</div>
                 <div class="layer-meta">
@@ -263,6 +412,7 @@ class MultiLayerManager {
             const content = layer.content || {};
             const isAlert = this.isAlertLayer(layer);
             const imageId = content.image_id;
+            const table = content.table;
             const classes = ['layer-preview',
                 isAlert ? 'alert-layer' : '',
                 layer.layer_id === this.selectedLayerId ? 'selected' : '',
@@ -289,9 +439,11 @@ class MultiLayerManager {
                     + '<span class="resize-size"></span>'
                 : '';
             return `<div class="${classes}" data-layer-id="${this.escapeHtml(layer.layer_id)}" style="${style}"
-                         title="${this.escapeHtml(layer.name)}">${handles}${imageId
+                         title="${this.escapeHtml(layer.name)}">${handles}${table
+                ? this.renderTablePreview(layer, scale)
+                : imageId
                 ? `<img class="layer-preview-image" src="/api/images/${encodeURIComponent(imageId)}/attachment?width=400" alt="" draggable="false">`
-                : `<span class="layer-preview-text">${this.escapeHtml(content.text)}</span>`}</div>`;
+                : `<span class="layer-preview-text">${this.escapeHtml(this.expandTokens(content.text))}</span>`}</div>`;
         }).join('');
 
         document.getElementById('previewLegend').textContent = [
@@ -701,6 +853,7 @@ class MultiLayerManager {
         document.getElementById('layerBgColor').value = '#000000';
         document.getElementById('layerTextColor').value = '#ffffff';
         this.onLayerImageChange();
+        this.setTableMode(null);
         this.setEditorMode(false);
     }
 
@@ -727,6 +880,7 @@ class MultiLayerManager {
         document.getElementById('layerVisible').checked = layer.visible !== false;
         set('layerImage', content.image_id || '');
         this.onLayerImageChange();
+        this.setTableMode(content.table);
         this.setEditorMode(true);
     }
 
@@ -955,12 +1109,16 @@ class MultiLayerManager {
     }
 
     startStatusUpdates() {
-        // Fallback refresh for layers every 60 seconds (primary updates via WebSocket)
-        setInterval(() => {
+        // Fallback refresh for layers and live data every 60 seconds (primary updates via WebSocket)
+        setInterval(async () => {
+            await this.loadLiveData();
             if (this.selectedTvId) {
                 this.loadLayers();
             }
         }, 60000);
+
+        // Keep {time} in the preview current
+        setInterval(() => this.renderLayers(), 30000);
 
         // Fallback refresh for active alerts every 60 seconds (primary updates via WebSocket)
         setInterval(() => {
@@ -1498,6 +1656,14 @@ function newLayer() {
 
 function onLayerImageChange() {
     manager.onLayerImageChange();
+}
+
+function insertToken(token) {
+    manager.insertToken(token);
+}
+
+function uploadCalendar(input) {
+    manager.uploadCalendar(input);
 }
 
 function animateSelected(type) {

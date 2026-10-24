@@ -5,9 +5,34 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use crate::layer_animation::{AnimationState, AnimationType, AnimationValue};
 use fontdue::{Font, FontSettings};
+use crate::layer_data::{self, TableSpec};
+use crate::mqtt_client::parse_rgba_string;
 
 /// Gap between text and the edge of its layer when aligned to that edge
 const TEXT_INSET: f32 = 10.0;
+
+fn text_width(font: &Font, text: &str, size: f32) -> f32 {
+    text.chars().map(|ch| font.metrics(ch, size).advance_width).sum()
+}
+
+/// The text, shortened with an ellipsis if it is wider than max_width
+fn fit_text(font: &Font, text: &str, size: f32, max_width: f32) -> String {
+    if text_width(font, text, size) <= max_width {
+        return text.to_string();
+    }
+    let ellipsis = '…';
+    let budget = max_width - font.metrics(ellipsis, size).advance_width;
+    let mut width = 0.0;
+    let mut out = String::new();
+    for ch in text.chars() {
+        width += font.metrics(ch, size).advance_width;
+        if width > budget {
+            break;
+        }
+        out.push(ch);
+    }
+    format!("{}{}", out.trim_end(), ellipsis)
+}
 
 /// Fonts the Layer Control editor offers: (name, regular file, bold file).
 /// These ship with Raspberry Pi OS (fonts-dejavu-core, fonts-liberation2).
@@ -71,6 +96,7 @@ pub enum LayerContent {
         #[serde(default)]
         bold: bool,
     },
+    Table(TableSpec),       // Rows from a data set (e.g. the court calendar)
     Empty,                  // No content
 }
 
@@ -299,7 +325,20 @@ pub struct LayerManager {
     font_cache: Arc<RwLock<HashMap<String, Font>>>,
     emoji_font_cache: Arc<RwLock<Option<Font>>>,
     transition_frame: Arc<RwLock<Option<RgbaImage>>>,
+    data: Arc<RwLock<LayerData>>,
+    // Clock minute + table pages shown in the last composite; a change means redraw
+    last_dynamic_key: Arc<RwLock<String>>,
 }
+
+/// Values for {tokens} (weather) and data set rows (court calendar)
+#[derive(Debug, Default)]
+pub struct LayerData {
+    pub values: HashMap<String, String>,
+    pub datasets: HashMap<String, Vec<serde_json::Value>>,
+}
+
+/// Space between a table cell's edge and its text
+const CELL_PADDING: f32 = 14.0;
 
 impl LayerManager {
     pub fn new(width: u32, height: u32, orientation: String) -> Self {
@@ -323,7 +362,38 @@ impl LayerManager {
             font_cache: Arc::new(RwLock::new(HashMap::new())),
             emoji_font_cache: Arc::new(RwLock::new(None)),
             transition_frame: Arc::new(RwLock::new(None)),
+            data: Arc::new(RwLock::new(LayerData::default())),
+            last_dynamic_key: Arc::new(RwLock::new(String::new())),
         }
+    }
+
+    pub async fn set_data(&self, data: LayerData) {
+        *self.data.write().await = data;
+        *self.composite_dirty.write().await = true;
+    }
+
+    /// What the live layers would show right now: the minute (if any text uses
+    /// the clock) and each table's page
+    async fn dynamic_key(&self) -> String {
+        let config = self.config.read().await;
+        let data = self.data.read().await;
+        let now = chrono::Local::now().fixed_offset();
+        let mut key = String::new();
+        for layer in config.layers.values().filter(|l| l.visible) {
+            match &layer.content {
+                LayerContent::DataRow { text, .. } if layer_data::uses_clock(text) => {
+                    key.push_str(&now.format("%Y%m%d%H%M|").to_string());
+                }
+                LayerContent::Table(spec) => {
+                    let rows = data.datasets.get(&spec.dataset).map(Vec::as_slice).unwrap_or(&[]);
+                    let count = layer_data::table_rows(spec, rows, now.date_naive()).len();
+                    let (_, _, page) = layer_data::paging(spec, layer.position.height, count, now.timestamp() as u64);
+                    key.push_str(&format!("{}:{}:{}|", layer.id, now.date_naive(), page));
+                }
+                _ => {}
+            }
+        }
+        key
     }
 
     pub async fn add_layer(&self, mut layer: Layer) -> Result<(), String> {
@@ -628,8 +698,13 @@ impl LayerManager {
             }
             LayerContent::DataRow { text, background_color, text_color, font_size, alignment, vertical_alignment, font_family, bold } => {
                 let font = self.get_or_load_font(font_family, *bold).await;
-                self.render_data_row_layer(layer, text, *background_color, *text_color, *font_size, alignment, vertical_alignment, font, composite).await
+                let text = {
+                    let data = self.data.read().await;
+                    layer_data::expand_tokens(text, &chrono::Local::now().fixed_offset(), &data.values)
+                };
+                self.render_data_row_layer(layer, &text, *background_color, *text_color, *font_size, alignment, vertical_alignment, font, composite).await
             }
+            LayerContent::Table(spec) => self.render_table_layer(layer, spec, composite).await,
             LayerContent::Empty => Ok(()),
         }
     }
@@ -656,6 +731,101 @@ impl LayerManager {
         // Apply layer to composite with opacity
         self.blend_layer_onto_composite(&layer_image, layer, composite);
         Ok(())
+    }
+
+    async fn render_table_layer(&self, layer: &Layer, spec: &TableSpec, composite: &mut RgbaImage) -> Result<(), String> {
+        let font = self.get_or_load_font(&spec.font_family, false).await?;
+        let bold = self.get_or_load_font(&spec.font_family, true).await.unwrap_or_else(|_| font.clone());
+        let now = chrono::Local::now().fixed_offset();
+        let data = self.data.read().await;
+        let all_rows = data.datasets.get(&spec.dataset).map(Vec::as_slice).unwrap_or(&[]);
+        let rows = layer_data::table_rows(spec, all_rows, now.date_naive());
+
+        let pos = &layer.position;
+        let row_height = spec.row_height.max(20);
+        let (per_page, pages, page) = layer_data::paging(spec, pos.height, rows.len(), now.timestamp() as u64);
+        let text_color = parse_rgba_string(&spec.text_color);
+        let opacity = layer.opacity;
+
+        // Header
+        self.fill_rect(pos.x, pos.y, pos.width, row_height, parse_rgba_string(&spec.header_background), opacity, composite);
+        let header_color = parse_rgba_string(&spec.header_text_color);
+        let mut x = pos.x;
+        for column in &spec.columns {
+            let label = fit_text(&bold, &column.label, spec.header_font_size as f32, column.width as f32 - 2.0 * CELL_PADDING);
+            self.draw_text(&bold, &label, spec.header_font_size as f32, x as f32 + CELL_PADDING, pos.y, row_height, x + column.width, header_color, opacity, composite);
+            x += column.width;
+        }
+
+        // Rows on the current page, striped
+        let row_colors = [parse_rgba_string(&spec.row_background), parse_rgba_string(&spec.alt_row_background)];
+        for (i, row) in rows.iter().skip(page * per_page).take(per_page).enumerate() {
+            let y = pos.y + row_height * (i as u32 + 1);
+            self.fill_rect(pos.x, y, pos.width, row_height, row_colors[i % 2], opacity, composite);
+            let mut x = pos.x;
+            for column in &spec.columns {
+                let value = layer_data::cell_text(row, &column.field);
+                let value = fit_text(&font, &value, spec.font_size as f32, column.width as f32 - 2.0 * CELL_PADDING);
+                self.draw_text(&font, &value, spec.font_size as f32, x as f32 + CELL_PADDING, y, row_height, x + column.width, text_color, opacity, composite);
+                x += column.width;
+            }
+        }
+
+        let size = spec.font_size as f32;
+        if rows.is_empty() {
+            let message = fit_text(&font, &spec.empty_text, size, pos.width as f32 - 2.0 * CELL_PADDING);
+            let left = pos.x as f32 + (pos.width as f32 - text_width(&font, &message, size)) / 2.0;
+            self.draw_text(&font, &message, size, left, pos.y + row_height, row_height * 2, pos.x + pos.width, text_color, opacity, composite);
+        } else if pages > 1 {
+            let label = format!("Page {} of {}", page + 1, pages);
+            let small = size * 0.75;
+            let left = (pos.x + pos.width) as f32 - CELL_PADDING - text_width(&font, &label, small);
+            self.draw_text(&font, &label, small, left, pos.y + row_height * (per_page as u32 + 1), row_height / 2, pos.x + pos.width, text_color, opacity, composite);
+        }
+        Ok(())
+    }
+
+    fn fill_rect(&self, x: u32, y: u32, width: u32, height: u32, color: (u8, u8, u8, u8), opacity: f32, composite: &mut RgbaImage) {
+        let pixel = Rgba([color.0, color.1, color.2, (color.3 as f32 * opacity) as u8]);
+        for py in y..(y + height).min(composite.height()) {
+            for px in x..(x + width).min(composite.width()) {
+                let existing = *composite.get_pixel(px, py);
+                composite.put_pixel(px, py, self.blend_pixels(existing, pixel));
+            }
+        }
+    }
+
+    /// One line of text vertically centred in the band [top, top + height),
+    /// clipped on the right at clip_right
+    #[allow(clippy::too_many_arguments)]
+    fn draw_text(&self, font: &Font, text: &str, size: f32, left: f32, top: u32, height: u32, clip_right: u32, color: (u8, u8, u8, u8), opacity: f32, composite: &mut RgbaImage) {
+        let (ascent, descent) = font.horizontal_line_metrics(size)
+            .map(|m| (m.ascent, m.descent))
+            .unwrap_or((size * 0.8, -size * 0.2));
+        let baseline = top as f32 + (height as f32 - (ascent - descent)) / 2.0 + ascent;
+        let clip_right = clip_right.min(composite.width()) as i32;
+        let bottom = (top + height).min(composite.height()) as i32;
+
+        let mut pen = left;
+        for ch in text.chars() {
+            let (metrics, bitmap) = font.rasterize(ch, size);
+            let glyph_x = (pen + metrics.xmin as f32).round() as i32;
+            let glyph_y = (baseline - metrics.height as f32 - metrics.ymin as f32).round() as i32;
+            for (i, &coverage) in bitmap.iter().enumerate() {
+                if coverage == 0 {
+                    continue;
+                }
+                let px = glyph_x + (i % metrics.width) as i32;
+                let py = glyph_y + (i / metrics.width) as i32;
+                if px < 0 || py < top as i32 || px >= clip_right || py >= bottom {
+                    continue;
+                }
+                let alpha = (coverage as f32 / 255.0) * (color.3 as f32 / 255.0) * opacity;
+                let existing = *composite.get_pixel(px as u32, py as u32);
+                composite.put_pixel(px as u32, py as u32, self.blend_pixels(existing, Rgba([color.0, color.1, color.2, (alpha * 255.0) as u8])));
+            }
+            pen += metrics.advance_width;
+        }
     }
 
     async fn render_color_layer(&self, layer: &Layer, r: u8, g: u8, b: u8, a: u8, composite: &mut RgbaImage) -> Result<(), String> {
@@ -841,6 +1011,12 @@ impl LayerManager {
     #[allow(dead_code)]
     /// True when layers changed or are animating since the last composite
     pub async fn needs_redraw(&self) -> bool {
+        // Clock ticked over or a table turned its page
+        let key = self.dynamic_key().await;
+        if *self.last_dynamic_key.read().await != key {
+            *self.last_dynamic_key.write().await = key;
+            *self.composite_dirty.write().await = true;
+        }
         if *self.composite_dirty.read().await {
             return true;
         }

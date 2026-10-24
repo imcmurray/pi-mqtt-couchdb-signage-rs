@@ -213,6 +213,148 @@
     box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.15);
 }
 
+#layers-section .token-chips {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    margin-top: 6px;
+}
+
+#layers-section .token-chips-label {
+    font-size: 12px;
+    color: var(--ml-text-muted);
+    margin-right: 2px;
+}
+
+#layers-section .token-chip {
+    font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace;
+    padding: 1px 6px;
+    border: 1px solid var(--ml-border);
+    border-radius: 4px;
+    background: var(--ml-background);
+    color: var(--ml-text);
+    cursor: pointer;
+}
+
+#layers-section .token-chip:hover {
+    border-color: var(--ml-primary);
+}
+
+#layers-section .table-layer-note {
+    padding: 10px 12px;
+    border-radius: 6px;
+    background: var(--ml-background);
+    border: 1px solid var(--ml-border);
+    font-size: 13px;
+    color: var(--ml-text);
+}
+
+#layers-section #layerForm.table-mode .text-only,
+#layers-section #layerForm.table-mode .layer-image-picker,
+#layers-section #layerForm.table-mode label[for="layerImage"],
+#layers-section #layerForm.table-mode label[for="layerImage"] + .layer-image-picker + .form-hint {
+    display: none;
+}
+
+#layers-section .data-panel {
+    background: var(--ml-surface);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 24px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    border: 1px solid var(--ml-border);
+}
+
+#layers-section .data-panel h3 {
+    margin-bottom: 4px;
+    color: var(--ml-primary);
+    font-size: 18px;
+    font-weight: 600;
+}
+
+#layers-section .data-panel-hint {
+    margin-bottom: 16px;
+    font-size: 13px;
+    color: var(--ml-text-muted);
+}
+
+#layers-section .data-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+}
+
+#layers-section .data-card {
+    padding: 16px;
+    border: 1px solid var(--ml-border);
+    border-radius: 8px;
+    background: var(--ml-background);
+}
+
+#layers-section .data-card-title {
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+
+#layers-section .data-card-status {
+    font-size: 14px;
+    margin-bottom: 10px;
+}
+
+#layers-section .data-card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+#layers-section .data-card-actions label.btn {
+    cursor: pointer;
+    margin: 0;
+}
+
+#layers-section .table-preview {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    pointer-events: none;
+    font-family: 'Liberation Sans', Arial, sans-serif;
+    line-height: 1.1;
+}
+
+#layers-section .table-preview-row {
+    display: grid;
+    align-items: center;
+    flex: none;
+}
+
+#layers-section .table-preview-row span {
+    padding: 0 0.5em;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+#layers-section .table-preview-row.header {
+    font-weight: 700;
+}
+
+#layers-section .table-preview-empty,
+#layers-section .table-preview-page {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+}
+
+#layers-section .table-preview-page {
+    justify-content: flex-end;
+    padding-right: 0.5em;
+    font-size: 0.75em;
+}
+
 #layers-section .optional-label {
     font-weight: normal;
     font-size: 12px;

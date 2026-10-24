@@ -288,7 +288,18 @@
                                 <div class="form-group text-only">
                                     <label for="layerText">Text <span class="optional-label">(optional; leave blank for a plain colour block)</span></label>
                                     <textarea id="layerText" class="form-input" rows="2" placeholder="e.g., 9:00 AM - Room 101 - Smith vs. Johnson"></textarea>
+                                    <div class="token-chips" aria-label="Insert a live value">
+                                        <span class="token-chips-label">Live values:</span>
+                                        <button type="button" class="token-chip" onclick="insertToken('{time}')">{time}</button>
+                                        <button type="button" class="token-chip" onclick="insertToken('{date}')">{date}</button>
+                                        <button type="button" class="token-chip" onclick="insertToken('{day}')">{day}</button>
+                                        <button type="button" class="token-chip" onclick="insertToken('{short_date}')">{short_date}</button>
+                                        <button type="button" class="token-chip" onclick="insertToken('{weather}')">{weather}</button>
+                                        <button type="button" class="token-chip" onclick="insertToken('{temp}')">{temp}</button>
+                                        <button type="button" class="token-chip" onclick="insertToken('{conditions}')">{conditions}</button>
+                                    </div>
                                 </div>
+                                <p class="table-layer-note" id="tableLayerNote" hidden></p>
                                 <div class="editor-grid">
                                     <div class="form-group"><label for="layerX">X</label><input type="number" id="layerX" class="form-input" min="0" max="1920" value="0"></div>
                                     <div class="form-group"><label for="layerY">Y</label><input type="number" id="layerY" class="form-input" min="0" max="1920" value="100"></div>
@@ -363,6 +374,30 @@
                             <div class="form-group">
                                 <label for="animDuration">Duration (ms):</label>
                                 <input type="number" id="animDuration" class="form-input" value="500" min="100" max="3000">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="data-panel">
+                        <h3>Live Data</h3>
+                        <p class="data-panel-hint">Feeds the Court Calendar template's table and the live values in layer text. TVs refresh within seconds of a change and keep the last data if the network drops.</p>
+                        <div class="data-cards">
+                            <div class="data-card">
+                                <div class="data-card-title">📅 Court Calendar</div>
+                                <div class="data-card-status" id="calendarStatus">No calendar uploaded yet</div>
+                                <div class="data-card-actions">
+                                    <label class="btn btn-primary btn-sm">
+                                        Upload calendar JSON
+                                        <input type="file" id="calendarFile" accept=".json,application/json" hidden onchange="uploadCalendar(this)">
+                                    </label>
+                                    <a class="btn btn-secondary btn-sm" href="/api/datasets/court_calendar/sample" download>Download sample</a>
+                                </div>
+                                <small class="form-hint">One entry per hearing with: courtroom, date, time, case_number, case_title, reason, movant. Common alternatives (e.g. "Courtroom Name", "Hearing Date", "Reason for Hearing", "moving party") are recognised.</small>
+                            </div>
+                            <div class="data-card">
+                                <div class="data-card-title">🌤️ Weather</div>
+                                <div class="data-card-status" id="weatherStatus">Waiting for the first update…</div>
+                                <small class="form-hint">National Weather Service, refreshed every 15 minutes. Use {weather}, {temp}, {conditions} or {location} in layer text.</small>
                             </div>
                         </div>
                     </div>

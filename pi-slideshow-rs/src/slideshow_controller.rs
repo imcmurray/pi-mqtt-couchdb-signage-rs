@@ -5,7 +5,8 @@ use tokio::sync::{broadcast, mpsc, RwLock};
 use crate::mqtt_client::{AlertData, ImageInfo, MqttClient, SlideshowCommand, SlideshowConfig, TvStatus, parse_rgba_string};
 use std::collections::HashSet;
 use crate::couchdb_client::CouchDbClient;
-use crate::layer_manager::{LayerManager, LayerConfig, Layer, LayerContent, LayerType};
+use crate::layer_manager::{LayerManager, LayerConfig, Layer, LayerContent, LayerData, LayerType};
+use crate::layer_data::TableSpec;
 
 #[derive(Debug, Clone)]
 pub enum SlideshowState {
@@ -970,6 +971,7 @@ impl SlideshowController {
     pub async fn sync_layers(&self, server_layers: Vec<serde_json::Value>) {
         let image_dir = self.config.read().await.image_dir.clone();
         self.download_layer_images(&server_layers, &image_dir).await;
+        self.load_layer_data(&server_layers).await;
 
         let layers: Vec<Layer> = server_layers
             .iter()
@@ -1009,6 +1011,50 @@ impl SlideshowController {
 
     fn layer_image_id(value: &serde_json::Value) -> Option<&str> {
         value["content"]["image_id"].as_str().filter(|id| !id.is_empty())
+    }
+
+    /// Weather values for {tokens} and the rows of every data set a table layer
+    /// shows. If CouchDB can't be reached, the last data stays on screen.
+    async fn load_layer_data(&self, server_layers: &[serde_json::Value]) {
+        let couchdb_client = self.couchdb_client.read().await;
+        let Some(couchdb_client) = couchdb_client.as_ref() else { return };
+
+        let mut data = LayerData::default();
+        match couchdb_client.get_dataset("weather").await {
+            Ok(Some(weather)) => {
+                if let Some(values) = weather["values"].as_object() {
+                    for (name, value) in values {
+                        if let Some(value) = value.as_str() {
+                            data.values.insert(name.clone(), value.to_string());
+                        }
+                    }
+                }
+            }
+            Ok(None) => {}
+            Err(e) => {
+                eprintln!("Failed to load weather data: {}", e);
+                return;
+            }
+        }
+
+        let dataset_ids: HashSet<&str> = server_layers.iter()
+            .filter_map(|layer| layer["content"]["table"]["dataset"].as_str())
+            .collect();
+        for id in dataset_ids {
+            match couchdb_client.get_dataset(id).await {
+                Ok(dataset) => {
+                    let rows = dataset.and_then(|d| d["rows"].as_array().cloned()).unwrap_or_default();
+                    println!("📊 Loaded data set {} ({} rows)", id, rows.len());
+                    data.datasets.insert(id.to_string(), rows);
+                }
+                Err(e) => {
+                    eprintln!("Failed to load data set {}: {}", id, e);
+                    return;
+                }
+            }
+        }
+
+        self.layer_manager.read().await.set_data(data).await;
     }
 
     /// Fetch any layer images not already cached locally
@@ -1056,6 +1102,14 @@ impl SlideshowController {
                 content["fontFamily"].as_str().unwrap_or(""),
                 content["fontWeight"].as_str() == Some("bold"),
             );
+        if let Ok(mut spec) = serde_json::from_value::<TableSpec>(content["table"].clone()) {
+            if !spec.dataset.is_empty() {
+                if spec.font_family.is_empty() {
+                    spec.font_family = content["fontFamily"].as_str().unwrap_or("").to_string();
+                }
+                layer.content = LayerContent::Table(spec);
+            }
+        }
         if let Some(image_id) = Self::layer_image_id(value) {
             layer.content = LayerContent::ImagePath(Self::layer_image_path(image_dir, image_id).to_string_lossy().to_string());
         }

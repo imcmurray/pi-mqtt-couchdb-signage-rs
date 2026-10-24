@@ -24,7 +24,16 @@ const layerSchema = Joi.object({
     fontWeight: Joi.string().valid('normal', 'bold').default('normal'),
     padding: Joi.number().min(0).max(50).default(10),
     alignment: Joi.string().valid('left', 'center', 'right').default('left'),
-    verticalAlignment: Joi.string().valid('top', 'middle', 'bottom').default('middle')
+    verticalAlignment: Joi.string().valid('top', 'middle', 'bottom').default('middle'),
+    // Table drawn from a data set (e.g. the court calendar); see builtinPresets
+    table: Joi.object({
+      dataset: Joi.string().max(50).required(),
+      columns: Joi.array().items(Joi.object({
+        field: Joi.string().max(50).required(),
+        label: Joi.string().allow('').max(50).required(),
+        width: Joi.number().min(20).max(1920).required()
+      })).min(1).max(12).required()
+    }).unknown(true)
   }).required(), // no text and no image = a plain colour block
   position: Joi.object({
     x: Joi.number().min(0).required(),

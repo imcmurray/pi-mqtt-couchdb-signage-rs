@@ -509,6 +509,23 @@ impl CouchDbClient {
         Ok(body["docs"].as_array().cloned().unwrap_or_default())
     }
 
+    /// A data set (`dataset_<id>` in the layers database), or None if it doesn't exist
+    pub async fn get_dataset(&self, dataset_id: &str) -> Result<Option<serde_json::Value>, Box<dyn std::error::Error + Send + Sync>> {
+        let url = format!("{}/{}/dataset_{}", self.get_server_url(), self.layers_database_name, dataset_id);
+        let mut request = reqwest::Client::new().get(&url).timeout(std::time::Duration::from_secs(10));
+        if let (Some(user), Some(pass)) = (&self.username, &self.password) {
+            request = request.basic_auth(user, Some(pass));
+        }
+        let response = request.send().await?;
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        if !response.status().is_success() {
+            return Err(format!("CouchDB get dataset_{} failed: {}", dataset_id, response.status()).into());
+        }
+        Ok(Some(response.json().await?))
+    }
+
     fn get_server_url(&self) -> &str {
         &self.server_url
     }

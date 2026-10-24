@@ -225,6 +225,7 @@ app.use('/api/alerts', alertRoutes); // Emergency alert routes
 app.use('/api/hearings', courtHearingRoutes); // Court hearing management routes
 app.use('/api/presets', presetRoutes); // Zone preset templates
 app.use('/api/bulk', bulkRoutes); // Bulk operations for multi-TV management
+app.use('/api/datasets', require('./routes/datasetRoutes')); // Court calendar + weather data for live layers
 
 // WebSocket handling for real-time updates
 wss.on('connection', (ws) => {
@@ -359,6 +360,10 @@ async function startServer() {
     // Start batch scheduler
     console.log('Starting batch scheduler...');
     batchScheduler.start();
+
+    // Weather for {weather}/{temp} layer tokens
+    console.log('Starting weather service...');
+    require('./services/weatherService').start();
 
     // Start HTTP server
     const port = config.server.port;

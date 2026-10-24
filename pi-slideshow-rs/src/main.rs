@@ -55,6 +55,7 @@ mod layer_manager;
 mod layer_animation;
 mod transition_precompute;
 mod image_schedule;
+mod layer_data;
 
 use transition_precompute::TransitionPrecomputer;
 

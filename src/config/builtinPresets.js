@@ -430,7 +430,9 @@ const BUILTIN_PRESETS = [
         tags: ['zone-br', 'quadrant-4']
       }
     ]
-  }
+  },
+
+  ...require('./courthousePresets')
 ];
 
 module.exports = BUILTIN_PRESETS;
