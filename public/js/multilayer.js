@@ -7,6 +7,7 @@ const DRAG_SNAP = 10;
 const MIN_LAYER_SIZE = 20;
 const RESIZE_CORNERS = ['nw', 'ne', 'sw', 'se'];
 const CORNER_GRAB_PX = 14;  // how close (screen px) to a layer's corner counts as grabbing it
+const CENTER_SNAP = 12;     // how close (TV px) a dragged layer's middle must be to snap to the screen's centre
 // Reordering renumbers priorities in steps: above the slideshow (1), below alerts (150+)
 const PRIORITY_STEP = 10;
 // Browser stand-ins for the fonts the TV draws with (metric-compatible where possible).
@@ -741,7 +742,15 @@ class MultiLayerManager {
                 x: Math.min(Math.max(snap(drag.layer.position.x + dx), 0), SCREEN_WIDTH - width),
                 y: Math.min(Math.max(snap(drag.layer.position.y + dy), 0), SCREEN_HEIGHT - height)
             };
+            // Snap to the screen's centre lines (the grid alone can step past them)
+            if (Math.abs(drag.rect.x + width / 2 - SCREEN_WIDTH / 2) <= CENTER_SNAP) {
+                drag.rect.x = Math.round((SCREEN_WIDTH - width) / 2);
+            }
+            if (Math.abs(drag.rect.y + height / 2 - SCREEN_HEIGHT / 2) <= CENTER_SNAP) {
+                drag.rect.y = Math.round((SCREEN_HEIGHT - height) / 2);
+            }
         }
+        this.showCenterGuides(drag.rect);
 
         const { x, y, width, height } = drag.rect;
         Object.assign(drag.element.style, {
@@ -753,9 +762,27 @@ class MultiLayerManager {
         drag.element.classList.add(drag.corner ? 'resizing' : 'dragging');
     }
 
+    // Dashed lines across the preview while a dragged layer sits on the screen's centre
+    showCenterGuides(rect) {
+        const screen = document.getElementById('screenPreview');
+        const centred = {
+            vertical: !!rect && Math.abs(rect.x + rect.width / 2 - SCREEN_WIDTH / 2) <= 1,
+            horizontal: !!rect && Math.abs(rect.y + rect.height / 2 - SCREEN_HEIGHT / 2) <= 1
+        };
+        for (const [axis, on] of Object.entries(centred)) {
+            const guide = screen.querySelector(`.center-guide.${axis}`);
+            if (on && !guide) {
+                screen.insertAdjacentHTML('beforeend', `<div class="center-guide ${axis}"></div>`);
+            } else if (!on) {
+                guide?.remove();
+            }
+        }
+    }
+
     async onPreviewPointerUp() {
         const drag = this.drag;
         this.setPeek(null);
+        this.showCenterGuides(null);
         if (!drag) return;
         this.drag = null;
 
@@ -881,7 +908,7 @@ class MultiLayerManager {
         screen.addEventListener('pointerdown', e => this.onPreviewPointerDown(e));
         screen.addEventListener('pointermove', e => this.onPreviewPointerMove(e));
         screen.addEventListener('pointerup', () => this.onPreviewPointerUp());
-        screen.addEventListener('pointercancel', () => { this.drag = null; this.setPeek(null); this.renderLayers(); });
+        screen.addEventListener('pointercancel', () => { this.drag = null; this.setPeek(null); this.showCenterGuides(null); this.renderLayers(); });
         screen.addEventListener('pointerleave', () => { if (!this.drag) this.setPeek(null); });
 
         // Font sizes in the preview follow its width

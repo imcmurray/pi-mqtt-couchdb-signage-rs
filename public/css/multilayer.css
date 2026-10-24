@@ -1875,3 +1875,26 @@
     border-color: #f59e0b;
     background: rgba(245, 158, 11, 0.1);
 }
+
+/* Centre guides while dragging a layer onto the middle of the screen */
+:is(#layers-section, #scenes-section) .center-guide {
+    position: absolute;
+    z-index: 100001;
+    pointer-events: none;
+}
+
+:is(#layers-section, #scenes-section) .center-guide.vertical {
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    border-left: 2px dashed #ec4899;
+    transform: translateX(-1px);
+}
+
+:is(#layers-section, #scenes-section) .center-guide.horizontal {
+    left: 0;
+    right: 0;
+    top: 50%;
+    border-top: 2px dashed #ec4899;
+    transform: translateY(-1px);
+}
