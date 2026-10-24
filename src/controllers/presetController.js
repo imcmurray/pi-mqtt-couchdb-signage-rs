@@ -36,6 +36,12 @@ const createPresetSchema = Joi.object({
   tags: Joi.array().items(Joi.string())
 });
 
+const saveLayoutSchema = Joi.object({
+  name: Joi.string().trim().required().min(3).max(100),
+  description: Joi.string().allow('').max(500),
+  category: Joi.string().valid('court', 'emergency', 'info', 'layout', 'custom').default('custom')
+});
+
 const applyPresetSchema = Joi.object({
   override_existing: Joi.boolean().default(false)
 });
@@ -1236,14 +1242,15 @@ async function applyPresetToMultipleTVs(req, res) {
 async function saveCurrentLayoutAsPreset(req, res) {
   try {
     const { tvId } = req.params;
-    const { name, description, category } = req.body;
 
-    if (!name) {
+    const { error, value } = saveLayoutSchema.validate(req.body);
+    if (error) {
       return res.status(400).json({
         success: false,
-        error: 'Preset name is required'
+        error: error.details[0].message
       });
     }
+    const { name, description, category } = value;
 
     // Verify TV exists
     const tv = await TV.findById(tvId);
@@ -1254,8 +1261,8 @@ async function saveCurrentLayoutAsPreset(req, res) {
       });
     }
 
-    // Get current layers for TV
-    const layers = await Layer.findByTv(tvId);
+    // Current Layer Control layers (alert banners come and go on their own)
+    const layers = (await Layer.findByTv(tvId)).filter(layer => !Layer.isAlertLayer(layer));
 
     if (layers.length === 0) {
       return res.status(400).json({
@@ -1273,19 +1280,24 @@ async function saveCurrentLayoutAsPreset(req, res) {
       priority: layer.priority,
       visible: layer.visible,
       opacity: layer.opacity,
-      tags: layer.tags ? layer.tags.filter(tag => !tag.startsWith('preset:')) : [],
+      tags: (layer.tags || []).filter(tag =>
+        !tag.startsWith('preset:') &&
+        !tag.startsWith('from-preset') &&
+        !tag.startsWith('from-tv:') &&
+        !tag.startsWith('from-layer:')
+      ),
       metadata: {}
     }));
 
     // Create preset
     const preset = new Preset({
       name,
-      description: description || `Saved from ${tv.tv_id}`,
+      description: description || `Saved from ${tv.name}`,
       category: category || 'custom',
       layers: presetLayers,
       is_builtin: false,
       created_by: 'user',
-      tags: ['saved-layout', `from-tv:${tv.tv_id}`]
+      tags: ['saved-layout', `from-tv:${tv._id}`]
     });
 
     await preset.save();

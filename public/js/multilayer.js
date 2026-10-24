@@ -177,8 +177,8 @@ class MultiLayerManager {
     }
 
     renderLayers() {
-        // Re-rendering mid-drag would drop the element being dragged
-        if (this.drag) return;
+        // Re-rendering mid-drag or mid-edit would drop the element in use
+        if (this.drag || this.inlineEdit) return;
         this.updateLayersList();
         this.updateScreenPreview();
         this.updateLayerCount();
@@ -198,13 +198,13 @@ class MultiLayerManager {
             const { x, y, width, height } = layer.position;
             return `
             <div class="layer-item ${this.selectedLayerId === layer.layer_id ? 'selected' : ''} ${layer.visible ? '' : 'hidden-layer'}"
-                 onclick="selectLayer('${id}')">
+                 data-layer-id="${id}" onclick="layerItemClicked(event, '${id}')">
                 <div class="layer-item-header">
                     <span class="layer-swatch" style="background: ${this.cssColor(layer.content?.backgroundColor)}"></span>
                     <span class="layer-name">${this.escapeHtml(layer.name)}</span>
                     ${layer.visible ? '' : '<span class="layer-badge">Hidden</span>'}
                 </div>
-                <div class="layer-text">${layer.content?.image_id
+                <div class="layer-text" title="${layer.content?.image_id ? '' : 'Click to change the text'}">${layer.content?.image_id
                     ? `🖼 ${this.escapeHtml(this.libraryImageName(layer.content.image_id))}`
                     : this.escapeHtml(layer.content?.text)}</div>
                 <div class="layer-meta">
@@ -286,6 +286,7 @@ class MultiLayerManager {
 
     // Drag layers around the preview; a press without movement selects
     onPreviewPointerDown(event) {
+        if (event.target.closest('[contenteditable="true"]')) return;
         const element = event.target.closest('.layer-preview');
         if (!element || element.classList.contains('alert-layer') || event.button !== 0) return;
         const layer = this.layers.find(l => l.layer_id === element.dataset.layerId);
@@ -381,7 +382,12 @@ class MultiLayerManager {
         this.drag = null;
 
         if (!drag.moved) {
-            this.selectLayer(drag.layer.layer_id);
+            // A second click on the selected text layer edits its text in place
+            if (drag.layer.layer_id === this.selectedLayerId && !drag.corner) {
+                this.startInlineEdit(drag.element.querySelector('.layer-preview-text'), drag.layer);
+            } else {
+                this.selectLayer(drag.layer.layer_id);
+            }
             return;
         }
         const { x, y, width, height } = drag.rect;
@@ -511,6 +517,71 @@ class MultiLayerManager {
         this.selectedLayerId = layerId;
         this.fillLayerForm(layer);
         this.renderLayers();
+    }
+
+    layerItemClicked(event, layerId) {
+        const textElement = event.target.closest('.layer-text');
+        if (textElement && layerId === this.selectedLayerId) {
+            this.startInlineEdit(textElement, this.layers.find(l => l.layer_id === layerId));
+        } else {
+            this.selectLayer(layerId);
+        }
+    }
+
+    // Edit a text layer's text where it's shown: Enter saves, Shift+Enter
+    // adds a line, Escape cancels, clicking away saves
+    startInlineEdit(element, layer) {
+        if (!element || !layer || layer.content?.image_id || this.inlineEdit) return;
+
+        const original = layer.content?.text || '';
+        element.textContent = original;
+        element.contentEditable = 'true';
+        element.classList.add('inline-editing');
+        element.focus();
+        document.getSelection().selectAllChildren(element);
+        this.inlineEdit = { element, layer };
+
+        const finish = async (save) => {
+            if (this.inlineEdit?.element !== element) return;
+            this.inlineEdit = null;
+            element.contentEditable = 'false';
+            element.removeEventListener('keydown', onKey);
+            element.removeEventListener('blur', onBlur);
+
+            const text = element.innerText.replace(/\n$/, '');
+            if (save && text.trim() && text !== original) {
+                await this.saveLayerText(layer, text);
+            } else {
+                this.renderLayers();
+            }
+        };
+        const onKey = (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); finish(true); }
+            if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+            e.stopPropagation();
+        };
+        const onBlur = () => finish(true);
+        element.addEventListener('keydown', onKey);
+        element.addEventListener('blur', onBlur);
+    }
+
+    async saveLayerText(layer, text) {
+        try {
+            const response = await fetch(this.layersUrl(`/${layer.layer_id}`), {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content: { ...layer.content, text } })
+            });
+            if (!response.ok) throw new Error((await response.json()).error || response.statusText);
+            this.log(`Updated the text of "${layer.name}"`);
+        } catch (error) {
+            this.log(`Failed to update text: ${error.message}`, 'error');
+            alert(`Couldn't save the text: ${error.message}`);
+        }
+        await this.loadLayers();
+        if (layer.layer_id === this.selectedLayerId) {
+            this.fillLayerForm(this.layers.find(l => l.layer_id === layer.layer_id));
+        }
     }
 
     newLayer() {
@@ -1217,26 +1288,35 @@ class MultiLayerManager {
 
     openSaveTemplateModal(layerId = null) {
         const targetLayerId = layerId || this.selectedLayerId;
-
-        if (!targetLayerId) {
-            this.log('Please select a layer first', 'error');
-            return;
-        }
-
         const layer = this.layers.find(l => l.layer_id === targetLayerId);
         if (!layer) {
-            this.log('Layer not found', 'error');
+            this.log('Please select a layer first', 'error');
+            alert('Select a layer first, then save it as a template.');
             return;
         }
+        this.showSaveTemplateModal(targetLayerId, '💾 Save Layer as Template', '');
+    }
 
-        // Populate modal
-        document.getElementById('templateLayerId').value = targetLayerId;
+    // Every Layer Control layer on the selected TV, saved as one custom template
+    openSaveLayoutModal() {
+        const count = this.controlLayers.length;
+        if (!this.selectedTvId || count === 0) {
+            alert('This TV has no layers to save yet.');
+            return;
+        }
+        const tvName = this.selectedTv?.name || 'this TV';
+        this.showSaveTemplateModal('', `💾 Save Layout as Template (${count} layer${count === 1 ? '' : 's'})`,
+            `Layout saved from ${tvName}`);
+    }
+
+    showSaveTemplateModal(layerId, title, description) {
+        document.getElementById('saveTemplateTitle').textContent = title;
+        document.getElementById('templateLayerId').value = layerId;
         document.getElementById('templateName').value = '';
-        document.getElementById('templateDescription').value = '';
-        document.getElementById('templateCategory').value = 'custom';
-
-        // Open modal
+        document.getElementById('templateDescription').value = description;
+        document.getElementById('templateCategory').value = layerId ? 'custom' : 'layout';
         document.getElementById('saveTemplateModal').classList.add('show');
+        document.getElementById('templateName').focus();
     }
 
     closeSaveTemplateModal() {
@@ -1257,7 +1337,10 @@ class MultiLayerManager {
         }
 
         try {
-            const response = await fetch(this.layersUrl(`/${layerId}/save-as-template`), {
+            const url = layerId
+                ? this.layersUrl(`/${layerId}/save-as-template`)
+                : `${this.apiBase}/presets/save-layout/${this.selectedTvId}`;
+            const response = await fetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name, description, category })
@@ -1266,10 +1349,11 @@ class MultiLayerManager {
             const result = await response.json();
 
             if (result.success) {
-                this.log(`Layer saved as template "${name}"`);
+                const what = layerId ? 'Layer' : `Layout (${result.data.layers.length} layers)`;
+                this.log(`${what} saved as template "${name}"`);
                 this.closeSaveTemplateModal();
                 await this.loadTemplates();
-                alert(`✅ Layer saved as template "${name}"!\n\nYou can now apply it to any TV from the Templates sidebar.`);
+                alert(`✅ ${what} saved as template "${name}"!\n\nApply it to any TV from the 📚 Templates sidebar.`);
             } else {
                 this.log(`Failed to save template: ${result.error}`, 'error');
                 alert(`❌ Failed to save template: ${result.error}`);
@@ -1382,6 +1466,14 @@ function applyTemplateToSelectedTvs() {
 
 function openSaveTemplateModal() {
     manager.openSaveTemplateModal();
+}
+
+function openSaveLayoutModal() {
+    manager.openSaveLayoutModal();
+}
+
+function layerItemClicked(event, layerId) {
+    manager.layerItemClicked(event, layerId);
 }
 
 function closeSaveTemplateModal() {

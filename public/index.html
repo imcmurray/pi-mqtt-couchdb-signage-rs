@@ -245,6 +245,7 @@
                         <button class="btn btn-warning" onclick="hideAllLayers()">Hide All</button>
                         <button class="btn btn-success" onclick="showAllLayers()">Show All</button>
                         <button class="btn btn-danger" onclick="deleteAllLayers()">Delete All</button>
+                        <button class="btn btn-secondary" onclick="openSaveLayoutModal()">Save Layout as Template</button>
                     </div>
 
                     <div class="layers-display">
@@ -255,7 +256,7 @@
                         <div class="preview-canvas">
                             <div class="preview-header">
                                 <h3>Screen Preview</h3>
-                                <span class="preview-hint">Click a layer to edit it. Drag to move; drag a corner to resize (Shift to change proportions).</span>
+                                <span class="preview-hint">Click a layer to edit it; click it again to change its text. Drag to move; drag a corner to resize (Shift to change proportions).</span>
                             </div>
                             <div class="screen-mockup" id="screenPreview"></div>
                             <div class="preview-legend" id="previewLegend"></div>
@@ -502,7 +503,8 @@
                     </div>
 
                     <div class="sidebar-footer">
-                        <button class="btn btn-primary" onclick="openSaveTemplateModal()">+ Save Current Layer as Template</button>
+                        <button class="btn btn-primary" onclick="openSaveLayoutModal()">+ Save Current Layout as Template</button>
+                        <button class="btn btn-secondary" onclick="openSaveTemplateModal()">+ Save Selected Layer as Template</button>
                         <a href="/preset-manager.html">Manage All Templates →</a>
                     </div>
                 </div>
@@ -516,7 +518,7 @@
                 <div class="modal" id="saveTemplateModal">
                     <div class="modal-content">
                         <div class="modal-header">
-                            <h3>💾 Save Layer as Template</h3>
+                            <h3 id="saveTemplateTitle">💾 Save Layer as Template</h3>
                             <button class="modal-close" onclick="closeSaveTemplateModal()">&times;</button>
                         </div>
                         <form id="saveTemplateForm" onsubmit="saveLayerAsTemplate(event)">

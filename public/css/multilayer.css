@@ -213,6 +213,20 @@
     box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.15);
 }
 
+#layers-section .inline-editing {
+    outline: 2px solid #f59e0b;
+    outline-offset: 2px;
+    cursor: text;
+    user-select: text;
+    white-space: pre-wrap;
+    overflow: visible;
+    text-overflow: clip;
+}
+
+#layers-section .layer-item.selected .layer-text {
+    cursor: text;
+}
+
 #layers-section .resize-handle {
     position: absolute;
     z-index: 1;
