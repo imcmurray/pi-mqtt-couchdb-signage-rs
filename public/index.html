@@ -219,7 +219,6 @@
                         <button class="btn btn-danger btn-sm" onclick="sequenceEditor.deleteSequence()">Delete</button>
                     </div>
                     <div class="sequence-tvs" id="sequenceTvs"></div>
-                    <p class="sequence-phase-note">TVs keep playing their TV Management image playlist until sequence playback is switched on in the next update. Each TV's playlist has already been copied here as “&lt;TV&gt; Playlist”.</p>
 
                     <div class="sequence-empty" id="sequenceEmpty" hidden>No sequences yet. Create one to start building a timeline.</div>
                     <div id="sequenceEditor" hidden>
@@ -463,7 +462,7 @@
                                                 <option value="bold">Bold</option>
                                             </select>
                                         </div>
-                                        <div class="form-group text-only"><label for="fontSize">Font size</label><input type="number" id="fontSize" class="form-input" min="10" max="100" value="28"></div>
+                                        <div class="form-group text-only"><label for="fontSize">Font size</label><input type="number" id="fontSize" class="form-input" min="10" max="300" value="28"></div>
                                     </div>
                                     <div class="editor-grid">
                                         <div class="form-group text-only">
@@ -1001,7 +1000,7 @@
     <div id="assignment-modal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3>Assign to TVs</h3>
+                <h3 id="assignment-modal-title">Add to sequences</h3>
                 <button class="modal-close">&times;</button>
             </div>
             <div class="modal-body">
@@ -1011,7 +1010,7 @@
             </div>
             <div class="modal-actions">
                 <button type="button" class="btn btn-secondary modal-cancel">Cancel</button>
-                <button type="button" class="btn btn-primary" id="confirm-assignment">Assign</button>
+                <button type="button" class="btn btn-primary" id="confirm-assignment">Save</button>
             </div>
         </div>
     </div>

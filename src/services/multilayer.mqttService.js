@@ -105,9 +105,16 @@ class MultilayerMqttService extends EventEmitter {
     if (messageType === 'status' && payload.status) {
       state.slideshow_state = payload.status;
     }
-    const imageId = payload.image_id || payload.current_image;
-    if (imageId) {
-      state.current_image = imageId;
+    if ('clip_id' in payload || 'current_clip' in payload) {
+      // Sequence playback: a scene clip shows no image (image_id is null)
+      state.current_image = payload.image_id ?? payload.current_image ?? null;
+      state.current_clip = payload.clip_id ?? payload.current_clip ?? null;
+      state.current_scene = payload.scene_id ?? payload.current_scene ?? null;
+    } else {
+      const imageId = payload.image_id || payload.current_image;
+      if (imageId) {
+        state.current_image = imageId;
+      }
     }
 
     this.liveState.set(`tv_${tvId}`, state);
@@ -123,7 +130,13 @@ class MultilayerMqttService extends EventEmitter {
       .filter(Boolean)
       .sort((a, b) => Date.parse(b) - Date.parse(a))[0];
 
-    tv.current_image = live.current_image || tv.current_image;
+    if ('current_clip' in live) {
+      tv.current_image = live.current_image;
+      tv.current_clip = live.current_clip;
+      tv.current_scene = live.current_scene;
+    } else {
+      tv.current_image = live.current_image || tv.current_image;
+    }
     tv.system_metrics = live.system_metrics || tv.system_metrics;
     tv.slideshow_state = live.slideshow_state || storedState || tv.slideshow_state;
     tv.last_heartbeat = lastSeen || null;

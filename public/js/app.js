@@ -14,6 +14,8 @@ class DigitalSignageApp {
         this.currentSection = 'dashboard';
         this.tvs = [];
         this.images = [];
+        this.sequences = [];   // with clips, to show what each TV plays and where images are used
+        this.scenes = [];
         this.currentImageId = null;
         // TV Management "Images" section; kept here because the TV list re-renders on every heartbeat
         this.expandedPlaylists = new Set();
@@ -157,6 +159,14 @@ class DigitalSignageApp {
     }
 
     handleWebSocketMessage(data) {
+        if (data.type === 'sequences_updated' || data.type === 'scenes_updated') {
+            // TV cards and the Image Library show sequence contents
+            this.loadSequences().then(() => {
+                this.updateTvList();
+                this.updateImageGrid();
+            });
+            return;
+        }
         if (data.type === 'mqtt_update') {
             const { topic, payload } = data.data;
             console.log('MQTT update:', topic, payload);
@@ -172,9 +182,13 @@ class DigitalSignageApp {
             // Update current image when Pi changes images
             if (topic.includes('/image/current')) {
                 this.updateTvCurrentImage(topic, payload);
-            } else if (topic.includes('/status') && payload.current_image) {
-                // Manual next/previous only reports the new image in the status message
-                this.updateTvCurrentImage(topic, { image_id: payload.current_image });
+            } else if (topic.includes('/status') && (payload.current_image || payload.current_scene)) {
+                // Manual next/previous only reports the new clip in the status message
+                this.updateTvCurrentImage(topic, {
+                    image_id: payload.current_image,
+                    clip_id: payload.current_clip,
+                    scene_id: payload.current_scene
+                });
             }
         }
     }
@@ -236,9 +250,58 @@ class DigitalSignageApp {
         });
     }
 
+    // Sequences (with clips) and scene names, for TV cards and the Image Library
+    async loadSequences() {
+        try {
+            const [sequences, scenes] = await Promise.all([
+                fetch('/api/sequences').then(r => r.json()),
+                fetch('/api/scenes').then(r => r.json())
+            ]);
+            this.sequences = sequences;
+            this.scenes = scenes;
+        } catch (error) {
+            console.error('Error loading sequences:', error);
+        }
+    }
+
+    sequenceForTv(tvId) {
+        return this.sequences.find(sequence => (sequence.tv_ids || []).includes(tvId));
+    }
+
+    sequencesWithImage(imageId) {
+        return this.sequences.filter(sequence => sequence.clips.some(clip => clip.ref === imageId));
+    }
+
+    sceneName(sceneId) {
+        return this.scenes.find(scene => scene.scene_id === sceneId)?.name || 'Scene';
+    }
+
+    // What a TV shows now: { name, thumb (url or null), isScene }
+    nowShowing(tv) {
+        if (tv.current_scene) {
+            return { name: this.sceneName(tv.current_scene), thumb: null, isScene: true };
+        }
+        const imageId = tv.current_image_id || tv.current_image;
+        const image = imageId ? this.images.find(img => img._id === imageId) : null;
+        return image
+            ? { name: image.original_name, thumb: `/api/images/${image._id}/attachment?width=160`, isScene: false }
+            : { name: 'None', thumb: null, isScene: false };
+    }
+
+    nowShowingThumb(tv, imgClass, placeholderHtml) {
+        const showing = this.nowShowing(tv);
+        if (showing.thumb) {
+            return `<img src="${showing.thumb}" alt="${this.escapeHtml(showing.name)}" class="${imgClass}">`;
+        }
+        return showing.isScene
+            ? `<div class="tv-thumbnail-placeholder tv-scene-thumb"><i class="fas fa-film"></i><span>${this.escapeHtml(showing.name)}</span></div>`
+            : placeholderHtml;
+    }
+
     async loadTvs() {
         try {
             const response = await fetch('/api/tvs');
+            await this.loadSequences();
             this.tvs = await response.json();
             this.updateTvList();
             this.populateTvFilters();
@@ -251,6 +314,7 @@ class DigitalSignageApp {
     async loadImages() {
         try {
             const response = await fetch('/api/images');
+            await this.loadSequences();
             this.images = await response.json();
             this.updateImageGrid();
 
@@ -286,12 +350,8 @@ class DigitalSignageApp {
         const statusClass = tv.status === 'online' ? 'online' : 'offline';
         const statusIcon = tv.status === 'online' ? 'fa-circle' : 'fa-exclamation-triangle';
         
-        // Get current image for thumbnail - check both field names for compatibility
-        const currentImageId = tv.current_image_id || tv.current_image;
-        const currentImage = currentImageId ? this.images.find(img => img._id === currentImageId) : null;
-        const thumbnailHtml = currentImage ? 
-            `<img src="/api/images/${currentImage._id}/attachment?width=160" alt="${this.escapeHtml(currentImage.original_name)}" class="tv-current-thumbnail">` :
-            `<div class="tv-no-image"><i class="fas fa-image"></i></div>`;
+        const showing = this.nowShowing(tv);
+        const thumbnailHtml = this.nowShowingThumb(tv, 'tv-current-thumbnail', `<div class="tv-no-image"><i class="fas fa-image"></i></div>`);
         
         card.innerHTML = `
             <div class="tv-card-header">
@@ -309,7 +369,7 @@ class DigitalSignageApp {
                     </div>
                     <div class="tv-current-info">
                         <div class="tv-current-label">Currently Playing:</div>
-                        <div class="tv-current-name" title="${currentImage ? this.escapeHtml(currentImage.original_name) : ''}">${currentImage ? this.escapeHtml(currentImage.original_name) : 'None'}</div>
+                        <div class="tv-current-name" title="${this.escapeHtml(showing.name)}">${showing.isScene ? '🎬 ' : ''}${this.escapeHtml(showing.name)}</div>
                     </div>
                 </div>
                 <div class="tv-system-metrics" id="system-metrics-${tv._id}">
@@ -386,11 +446,8 @@ class DigitalSignageApp {
 
         const statusClass = tv.status === 'online' ? 'online' : 'offline';
 
-        const currentImageId = tv.current_image_id || tv.current_image;
-        const currentImage = currentImageId ? this.images.find(img => img._id === currentImageId) : null;
-        const thumbnailHtml = currentImage ?
-            `<img src="/api/images/${currentImage._id}/attachment?width=160" alt="${this.escapeHtml(currentImage.original_name)}" class="tv-thumbnail">` :
-            `<div class="tv-thumbnail-placeholder"><i class="fas fa-image"></i><span>No Image</span></div>`;
+        const showing = this.nowShowing(tv);
+        const thumbnailHtml = this.nowShowingThumb(tv, 'tv-thumbnail', `<div class="tv-thumbnail-placeholder"><i class="fas fa-image"></i><span>No Image</span></div>`);
 
         const tvIdShort = tv._id.replace('tv_', '');
         const tvIdTruncated = tvIdShort.substring(0, 8);
@@ -433,7 +490,7 @@ class DigitalSignageApp {
                     <div class="tv-display-info">
                         <div class="tv-current-image" id="tv-current-${tv._id}">
                             <span class="detail-label">Currently Showing</span>
-                            <span class="detail-value" title="${currentImage ? this.escapeHtml(currentImage.original_name) : ''}">${currentImage ? this.escapeHtml(currentImage.original_name) : 'None'}</span>
+                            <span class="detail-value" title="${this.escapeHtml(showing.name)}">${showing.isScene ? '🎬 ' : ''}${this.escapeHtml(showing.name)}</span>
                         </div>
                         <div class="tv-id-row">
                             <span class="detail-label">TV ID</span>
@@ -518,7 +575,43 @@ class DigitalSignageApp {
     }
 
     // Expandable "Images" section on a TV Management card
+    // A TV playing a sequence: what it plays and which clip is on now
+    renderTvSequence(tv, sequence) {
+        const clips = sequence.clips.filter(clip => clip.enabled);
+        const loop = clips.reduce((sum, clip) => sum + clip.duration_ms, 0) / 1000;
+        const strip = clips.map(clip => {
+            const isNow = clip.clip_id === tv.current_clip;
+            const image = clip.kind === 'image' ? this.images.find(img => img._id === clip.ref) : null;
+            const name = clip.kind === 'scene' ? this.sceneName(clip.ref) : (image?.original_name || 'Image');
+            const inner = image
+                ? `<img src="/api/images/${image._id}/attachment?width=160" alt="" loading="lazy">`
+                : `<i class="fas fa-film"></i>`;
+            return `<div class="tv-sequence-clip ${clip.kind} ${isNow ? 'now' : ''}" title="${this.escapeHtml(name)} · ${clip.duration_ms / 1000}s">
+                ${inner}${isNow ? '<span class="playlist-badge now">Now</span>' : ''}
+            </div>`;
+        }).join('');
+
+        return `
+            <div class="tv-playlist tv-sequence">
+                <div class="tv-sequence-head">
+                    <i class="fas fa-stream"></i>
+                    <span>Sequence: <strong>${this.escapeHtml(sequence.name)}</strong></span>
+                    <span class="tv-playlist-summary">${clips.length} clip${clips.length === 1 ? '' : 's'} · ${Math.floor(loop / 60)}:${String(Math.round(loop % 60)).padStart(2, '0')} loop</span>
+                    <button class="btn btn-sm btn-secondary" onclick="app.openSequence('${this.escapeHtml(sequence.sequence_id)}')">Open in Sequences</button>
+                </div>
+                <div class="tv-sequence-strip">${strip || '<span class="tv-playlist-empty">Nothing in rotation</span>'}</div>
+            </div>`;
+    }
+
+    openSequence(sequenceId) {
+        if (typeof sequenceEditor !== 'undefined') sequenceEditor.pendingSelect = sequenceId;
+        this.switchSection('sequences');
+    }
+
     renderTvPlaylist(tv) {
+        const sequence = this.sequenceForTv(tv._id);
+        if (sequence) return this.renderTvSequence(tv, sequence);
+
         const expanded = this.expandedPlaylists.has(tv._id);
         const playlist = this.playlists[tv._id];
         const summary = playlist
@@ -954,10 +1047,10 @@ class DigitalSignageApp {
         const card = document.createElement('div');
         card.className = 'image-card';
 
-        const tvNames = image.assigned_tvs.map(tvId => this.tvs.find(tv => tv._id === tvId)?.name || tvId);
-        const assignedTvsText = tvNames.length > 0
-            ? `Assigned to ${tvNames.join(', ')}`
-            : 'Not assigned';
+        const sequenceNames = this.sequencesWithImage(image._id).map(sequence => sequence.name);
+        const assignedTvsText = sequenceNames.length > 0
+            ? `In ${sequenceNames.join(', ')}`
+            : 'Not in a sequence';
         const name = this.escapeHtml(image.original_name);
         const dimensions = image.metadata?.width ? ` • ${image.metadata.width}x${image.metadata.height}` : '';
 
@@ -969,8 +1062,8 @@ class DigitalSignageApp {
                 <div class="image-assignments">${this.escapeHtml(assignedTvsText)}</div>
                 ${this.renderScheduleBadges(image)}
                 <div class="image-actions">
-                    <button class="btn btn-sm btn-primary" title="Assign to TVs" onclick="app.assignImage('${image._id}')">
-                        <i class="fas fa-tv"></i>
+                    <button class="btn btn-sm btn-primary" title="Add to sequences" onclick="app.assignImage('${image._id}')">
+                        <i class="fas fa-stream"></i>
                     </button>
                     <button class="btn btn-sm btn-secondary" title="Schedule &amp; timing" onclick="app.editImageSchedule('${image._id}')">
                         <i class="fas fa-clock"></i>
@@ -1196,61 +1289,65 @@ class DigitalSignageApp {
         this.showAssignmentModal();
     }
 
+    // Image Library: choose which sequences show this image
     showAssignmentModal() {
         const modal = document.getElementById('assignment-modal');
         const list = document.getElementById('tv-assignment-list');
-        
-        list.innerHTML = '';
-        
-        this.tvs.forEach(tv => {
-            const item = document.createElement('div');
-            item.className = 'tv-assignment-item';
-            
-            const currentImage = this.images.find(img => img._id === this.currentImageId);
-            const isAssigned = currentImage && currentImage.assigned_tvs.includes(tv._id);
-            
-            item.innerHTML = `
-                <input type="checkbox" id="tv-${tv._id}" value="${tv._id}" ${isAssigned ? 'checked' : ''}>
-                <label for="tv-${tv._id}">
-                    <strong>${tv.name}</strong><br>
-                    <small>${tv.location}</small>
-                </label>
-            `;
-            
-            list.appendChild(item);
-        });
-        
+        const image = this.images.find(img => img._id === this.currentImageId);
+        document.getElementById('assignment-modal-title').textContent = `Add “${image?.original_name || 'image'}” to sequences`;
+
+        list.innerHTML = this.sequences.length ? this.sequences.map(sequence => {
+            const has = sequence.clips.some(clip => clip.ref === this.currentImageId);
+            const tvNames = (sequence.tv_ids || []).map(id => this.tvs.find(tv => tv._id === id)?.name || id);
+            return `
+                <div class="tv-assignment-item">
+                    <input type="checkbox" id="seq-${this.escapeHtml(sequence.sequence_id)}" value="${this.escapeHtml(sequence.sequence_id)}" ${has ? 'checked' : ''}>
+                    <label for="seq-${this.escapeHtml(sequence.sequence_id)}">
+                        <strong>${this.escapeHtml(sequence.name)}</strong><br>
+                        <small>${tvNames.length ? `Plays on ${this.escapeHtml(tvNames.join(', '))}` : 'Not playing on a TV'}</small>
+                    </label>
+                </div>`;
+        }).join('') + `
+            <div class="form-group assignment-seconds">
+                <label for="assignment-seconds">Show for (seconds)</label>
+                <input type="number" id="assignment-seconds" class="form-input" min="1" max="3600" value="10">
+                <small class="form-hint">Added at the end of each sequence you tick. Unticking removes it from that sequence.</small>
+            </div>` : '<p>No sequences yet. Create one on the Sequences page.</p>';
+
         modal.classList.add('show');
     }
 
     async confirmImageAssignment() {
-        const checkboxes = document.querySelectorAll('#tv-assignment-list input[type="checkbox"]:checked');
-        const tvIds = Array.from(checkboxes).map(cb => cb.value);
-        
-        if (tvIds.length === 0) {
-            this.showToast('Please select at least one TV', 'warning');
-            return;
-        }
+        const imageId = this.currentImageId;
+        const wanted = new Set([...document.querySelectorAll('#tv-assignment-list input[type="checkbox"]:checked')].map(cb => cb.value));
+        const seconds = Math.max(Number(document.getElementById('assignment-seconds')?.value) || 10, 1);
 
         try {
-            const response = await fetch(`/api/images/${this.currentImageId}/assign`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ tv_ids: tvIds })
-            });
-
-            if (response.ok) {
-                this.showToast('Image assigned successfully', 'success');
-                this.closeModal();
-                await this.loadImages();
-                await this.loadDashboardData();
-            } else {
-                const error = await response.json();
-                this.showToast(error.error || 'Failed to assign image', 'error');
+            let added = 0;
+            let removed = 0;
+            for (const summary of this.sequences) {
+                const has = summary.clips.some(clip => clip.ref === imageId);
+                if (has === wanted.has(summary.sequence_id)) continue;
+                const sequence = await (await fetch(`/api/sequences/${summary.sequence_id}`)).json();
+                const clips = has
+                    ? sequence.clips.filter(clip => clip.ref !== imageId)
+                    : [...sequence.clips, { kind: 'image', ref: imageId, duration_ms: seconds * 1000, enabled: true, schedule: null }];
+                const response = await fetch(`/api/sequences/${summary.sequence_id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ clips })
+                });
+                if (!response.ok) throw new Error((await response.json()).error || response.statusText);
+                has ? removed++ : added++;
             }
+            this.closeModal();
+            this.showToast(added || removed
+                ? `Added to ${added}, removed from ${removed} sequence(s)`
+                : 'No changes', 'success');
+            await this.loadImages();
         } catch (error) {
-            console.error('Error assigning image:', error);
-            this.showToast('Failed to assign image', 'error');
+            console.error('Error updating sequences:', error);
+            this.showToast(`Couldn't update sequences: ${error.message}`, 'error');
         }
     }
 
@@ -1658,34 +1755,35 @@ class DigitalSignageApp {
         const tv = this.tvs.find(t => t._id.replace('tv_', '') === tvId);
         
         if (tv) {
-            // Update both field names for compatibility
-            tv.current_image_id = payload.image_id;
-            tv.current_image = payload.image_id;
-            
+            // Update both field names for compatibility; scene clips have no image
+            tv.current_image_id = payload.image_id || null;
+            tv.current_image = payload.image_id || null;
+            if ('clip_id' in payload || 'scene_id' in payload) {
+                tv.current_clip = payload.clip_id || null;
+                tv.current_scene = payload.scene_id || null;
+            }
+            const showing = this.nowShowing(tv);
+
             // Update current image display in TV card
             const currentImageElement = document.getElementById(`tv-current-${tv._id}`);
             if (currentImageElement) {
-                const currentImage = payload.image_id ? this.images.find(img => img._id === payload.image_id) : null;
                 currentImageElement.innerHTML = `
                     <span class="detail-label">Currently Showing</span>
-                    <span class="detail-value" title="${currentImage ? this.escapeHtml(currentImage.original_name) : ''}">${currentImage ? this.escapeHtml(currentImage.original_name) : 'None'}</span>
+                    <span class="detail-value" title="${this.escapeHtml(showing.name)}">${showing.isScene ? '🎬 ' : ''}${this.escapeHtml(showing.name)}</span>
                 `;
             }
-            
+
             // Update thumbnail using same logic as dashboard
             const thumbnailContainer = document.querySelector(`#tv-version-pill-${tv._id}`)?.closest('.tv-card-layout')?.querySelector('.tv-thumbnail-container');
             if (thumbnailContainer) {
-                const currentImage = payload.image_id ? this.images.find(img => img._id === payload.image_id) : null;
-                thumbnailContainer.innerHTML = currentImage ? 
-                    `<img src="/api/images/${currentImage._id}/attachment?width=160" alt="${this.escapeHtml(currentImage.original_name)}" class="tv-thumbnail">` :
-                    `<div class="tv-thumbnail-placeholder"><i class="fas fa-image"></i><span>No Image</span></div>`;
+                thumbnailContainer.innerHTML = this.nowShowingThumb(tv, 'tv-thumbnail', `<div class="tv-thumbnail-placeholder"><i class="fas fa-image"></i><span>No Image</span></div>`);
             }
             
             // Also refresh dashboard overview
             this.updateTvOverview(this.tvs);
 
-            // Move the "Now showing" badge in an open Images section
-            if (this.expandedPlaylists.has(tv._id)) {
+            // Move the "Now showing" badge in an open Images section / sequence strip
+            if (this.expandedPlaylists.has(tv._id) || this.sequenceForTv(tv._id)) {
                 this.updateTvList();
             }
         }

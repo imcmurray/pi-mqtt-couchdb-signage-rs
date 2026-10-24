@@ -328,6 +328,9 @@ pub struct LayerManager {
     data: Arc<RwLock<LayerData>>,
     // Clock minute + table pages shown in the last composite; a change means redraw
     last_dynamic_key: Arc<RwLock<String>>,
+    // Elements of the scene clip on screen: drawn above the slideshow and below
+    // every overlay, whatever their priorities
+    base_layers: Arc<RwLock<Vec<Layer>>>,
 }
 
 /// Values for {tokens} (weather) and data set rows (court calendar)
@@ -364,7 +367,28 @@ impl LayerManager {
             transition_frame: Arc::new(RwLock::new(None)),
             data: Arc::new(RwLock::new(LayerData::default())),
             last_dynamic_key: Arc::new(RwLock::new(String::new())),
+            base_layers: Arc::new(RwLock::new(Vec::new())),
         }
+    }
+
+    /// The scene clip now on screen (empty for an image clip)
+    pub async fn set_base_layers(&self, layers: Vec<Layer>) {
+        *self.base_layers.write().await = layers;
+        *self.composite_dirty.write().await = true;
+    }
+
+    /// A scene drawn on its own (black background), used as a transition frame
+    pub async fn render_scene_snapshot(&self, layers: &[Layer]) -> RgbaImage {
+        let (width, height) = self.config.read().await.output_resolution;
+        let mut frame = RgbaImage::from_pixel(width, height, Rgba([0, 0, 0, 255]));
+        let mut layers: Vec<&Layer> = layers.iter().filter(|l| l.visible).collect();
+        layers.sort_by_key(|l| l.priority);
+        for layer in layers {
+            if let Err(e) = self.render_layer_onto_composite(layer, &mut frame).await {
+                eprintln!("Warning: Failed to render scene element '{}': {}", layer.id, e);
+            }
+        }
+        frame
     }
 
     pub async fn set_data(&self, data: LayerData) {
@@ -376,10 +400,11 @@ impl LayerManager {
     /// the clock) and each table's page
     async fn dynamic_key(&self) -> String {
         let config = self.config.read().await;
+        let base = self.base_layers.read().await;
         let data = self.data.read().await;
         let now = chrono::Local::now().fixed_offset();
         let mut key = String::new();
-        for layer in config.layers.values().filter(|l| l.visible) {
+        for layer in config.layers.values().chain(base.iter()).filter(|l| l.visible) {
             match &layer.content {
                 LayerContent::DataRow { text, .. } if layer_data::uses_clock(text) => {
                     key.push_str(&now.format("%Y%m%d%H%M|").to_string());
@@ -651,13 +676,18 @@ impl LayerManager {
             *pixel = Rgba([0, 0, 0, 255]);
         }
 
-        // Get visible layers sorted by priority (lowest first)
+        // Bottom to top: slideshow, the scene clip's elements, then overlays (and
+        // alerts) by priority
         let mut visible_layers: Vec<Layer> = config.layers
             .values()
             .filter(|layer| layer.visible)
             .cloned()
             .collect();
-        visible_layers.sort_by_key(|layer| layer.priority);
+        visible_layers.sort_by_key(|layer| (layer.layer_type != LayerType::Slideshow, layer.priority));
+        let mut base: Vec<Layer> = self.base_layers.read().await.iter().filter(|l| l.visible).cloned().collect();
+        base.sort_by_key(|layer| layer.priority);
+        let split = visible_layers.iter().position(|l| l.layer_type != LayerType::Slideshow).unwrap_or(visible_layers.len());
+        visible_layers.splice(split..split, base);
 
         // Render each layer
         for layer in visible_layers {

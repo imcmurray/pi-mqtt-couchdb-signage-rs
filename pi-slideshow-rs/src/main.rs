@@ -624,7 +624,7 @@ impl ImageManager {
         img2: &RgbaImage,
         progress: f32,
         transition_type: &TransitionType,
-        transition_name: &str,
+        _transition_name: &str,
     ) -> RgbaImage {
         let width = img1.width();
         let height = img1.height();
@@ -681,9 +681,6 @@ impl ImageManager {
                 self.blend_images_simple(img1, img2, eased_progress, &mut result);
             }
         }
-
-        // Add transition name text overlay
-        self.add_transition_text(&mut result, transition_name);
 
         result
     }
@@ -932,41 +929,6 @@ impl ImageManager {
                 result.put_pixel(x, y, Rgba([r, g, b, a]));
             }
         }
-    }
-
-    fn add_transition_text(&self, image: &mut RgbaImage, transition_name: &str) {
-        let char_size = 4;
-        let text_color = Rgba([255, 255, 0, 255]); // Bright yellow
-        let bg_color = Rgba([0, 0, 0, 180]); // Semi-transparent black background
-
-        // Calculate text dimensions
-        let char_width = 7 * char_size;
-        let char_spacing = char_size;
-        let text_width = transition_name.len() as u32 * (char_width + char_spacing);
-        let text_height = 5 * char_size;
-
-        // Draw background rectangle
-        let padding = char_size * 2;
-        let bg_width = text_width + padding * 2;
-        let bg_height = text_height + padding * 2;
-
-        for y in 0..bg_height {
-            for x in 0..bg_width {
-                if x < image.width() && y < image.height() {
-                    image.put_pixel(x, y, bg_color);
-                }
-            }
-        }
-
-        // Draw text
-        draw_text(
-            image,
-            transition_name,
-            padding,
-            padding,
-            char_size,
-            text_color,
-        );
     }
 
     fn play_transition(
@@ -1677,9 +1639,9 @@ async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoRe
 
                 // After transition, update layers and display composite
                 if let Some(current_image_path) = controller.get_current_image_path().await {
-                    // Update slideshow layer with new image
-                    if let Err(e) = controller.update_slideshow_layer(Some(current_image_path.to_string_lossy().to_string())).await {
-                        eprintln!("Failed to update slideshow layer after transition: {}", e);
+                    // Put the new clip (image or scene) on screen
+                    if let Err(e) = controller.apply_current_clip().await {
+                        eprintln!("Failed to show clip after transition: {}", e);
                     }
 
                     // Render and display composite to ensure overlays are visible
@@ -1702,6 +1664,8 @@ async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoRe
                     let image_count = controller.get_image_count().await;
                     if image_count > 1 {
                         let next_index = (current_index + 1) % image_count;
+                        // Scene clips transition via snapshots; render them as they look now
+                        controller.refresh_scene_snapshots(current_index).await;
                         let next_path = image_manager.images[next_index].clone();
                         let next_transition_effect = controller.get_transition_effect().await;
                         let next_transition_type = TransitionType::from_string(&next_transition_effect)
@@ -1756,9 +1720,9 @@ async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoRe
                 }
 
                 if needs_reload {
-                    // Update slideshow layer with current image
-                    if let Err(e) = controller.update_slideshow_layer(Some(current_image_path.to_string_lossy().to_string())).await {
-                        eprintln!("Failed to update slideshow layer: {}", e);
+                    // Put the current clip (image or scene) on screen
+                    if let Err(e) = controller.apply_current_clip().await {
+                        eprintln!("Failed to show clip: {}", e);
                     }
 
                     // Render composite with all layers
@@ -1781,6 +1745,8 @@ async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoRe
 
                                 if image_count > 1 && controller_images.len() > 1 {
                                     let next_index = (current_index + 1) % image_count;
+                                    // Scene clips transition via snapshots; render them as they look now
+                                    controller.refresh_scene_snapshots(current_index).await;
                                     let next_path = PathBuf::from(&controller_images[next_index].path);
                                     let next_transition_effect = controller.get_transition_effect().await;
                                     let next_transition_type = TransitionType::from_string(&next_transition_effect)

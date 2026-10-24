@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, mpsc, RwLock};
 use crate::mqtt_client::{AlertData, ImageInfo, MqttClient, SlideshowCommand, SlideshowConfig, TvStatus, parse_rgba_string};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use crate::couchdb_client::CouchDbClient;
 use crate::layer_manager::{LayerManager, LayerConfig, Layer, LayerContent, LayerData, LayerType};
 use crate::layer_data::TableSpec;
@@ -58,6 +58,18 @@ pub struct SlideshowController {
     manual_change_at: Arc<RwLock<Option<Instant>>>,
     // Layer Control layers currently applied from the server (by layer_id)
     synced_layer_ids: Arc<RwLock<HashSet<String>>>,
+    // Sequence playback: true while the TV plays a sequence (the old image
+    // playlist and update_images are then ignored)
+    sequence_active: Arc<RwLock<bool>>,
+    // Elements of each scene in the sequence, ready to draw
+    scene_layers: Arc<RwLock<HashMap<String, Vec<Layer>>>>,
+    // Raw layer documents (overlays, scene elements) for image downloads and data sets
+    overlay_values: Arc<RwLock<Vec<serde_json::Value>>>,
+    scene_values: Arc<RwLock<Vec<serde_json::Value>>>,
+    // Sequences are re-read on every sync: remember image file types, and which
+    // scene content each snapshot was rendered from
+    image_extensions: Arc<RwLock<HashMap<String, String>>>,
+    snapshot_signatures: Arc<RwLock<HashMap<String, u64>>>,
 }
 
 impl Clone for SlideshowController {
@@ -78,6 +90,12 @@ impl Clone for SlideshowController {
             current_frame: self.current_frame.clone(),
             manual_change_at: self.manual_change_at.clone(),
             synced_layer_ids: self.synced_layer_ids.clone(),
+            sequence_active: self.sequence_active.clone(),
+            scene_layers: self.scene_layers.clone(),
+            overlay_values: self.overlay_values.clone(),
+            scene_values: self.scene_values.clone(),
+            image_extensions: self.image_extensions.clone(),
+            snapshot_signatures: self.snapshot_signatures.clone(),
         }
     }
 }
@@ -110,6 +128,12 @@ impl SlideshowController {
             current_frame: Arc::new(RwLock::new(None)),
             manual_change_at: Arc::new(RwLock::new(None)),
             synced_layer_ids: Arc::new(RwLock::new(HashSet::new())),
+            sequence_active: Arc::new(RwLock::new(false)),
+            scene_layers: Arc::new(RwLock::new(HashMap::new())),
+            overlay_values: Arc::new(RwLock::new(Vec::new())),
+            scene_values: Arc::new(RwLock::new(Vec::new())),
+            image_extensions: Arc::new(RwLock::new(HashMap::new())),
+            snapshot_signatures: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -201,11 +225,8 @@ impl SlideshowController {
             eprintln!("Warning: Failed to fetch layers from CouchDB: {}", e);
         }
 
-        // Fetch images from CouchDB
-        if let Err(e) = self.fetch_images_from_couchdb().await {
-            eprintln!("Warning: Failed to fetch images from CouchDB: {}", e);
-            println!("Continuing with local images only");
-        }
+        // The TV's sequence, or its image playlist if it has none
+        self.refresh_playlist().await;
 
         // Update state after fetching from CouchDB
         let image_count = self.images.read().await.len();
@@ -342,7 +363,11 @@ impl SlideshowController {
                 *self.manual_change_at.write().await = Some(Instant::now());
             }
             SlideshowCommand::UpdateImages { images } => {
-                self.update_images(images).await?;
+                if *self.sequence_active.read().await {
+                    println!("Ignoring update_images: this TV plays a sequence");
+                } else {
+                    self.update_images(images).await?;
+                }
             }
             SlideshowCommand::ShowImage { image_id, hold } => {
                 if !self.show_image(&image_id).await {
@@ -407,7 +432,10 @@ impl SlideshowController {
                 }
             }
             SlideshowCommand::SyncLayers { layers } => {
+                // Also the server's signal that the TV's sequence, a scene in it, or a
+                // data set changed
                 self.sync_layers(layers).await;
+                self.refresh_playlist().await;
             }
             SlideshowCommand::SyncAlerts { alerts } => {
                 if let Err(e) = self.sync_alerts(alerts).await {
@@ -455,7 +483,7 @@ impl SlideshowController {
     }
 
     fn current_image_id(images: &[ImageInfo], index: usize) -> Option<String> {
-        images.get(index).map(|img| img.id.clone())
+        images.get(index).map(|img| img.key().to_string())
     }
 
     /// Replace everything assigned to this TV, then show what's scheduled now
@@ -508,7 +536,7 @@ impl SlideshowController {
     /// After the playlist is replaced, point back at the image that was showing
     /// (so a reorder or newly enabled image doesn't swap out a held image).
     fn restore_current_index(images: &[ImageInfo], current_index: &mut usize, previous_id: Option<String>) {
-        if let Some(position) = previous_id.and_then(|id| images.iter().position(|img| img.id == id)) {
+        if let Some(position) = previous_id.and_then(|id| images.iter().position(|img| img.key() == id)) {
             *current_index = position;
         } else if *current_index >= images.len() {
             *current_index = 0;
@@ -609,7 +637,8 @@ impl SlideshowController {
         let current_index = *self.current_index.read().await;
         let images = self.images.read().await;
         
-        let current_image = images.get(current_index).map(|img| img.id.clone());
+        let current = images.get(current_index);
+        let current_image = current.and_then(|img| img.image_id()).map(str::to_string);
         let status_str = match *state {
             SlideshowState::Playing => "playing".to_string(),
             SlideshowState::Paused => "paused".to_string(),
@@ -619,6 +648,8 @@ impl SlideshowController {
         let status = TvStatus {
             status: status_str.clone(),
             current_image: current_image.clone(),
+            current_clip: current.and_then(|img| img.clip_id.clone()),
+            current_scene: current.and_then(|img| img.scene_id.clone()),
             total_images: images.len(),
             current_index,
             uptime: self.start_time.elapsed().as_secs(),
@@ -693,7 +724,7 @@ impl SlideshowController {
             let images = self.images.read().await;
             
             if let Some(current_image) = images.get(current_index) {
-                if let Err(e) = mqtt_client.publish_current_image(&current_image.id).await {
+                if let Err(e) = mqtt_client.publish_current_image(current_image).await {
                     eprintln!("Failed to publish current image to MQTT: {}", e);
                 }
             }
@@ -767,10 +798,8 @@ impl SlideshowController {
             if let Err(e) = self.fetch_layers_from_couchdb().await {
                 eprintln!("Failed to sync layers with CouchDB: {}", e);
             }
-            if let Err(e) = self.fetch_images_from_couchdb().await {
-                eprintln!("Failed to sync with CouchDB: {}", e);
-            }
-            
+            self.refresh_playlist().await;
+
             // Send status update
             self.send_status_update().await;
         }
@@ -970,8 +999,10 @@ impl SlideshowController {
     /// Alert layers and the TV-config layers (slideshow, logo) are left alone.
     pub async fn sync_layers(&self, server_layers: Vec<serde_json::Value>) {
         let image_dir = self.config.read().await.image_dir.clone();
-        self.download_layer_images(&server_layers, &image_dir).await;
-        self.load_layer_data(&server_layers).await;
+        *self.overlay_values.write().await = server_layers.clone();
+        let all_values = self.all_layer_values().await;
+        self.download_layer_images(&all_values, &image_dir).await;
+        self.load_layer_data(&all_values).await;
 
         let layers: Vec<Layer> = server_layers
             .iter()
@@ -1217,8 +1248,198 @@ impl SlideshowController {
         *self.current_frame.write().await = Some(frame);
     }
 
-    pub async fn update_slideshow_layer(&self, image_path: Option<String>) -> Result<(), String> {
-        self.layer_manager.write().await.update_slideshow_content(image_path).await
+    /// Put the current clip on screen: an image on the slideshow layer, or a
+    /// scene's elements in the base band (with an empty slideshow layer)
+    pub async fn apply_current_clip(&self) -> Result<(), String> {
+        let item = {
+            let images = self.images.read().await;
+            images.get(*self.current_index.read().await).cloned()
+        };
+        let scene = match item.as_ref().and_then(|item| item.scene_id.as_ref()) {
+            Some(scene_id) => Some(self.scene_layers.read().await.get(scene_id).cloned().unwrap_or_default()),
+            None => None,
+        };
+        let layer_manager = self.layer_manager.write().await;
+        match (item, scene) {
+            (Some(_), Some(layers)) => {
+                layer_manager.update_slideshow_content(None).await?;
+                layer_manager.set_base_layers(layers).await;
+            }
+            (Some(item), None) => {
+                layer_manager.update_slideshow_content(Some(item.path)).await?;
+                layer_manager.set_base_layers(Vec::new()).await;
+            }
+            (None, _) => layer_manager.set_base_layers(Vec::new()).await,
+        }
+        Ok(())
+    }
+
+    /// Re-render the snapshots of scene clips at `index` and the one after it, so
+    /// a transition starts from / lands on what the scene shows now
+    pub async fn refresh_scene_snapshots(&self, index: usize) {
+        let items: Vec<ImageInfo> = {
+            let images = self.images.read().await;
+            if images.is_empty() {
+                return;
+            }
+            [index % images.len(), (index + 1) % images.len()].iter().map(|&i| images[i].clone()).collect()
+        };
+        for item in items {
+            if let Some(scene_id) = &item.scene_id {
+                self.save_scene_snapshot(scene_id, &item.path).await;
+            }
+        }
+    }
+
+    async fn save_scene_snapshot(&self, scene_id: &str, path: &str) {
+        let layers = self.scene_layers.read().await.get(scene_id).cloned().unwrap_or_default();
+        let frame = self.layer_manager.read().await.render_scene_snapshot(&layers).await;
+        let path = path.to_string();
+        // PNG encoding is CPU work; keep it off the async workers
+        let result = tokio::task::spawn_blocking(move || frame.save_with_format(&path, image::ImageFormat::Png)).await;
+        if let Ok(Err(e)) | Err(e) = result.map_err(|e| image::ImageError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e))) {
+            eprintln!("Failed to save snapshot for scene {}: {}", scene_id, e);
+        }
+    }
+
+    async fn all_layer_values(&self) -> Vec<serde_json::Value> {
+        let mut values = self.overlay_values.read().await.clone();
+        values.extend(self.scene_values.read().await.iter().cloned());
+        values
+    }
+
+    /// Play the TV's sequence if it has one; otherwise its image playlist
+    pub async fn refresh_playlist(&self) {
+        match self.load_sequence().await {
+            Ok(true) => {}
+            Ok(false) => {
+                if *self.sequence_active.read().await {
+                    println!("🎞️ No sequence assigned any more; back to the image playlist");
+                }
+                *self.sequence_active.write().await = false;
+                self.scene_values.write().await.clear();
+                if let Err(e) = self.fetch_images_from_couchdb().await {
+                    eprintln!("Failed to fetch images from CouchDB: {}", e);
+                }
+            }
+            // Keep playing what we have (e.g. CouchDB unreachable)
+            Err(e) => eprintln!("Failed to load sequence: {}", e),
+        }
+    }
+
+    /// Build the play list from the TV's sequence. Ok(false) when none is assigned.
+    async fn load_sequence(&self) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+        let (tv_id, image_dir) = {
+            let config = self.config.read().await;
+            (format!("tv_{}", config.tv_id), config.image_dir.clone())
+        };
+
+        let mut items = Vec::new();
+        let mut scene_docs: HashMap<String, Vec<serde_json::Value>> = HashMap::new();
+        let sequence_name;
+        {
+            let couchdb_client = self.couchdb_client.read().await;
+            let Some(couchdb_client) = couchdb_client.as_ref() else { return Ok(false) };
+            let Some(sequence) = couchdb_client.get_sequence_for_tv(&tv_id).await? else { return Ok(false) };
+            sequence_name = sequence["name"].as_str().unwrap_or("sequence").to_string();
+            let clips = sequence["clips"].as_array().cloned().unwrap_or_default();
+
+            for (order, clip) in clips.iter().enumerate() {
+                if clip["enabled"].as_bool() == Some(false) {
+                    continue;
+                }
+                let (Some(clip_id), Some(source)) = (clip["clip_id"].as_str(), clip["ref"].as_str()) else { continue };
+                let mut item = ImageInfo {
+                    id: source.to_string(),
+                    order: order as u32,
+                    display_duration: clip["duration_ms"].as_u64(),
+                    schedule: serde_json::from_value(clip["schedule"].clone()).ok().flatten(),
+                    clip_id: Some(clip_id.to_string()),
+                    ..Default::default()
+                };
+
+                if clip["kind"].as_str() == Some("scene") {
+                    if !scene_docs.contains_key(source) {
+                        match couchdb_client.get_layers_doc(source).await? {
+                            Some(scene) => {
+                                scene_docs.insert(source.to_string(), scene["elements"].as_array().cloned().unwrap_or_default());
+                            }
+                            None => {
+                                eprintln!("Sequence clip {}: scene {} no longer exists", clip_id, source);
+                                continue;
+                            }
+                        }
+                    }
+                    item.scene_id = Some(source.to_string());
+                    item.path = image_dir.join(format!("scene-{}.png", source)).to_string_lossy().to_string();
+                } else {
+                    let known = self.image_extensions.read().await.get(source).cloned();
+                    let extension = match known {
+                        Some(extension) => extension,
+                        None => match couchdb_client.get_image_extension(source).await? {
+                            Some(extension) => {
+                                self.image_extensions.write().await.insert(source.to_string(), extension.clone());
+                                extension
+                            }
+                            None => {
+                                eprintln!("Sequence clip {}: image {} no longer exists", clip_id, source);
+                                continue;
+                            }
+                        },
+                    };
+                    let path = image_dir.join(format!("{}{}", source, extension));
+                    if !path.exists() {
+                        if let Err(e) = couchdb_client.download_image_attachment(source, &path.to_string_lossy()).await {
+                            eprintln!("Failed to download image {}: {}", source, e);
+                            continue;
+                        }
+                    }
+                    item.path = path.to_string_lossy().to_string();
+                    item.extension = Some(extension);
+                }
+                items.push(item);
+            }
+        }
+
+        // Scene elements: ready-to-draw layers, plus their images and data sets
+        *self.scene_values.write().await = scene_docs.values().flatten().cloned().collect();
+        let all_values = self.all_layer_values().await;
+        self.download_layer_images(&all_values, &image_dir).await;
+        self.load_layer_data(&all_values).await;
+        *self.scene_layers.write().await = scene_docs.iter()
+            .map(|(id, elements)| (id.clone(), elements.iter().filter_map(|e| Self::server_layer_to_layer(e, &image_dir)).collect()))
+            .collect();
+        // Snapshots only for scenes whose content changed (live values are
+        // refreshed again just before each transition)
+        for (scene_id, elements) in &scene_docs {
+            let signature = {
+                use std::hash::{Hash, Hasher};
+                let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                serde_json::to_string(elements).unwrap_or_default().hash(&mut hasher);
+                hasher.finish()
+            };
+            let path = image_dir.join(format!("scene-{}.png", scene_id));
+            if self.snapshot_signatures.read().await.get(scene_id) != Some(&signature) || !path.exists() {
+                self.save_scene_snapshot(scene_id, &path.to_string_lossy()).await;
+                self.snapshot_signatures.write().await.insert(scene_id.clone(), signature);
+            }
+        }
+
+        let was_active = *self.sequence_active.read().await;
+        *self.sequence_active.write().await = true;
+        let count = items.len();
+        self.set_all_images(items).await;
+        if !self.images.read().await.is_empty() && matches!(*self.state.read().await, SlideshowState::Stopped) {
+            *self.state.write().await = SlideshowState::Playing;
+        }
+        // A scene on screen may have been edited
+        if let Err(e) = self.apply_current_clip().await {
+            eprintln!("Failed to apply current clip: {}", e);
+        }
+        if !was_active {
+            println!("🎞️ Playing sequence \"{}\" ({} clips)", sequence_name, count);
+        }
+        Ok(true)
     }
 
     pub async fn has_overlay_layers(&self) -> bool {
@@ -1340,6 +1561,32 @@ mod tests {
         let mut index = 1;
         SlideshowController::restore_current_index(&playlist(&["c", "a", "b"]), &mut index, Some("b".into()));
         assert_eq!(index, 2);
+    }
+
+    #[test]
+    fn restore_follows_the_clip_when_an_image_is_used_twice() {
+        let clip = |clip_id: &str, image: &str| ImageInfo {
+            id: image.into(),
+            clip_id: Some(clip_id.into()),
+            ..Default::default()
+        };
+        // Showing the second "logo" clip; a clip is added in front
+        let before = vec![clip("c1", "logo"), clip("c2", "photo"), clip("c3", "logo")];
+        let after = vec![clip("c0", "photo"), clip("c1", "logo"), clip("c2", "photo"), clip("c3", "logo")];
+        let mut index = 2;
+        let previous = SlideshowController::current_image_id(&before, index);
+        SlideshowController::restore_current_index(&after, &mut index, previous);
+        assert_eq!(index, 3);
+    }
+
+    #[test]
+    fn scene_clips_report_no_image() {
+        let scene = ImageInfo { id: "scene_1".into(), scene_id: Some("scene_1".into()), clip_id: Some("c".into()), ..Default::default() };
+        let image = ImageInfo { id: "image_1".into(), ..Default::default() };
+        assert_eq!(scene.image_id(), None);
+        assert_eq!(scene.key(), "c");
+        assert_eq!(image.image_id(), Some("image_1"));
+        assert_eq!(image.key(), "image_1");
     }
 
     #[test]

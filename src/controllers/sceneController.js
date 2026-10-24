@@ -18,7 +18,16 @@ const sceneUpdateSchema = Joi.object({
 // Element fields the editor can change (same shape as a Layer Control layer)
 const EDITABLE = ['name', 'layer_type', 'content', 'position', 'visible', 'opacity', 'priority'];
 
+const mqttService = require('../services/multilayer.mqttService');
+
 const notFound = (res, what = 'Scene') => res.status(404).json({ error: `${what} not found` });
+
+// TVs whose sequence shows the scene re-read it (sync_layers)
+async function refreshTvs(sceneId) {
+  for (const tvId of await sequenceService.tvsUsing(sceneId)) {
+    mqttService.syncLayers(tvId);
+  }
+}
 
 class SceneController {
   async listScenes(req, res) {
@@ -53,6 +62,7 @@ class SceneController {
     const scene = await sceneService.update(req.params.sceneId, value);
     if (!scene) return notFound(res);
     broadcastToClients('scenes_updated', { scene_id: scene.scene_id });
+    await refreshTvs(scene.scene_id);
     res.json(scene);
   }
 
@@ -143,6 +153,7 @@ class SceneController {
 
   changed(req) {
     broadcastToClients('scene_elements_updated', { scene_id: req.params.sceneId });
+    refreshTvs(req.params.sceneId).catch(error => console.error('Could not refresh TVs for scene:', error));
   }
 }
 

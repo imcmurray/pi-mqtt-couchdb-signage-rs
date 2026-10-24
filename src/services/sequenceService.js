@@ -38,12 +38,13 @@ class SequenceService {
     return result.docs;
   }
 
+  // Summaries; clips are included (they're small) so pages can show what plays where
   async list() {
     return (await this.all())
-      .map(({ clips, ...sequence }) => ({
+      .map(sequence => ({
         ...sequence,
-        clip_count: clips.length,
-        total_ms: clips.filter(c => c.enabled).reduce((sum, c) => sum + c.duration_ms, 0)
+        clip_count: sequence.clips.length,
+        total_ms: sequence.clips.filter(c => c.enabled).reduce((sum, c) => sum + c.duration_ms, 0)
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
   }
@@ -125,6 +126,25 @@ class SequenceService {
 
   async findForTv(tvId) {
     return (await this.all()).find(sequence => (sequence.tv_ids || []).includes(tvId)) || null;
+  }
+
+  // TVs playing a sequence that shows this scene or image
+  async tvsUsing(ref) {
+    const tvIds = (await this.all())
+      .filter(sequence => sequence.clips.some(clip => clip.ref === ref))
+      .flatMap(sequence => sequence.tv_ids || []);
+    return [...new Set(tvIds)];
+  }
+
+  // Drop every clip of a deleted image; returns the TVs whose sequence changed
+  async removeRef(ref) {
+    const tvIds = [];
+    for (const sequence of await this.all()) {
+      if (!sequence.clips.some(clip => clip.ref === ref)) continue;
+      await this.update(sequence._id, { clips: sequence.clips.filter(clip => clip.ref !== ref) });
+      tvIds.push(...(sequence.tv_ids || []));
+    }
+    return [...new Set(tvIds)];
   }
 
   // Sequences that show this scene or image (for "used in" hints and safe deletes)

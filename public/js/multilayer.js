@@ -1508,9 +1508,11 @@ class MultiLayerManager {
         if (!templateList) return;
 
         const filter = document.getElementById('templateCategoryFilter')?.value || '';
+        // Full-screen courthouse layouts are scenes now (Scenes page), not overlays
+        const overlayTemplates = this.templates.filter(t => !(t.tags || []).includes('scene-starter'));
         const filteredTemplates = filter
-            ? this.templates.filter(t => t.category === filter)
-            : this.templates;
+            ? overlayTemplates.filter(t => t.category === filter)
+            : overlayTemplates;
 
         if (filteredTemplates.length === 0) {
             templateList.innerHTML = `

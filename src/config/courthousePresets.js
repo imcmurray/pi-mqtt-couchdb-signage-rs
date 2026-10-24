@@ -50,7 +50,7 @@ module.exports = [
     description: 'Full-screen welcome: building name, courts, live clock, date and weather',
     is_builtin: true,
     category: 'court',
-    tags: ['courthouse', 'welcome', 'clock', 'weather'],
+    tags: ['courthouse', 'welcome', 'clock', 'weather', 'scene-starter'],
     layers: [
       block('Welcome Background', { x: 0, y: 0, width: 1920, height: 1080 }, NAVY),
       text('Building Name', 'FRANK E. MOSS UNITED STATES COURTHOUSE', { x: 0, y: 70, width: 1920, height: 90 },
@@ -74,7 +74,7 @@ module.exports = [
     description: 'Full-screen information panels: hours, security, clerk offices, courtroom rules; live date, time and weather',
     is_builtin: true,
     category: 'info',
-    tags: ['courthouse', 'information', 'clock', 'weather'],
+    tags: ['courthouse', 'information', 'clock', 'weather', 'scene-starter'],
     layers: [
       block('Information Background', { x: 0, y: 0, width: 1920, height: 1080 }, NAVY),
       text('Information Header', 'Courthouse Information', { x: 0, y: 0, width: 1920, height: 130 },
@@ -95,7 +95,7 @@ module.exports = [
     description: "Today's hearings from the uploaded calendar (JSON): time, courtroom, case number, case title, reason and movant; pages automatically",
     is_builtin: true,
     category: 'court',
-    tags: ['courthouse', 'calendar', 'hearings', 'data'],
+    tags: ['courthouse', 'calendar', 'hearings', 'data', 'scene-starter'],
     layers: [
       block('Calendar Background', { x: 0, y: 0, width: 1920, height: 1080 }, NAVY),
       text('Calendar Title', "Today's Court Calendar", { x: 0, y: 0, width: 1920, height: 120 },

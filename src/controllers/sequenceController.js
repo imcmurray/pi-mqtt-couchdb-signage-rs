@@ -36,8 +36,18 @@ const sequenceUpdateSchema = Joi.object({
   clips: Joi.array().items(clipSchema).max(200)
 }).min(1);
 
+const mqttService = require('../services/multilayer.mqttService');
+
 const notFound = res => res.status(404).json({ error: 'Sequence not found' });
-const changed = sequenceId => broadcastToClients('sequences_updated', { sequence_id: sequenceId });
+
+// Tell the browser and every TV that played or now plays the sequence; the
+// Pi re-reads its sequence on sync_layers
+function changed(sequenceId, ...tvIdLists) {
+  broadcastToClients('sequences_updated', { sequence_id: sequenceId });
+  for (const tvId of new Set(tvIdLists.flat())) {
+    mqttService.syncLayers(tvId);
+  }
+}
 
 class SequenceController {
   async listSequences(req, res) {
@@ -70,7 +80,7 @@ class SequenceController {
 
     const sequence = await sequenceService.update(req.params.sequenceId, value);
     if (!sequence) return notFound(res);
-    changed(sequence.sequence_id);
+    changed(sequence.sequence_id, sequence.tv_ids || []);
     res.json(sequence);
   }
 
@@ -82,8 +92,9 @@ class SequenceController {
   }
 
   async deleteSequence(req, res) {
-    if (!await sequenceService.remove(req.params.sequenceId)) return notFound(res);
-    changed(req.params.sequenceId);
+    const existing = await sequenceService.get(req.params.sequenceId);
+    if (!existing || !await sequenceService.remove(req.params.sequenceId)) return notFound(res);
+    changed(req.params.sequenceId, existing.tv_ids || []);
     res.json({ message: 'Sequence deleted' });
   }
 
@@ -95,9 +106,10 @@ class SequenceController {
     for (const tvId of value.tv_ids) {
       if (!await TV.findById(tvId)) return res.status(400).json({ error: `TV ${tvId} not found` });
     }
+    const before = await sequenceService.get(req.params.sequenceId);
     const sequence = await sequenceService.assignTvs(req.params.sequenceId, value.tv_ids);
     if (!sequence) return notFound(res);
-    changed(sequence.sequence_id);
+    changed(sequence.sequence_id, before?.tv_ids || [], sequence.tv_ids);
     res.json(sequence);
   }
 }

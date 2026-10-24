@@ -19,6 +19,9 @@ class SequenceEditor {
         this.resize = null;        // clip edge being dragged
         this.saveTimer = null;
         this.loaded = false;
+        this.pendingSelect = null;   // set by TV Management's "Open in Sequences"
+        this.liveTvs = [];           // what each TV reports it is playing
+        this.playheadTimer = null;
 
         document.addEventListener('section-changed', (event) => {
             if (event.detail.section === 'sequences') this.show();
@@ -64,7 +67,55 @@ class SequenceEditor {
             this.loaded = true;
             this.setupTimelineEvents();
         }
-        await Promise.all([this.loadSources(), this.loadSequences()]);
+        const select = this.pendingSelect;
+        this.pendingSelect = null;
+        await this.loadSources();
+        await this.loadSequences(select || this.sequence?.sequence_id);
+        this.startPlayhead();
+    }
+
+    // "Now playing" on the timeline: poll what each TV reports while this page is open
+    startPlayhead() {
+        clearInterval(this.playheadTimer);
+        const tick = async () => {
+            if (!document.getElementById('sequences-section').classList.contains('active')) {
+                clearInterval(this.playheadTimer);
+                return;
+            }
+            try {
+                this.liveTvs = await this.request('/api/tvs');
+                this.updatePlayhead();
+            } catch (error) {
+                console.error('Playhead update failed:', error);
+            }
+        };
+        tick();
+        this.playheadTimer = setInterval(tick, 3000);
+    }
+
+    // Mark clips on screen without re-rendering (keeps drags and resizes intact)
+    updatePlayhead() {
+        if (!this.sequence) return;
+        const playing = {};
+        for (const tv of this.liveTvs) {
+            if (this.sequence.tv_ids.includes(tv._id) && tv.current_clip && tv.status === 'online') {
+                (playing[tv.current_clip] = playing[tv.current_clip] || []).push(tv.name);
+            }
+        }
+        document.querySelectorAll('#sequenceTrack .clip').forEach(element => {
+            const names = playing[element.dataset.clipId];
+            element.classList.toggle('now-playing', !!names);
+            let badge = element.querySelector('.clip-now');
+            if (names && !badge) {
+                badge = document.createElement('span');
+                badge.className = 'clip-now';
+                element.appendChild(badge);
+            }
+            if (badge) {
+                if (names) badge.textContent = `▶ ${names.join(', ')}`;
+                else badge.remove();
+            }
+        });
     }
 
     async loadSources() {
@@ -213,6 +264,7 @@ class SequenceEditor {
                 <span class="clip-resize" data-clip-id="${this.escape(clip.clip_id)}" title="Drag to change how long it shows"></span>
             </div>`;
         }).join('') + (clips.length ? '<div class="clip-loop" title="Back to the start">↺</div>' : '');
+        this.updatePlayhead();
     }
 
     renderInspector() {

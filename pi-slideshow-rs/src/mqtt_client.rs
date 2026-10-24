@@ -19,6 +19,10 @@ pub struct MqttCommand {
 pub struct TvStatus {
     pub status: String,
     pub current_image: Option<String>,
+    #[serde(default)]
+    pub current_clip: Option<String>,
+    #[serde(default)]
+    pub current_scene: Option<String>,
     pub total_images: usize,
     pub current_index: usize,
     pub uptime: u64,
@@ -107,9 +111,25 @@ pub struct ImageInfo {
     pub display_duration: Option<u64>,
     #[serde(default)]
     pub schedule: Option<ImageSchedule>,
+    // Set when the item is a sequence clip; a scene clip has `scene_id` and its
+    // `path` is the scene's snapshot (used for transitions)
+    #[serde(default)]
+    pub clip_id: Option<String>,
+    #[serde(default)]
+    pub scene_id: Option<String>,
 }
 
 impl ImageInfo {
+    /// Identity in the play list: the clip (an image can appear in several clips)
+    pub fn key(&self) -> &str {
+        self.clip_id.as_deref().unwrap_or(&self.id)
+    }
+
+    /// The Image Library image shown, if this is an image (not a scene)
+    pub fn image_id(&self) -> Option<&str> {
+        if self.scene_id.is_some() { None } else { Some(&self.id) }
+    }
+
     pub fn is_scheduled_at(&self, now: &chrono::DateTime<chrono::FixedOffset>) -> bool {
         self.schedule.as_ref().map_or(true, |schedule| schedule.is_active_at(now))
     }
@@ -388,10 +408,12 @@ impl MqttClient {
     }
 
 
-    pub async fn publish_current_image(&self, image_id: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn publish_current_image(&self, item: &ImageInfo) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let topic = format!("signage/tv/{}/image/current", self.tv_id);
         let payload = serde_json::json!({
-            "image_id": image_id,
+            "image_id": item.image_id(),
+            "clip_id": item.clip_id,
+            "scene_id": item.scene_id,
             "timestamp": chrono::Utc::now().to_rfc3339()
         });
         

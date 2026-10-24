@@ -474,6 +474,12 @@ class ImageController {
       }
     }
 
+    // Take it out of every sequence; those TVs re-read their sequence
+    const sequenceService = require('../services/sequenceService');
+    for (const tvId of await sequenceService.removeRef(image._id)) {
+      mqttService.syncLayers(tvId);
+    }
+
     await image.delete();
     res.status(204).send();
   }

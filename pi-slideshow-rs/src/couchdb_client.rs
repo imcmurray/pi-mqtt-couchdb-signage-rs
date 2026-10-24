@@ -35,6 +35,31 @@ pub struct CouchImage {
 
 
 
+impl CouchImage {
+    /// File extension for the local copy: from the attachment's content type, else
+    /// the metadata format, else the original file name
+    pub fn extension(&self) -> String {
+        let from_metadata_or_name = || {
+            if !self.metadata.format.is_empty() {
+                format!(".{}", self.metadata.format.to_lowercase())
+            } else {
+                std::path::Path::new(&self.original_name)
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .map(|ext| format!(".{}", ext))
+                    .unwrap_or_else(|| ".png".to_string())
+            }
+        };
+        match self.attachments.as_ref().and_then(|a| a.values().next()).map(|a| a.content_type.as_str()) {
+            Some("image/jpeg") | Some("image/jpg") => ".jpg".to_string(),
+            Some("image/png") => ".png".to_string(),
+            Some("image/gif") => ".gif".to_string(),
+            Some("image/webp") => ".webp".to_string(),
+            _ => from_metadata_or_name(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImageMetadata {
     pub width: u32,
@@ -265,54 +290,8 @@ impl CouchDbClient {
                     && image_doc.assigned_tvs.contains(&tv_id.to_string())
                     && !image_doc.disabled_tvs.contains(&tv_id.to_string())
                 {
-                    // Determine file extension from attachment content_type, fallback to metadata format, then original name
-                    let extension = if let Some(attachments) = &image_doc.attachments {
-                        if let Some((_name, attachment)) = attachments.iter().next() {
-                            // Use content_type to determine extension
-                            match attachment.content_type.as_str() {
-                                "image/jpeg" => ".jpg".to_string(),
-                                "image/jpg" => ".jpg".to_string(),
-                                "image/png" => ".png".to_string(),
-                                "image/gif" => ".gif".to_string(),
-                                "image/webp" => ".webp".to_string(),
-                                _ => {
-                                    // Fallback to metadata format if content_type is unknown
-                                    if !image_doc.metadata.format.is_empty() {
-                                        format!(".{}", image_doc.metadata.format.to_lowercase())
-                                    } else {
-                                        std::path::Path::new(&image_doc.original_name)
-                                            .extension()
-                                            .and_then(|ext| ext.to_str())
-                                            .map(|ext| format!(".{}", ext))
-                                            .unwrap_or_else(|| ".png".to_string())
-                                    }
-                                }
-                            }
-                        } else {
-                            // No attachments, fallback to metadata
-                            if !image_doc.metadata.format.is_empty() {
-                                format!(".{}", image_doc.metadata.format.to_lowercase())
-                            } else {
-                                std::path::Path::new(&image_doc.original_name)
-                                    .extension()
-                                    .and_then(|ext| ext.to_str())
-                                    .map(|ext| format!(".{}", ext))
-                                    .unwrap_or_else(|| ".png".to_string())
-                            }
-                        }
-                    } else {
-                        // No attachments, fallback to metadata format, then original name
-                        if !image_doc.metadata.format.is_empty() {
-                            format!(".{}", image_doc.metadata.format.to_lowercase())
-                        } else {
-                            std::path::Path::new(&image_doc.original_name)
-                                .extension()
-                                .and_then(|ext| ext.to_str())
-                                .map(|ext| format!(".{}", ext))
-                                .unwrap_or_else(|| ".png".to_string())
-                        }
-                    };
-                    
+                    let extension = image_doc.extension();
+
                     let image_info = ImageInfo {
                         id: image_doc.id.clone(),
                         path: format!("{}{}", image_doc.id, extension),
@@ -322,6 +301,8 @@ impl CouchDbClient {
                         extension: Some(extension),
                         display_duration: image_doc.display_duration,
                         schedule: image_doc.schedule.clone(),
+                        clip_id: None,
+                        scene_id: None,
                     };
 
                     images_for_tv.push(image_info);
@@ -507,6 +488,50 @@ impl CouchDbClient {
         }
         let body: serde_json::Value = response.json().await?;
         Ok(body["docs"].as_array().cloned().unwrap_or_default())
+    }
+
+    async fn layers_db_request(&self, request: reqwest::RequestBuilder) -> Result<reqwest::Response, Box<dyn std::error::Error + Send + Sync>> {
+        let request = match (&self.username, &self.password) {
+            (Some(user), Some(pass)) => request.basic_auth(user, Some(pass)),
+            _ => request,
+        };
+        Ok(request.timeout(std::time::Duration::from_secs(10)).send().await?)
+    }
+
+    /// The sequence assigned to this TV (`sequence_<uuid>` with the TV in tv_ids)
+    pub async fn get_sequence_for_tv(&self, tv_id: &str) -> Result<Option<serde_json::Value>, Box<dyn std::error::Error + Send + Sync>> {
+        let url = format!("{}/{}/_find", self.get_server_url(), self.layers_database_name);
+        let response = self.layers_db_request(reqwest::Client::new().post(&url).json(&serde_json::json!({
+            "selector": { "type": "sequence", "tv_ids": { "$elemMatch": { "$eq": tv_id } } },
+            "limit": 1
+        }))).await?;
+        if !response.status().is_success() {
+            return Err(format!("CouchDB sequence lookup failed: {}", response.status()).into());
+        }
+        let body: serde_json::Value = response.json().await?;
+        Ok(body["docs"].as_array().and_then(|docs| docs.first().cloned()))
+    }
+
+    /// A document from the layers database (scenes), or None if it doesn't exist
+    pub async fn get_layers_doc(&self, id: &str) -> Result<Option<serde_json::Value>, Box<dyn std::error::Error + Send + Sync>> {
+        let url = format!("{}/{}/{}", self.get_server_url(), self.layers_database_name, id);
+        let response = self.layers_db_request(reqwest::Client::new().get(&url)).await?;
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        if !response.status().is_success() {
+            return Err(format!("CouchDB get {} failed: {}", id, response.status()).into());
+        }
+        Ok(Some(response.json().await?))
+    }
+
+    /// An image's file extension, or None if the image no longer exists
+    pub async fn get_image_extension(&self, image_id: &str) -> Result<Option<String>, Box<dyn std::error::Error + Send + Sync>> {
+        match self.images_db.get::<serde_json::Value>(image_id).await {
+            Ok(doc) => Ok(serde_json::from_value::<CouchImage>(doc).ok().map(|image| image.extension())),
+            Err(e) if e.is_not_found() => Ok(None),
+            Err(e) => Err(Box::new(e)),
+        }
     }
 
     /// A data set (`dataset_<id>` in the layers database), or None if it doesn't exist
