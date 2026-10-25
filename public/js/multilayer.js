@@ -22,6 +22,40 @@ const PREVIEW_FONTS = {
     'Liberation Sans Narrow': "'Signage Emoji', 'Liberation Sans Narrow', 'Arial Narrow', sans-serif-condensed, sans-serif"
 };
 
+// Calendar fields a table can show, in column order. Short fields get a fixed
+// width that fits their values at the template's 28px text ("10:30 AM",
+// "Scheduled"); long text fields share what's left by weight.
+const TABLE_FIELDS = [
+    { field: 'time', label: 'Time', fixed: 150 },
+    { field: 'date', label: 'Date', fixed: 170 },
+    { field: 'courtroom', label: 'Courtroom', fixed: 180 },
+    { field: 'judge', label: 'Judge', weight: 1.25 },
+    { field: 'case_number', label: 'Case Number', fixed: 200 },
+    { field: 'case_title', label: 'Case Title', weight: 2 },
+    { field: 'reason', label: 'Matter', weight: 1.75 },
+    { field: 'movant', label: 'Movant', weight: 1.25 },
+    { field: 'trustee', label: 'Trustee', weight: 1.25 },
+    { field: 'status', label: 'Status', fixed: 170 }
+];
+
+// Column widths for a table `width` wide: fixed columns first, the rest by weight.
+// If the text columns would get under 120px each, everything shares proportionally.
+function tableColumnWidths(fields, width) {
+    const fixedTotal = fields.reduce((sum, f) => sum + (f.fixed || 0), 0);
+    const flex = fields.filter(f => !f.fixed);
+    const weightTotal = flex.reduce((sum, f) => sum + f.weight, 0);
+    const remaining = width - fixedTotal;
+    const scale = flex.length && remaining >= flex.length * 120 ? 1 : width / (fixedTotal + flex.length * 200);
+    const widths = fields.map(f => Math.max(20, Math.round(f.fixed
+        ? f.fixed * scale
+        : (scale === 1 ? (f.weight / weightTotal) * remaining : 200 * scale))));
+    // Absorb rounding so the columns fill the table exactly
+    widths[widths.length - 1] += width - widths.reduce((sum, w) => sum + w, 0);
+    return widths;
+}
+// Fields a table can be limited to one value of (e.g. one courtroom's TV)
+const TABLE_MATCH_FIELDS = ['courtroom', 'judge', 'trustee', 'movant', 'status'];
+
 class MultiLayerManager {
     constructor() {
         this.selectedTvId = null;
@@ -335,9 +369,60 @@ class MultiLayerManager {
             } else {
                 this.calendarRows = [];
             }
+            this.renderCalendarSource(await (await fetch(`${this.apiBase}/datasets/court_calendar/source`)).json());
         } catch (error) {
             this.log(`Error loading live data: ${error.message}`, 'error');
         }
+    }
+
+    renderCalendarSource(source) {
+        const status = document.getElementById('calendarSourceStatus');
+        document.getElementById('calendarSourceDisconnect').hidden = !source.connected;
+        if (!source.connected) {
+            status.textContent = 'Not connected: the calendar comes from uploads';
+            status.className = 'data-card-status';
+            return;
+        }
+        document.getElementById('calendarSourceDb').value = source.database;
+        const where = source.server === 'this server' ? '' : ` on ${source.server}`;
+        if (source.state === 'error') {
+            status.textContent = `⚠️ ${source.database}${where}: ${source.error}`;
+            status.className = 'data-card-status error';
+        } else {
+            status.textContent = `🟢 Live from ${source.database}${where}` +
+                (source.last_sync ? ` · ${source.hearings} hearing(s) ${source.window?.[0]} → ${source.window?.[1]} · checked ${this.timeAgo(source.last_sync)}` : ' · connecting…');
+            status.className = 'data-card-status live';
+        }
+    }
+
+    async connectCalendarSource() {
+        const database = document.getElementById('calendarSourceDb').value.trim();
+        const serverUrl = document.getElementById('calendarSourceUrl').value.trim();
+        if (!database) {
+            alert('Enter the name of the CouchDB database that holds the hearings.');
+            return;
+        }
+        try {
+            const response = await fetch(`${this.apiBase}/datasets/court_calendar/source`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ database, server_url: serverUrl })
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || response.statusText);
+            document.getElementById('calendarSourceUrl').value = '';
+            this.log(`Calendar: following ${result.database}`);
+            await this.loadLiveData();
+            this.renderLayers();
+        } catch (error) {
+            alert(`Couldn't connect: ${error.message}`);
+        }
+    }
+
+    async disconnectCalendarSource() {
+        if (!confirm('Stop following the live calendar? The TVs keep the last calendar until you upload or connect again.')) return;
+        await fetch(`${this.apiBase}/datasets/court_calendar/source`, { method: 'DELETE' });
+        await this.loadLiveData();
     }
 
     async uploadCalendar(input) {
@@ -414,10 +499,12 @@ class MultiLayerManager {
     renderTablePreview(layer, scale) {
         const spec = layer.content.table;
         const today = this.localDate(new Date());
+        const match = spec.match?.field && spec.match.value?.trim() ? spec.match : null;
         const rows = this.calendarRows.filter(row =>
-            spec.filter === 'all' ? true
+            (spec.filter === 'all' ? true
                 : spec.filter === 'upcoming' ? row.date >= today
-                    : row.date === today);
+                    : row.date === today)
+            && (!match || String(row[match.field] || '').trim().toLowerCase() === match.value.trim().toLowerCase()));
         const rowHeight = (spec.rowHeight || 70) * scale;
         const perPage = Math.max(1, Math.floor((layer.position.height - (spec.rowHeight || 70) * 1.5) / (spec.rowHeight || 70)));
         const columns = spec.columns.map(c => `${c.width}fr`).join(' ');
@@ -426,6 +513,7 @@ class MultiLayerManager {
                 const [h, m] = value.split(':').map(Number);
                 return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
             }
+            if (field === 'status' && value) return value[0].toUpperCase() + value.slice(1);
             return value || '';
         };
         const header = spec.columns.map(c => `<span>${this.escapeHtml(c.label)}</span>`).join('');
@@ -451,14 +539,74 @@ class MultiLayerManager {
 
     // Table layers are laid out by their template; the editor moves/sizes them only
     setTableMode(table) {
-        const note = document.getElementById('tableLayerNote');
+        const editor = document.getElementById('tableEditor');
         document.getElementById('layerForm').classList.toggle('table-mode', !!table);
-        note.hidden = !table;
-        if (table) {
-            note.textContent = `This layer is a table showing the ${table.dataset === 'court_calendar' ? 'Court Calendar' : table.dataset} data set ` +
-                `(${table.filter === 'all' ? 'all dates' : table.filter === 'upcoming' ? 'today and later' : "today's hearings"}, ` +
-                `${table.columns.map(c => c.label).join(', ')}). Upload new data under Live Data; long lists page every ${table.pageSeconds || 12} seconds.`;
+        editor.hidden = !table;
+        if (!table) {
+            editor.innerHTML = '';
+            return;
         }
+        const shown = new Map(table.columns.map(c => [c.field, c.label]));
+        const option = (value, label, selected) => `<option value="${value}" ${selected ? 'selected' : ''}>${label}</option>`;
+        const filter = table.filter || 'today';
+        editor.innerHTML = `
+            <div class="table-editor-title">📅 Calendar table</div>
+            <div class="table-editor-row">
+                <label>Show
+                    <select id="tableFilter" class="form-select">
+                        ${option('today', "Today's hearings", filter === 'today')}
+                        ${option('upcoming', 'Today and later', filter === 'upcoming')}
+                        ${option('all', 'All dates', filter === 'all')}
+                    </select>
+                </label>
+                <label>Only where
+                    <select id="tableMatchField" class="form-select" onchange="manager.fillMatchValues()">
+                        ${option('', 'every hearing', !table.match?.field)}
+                        ${TABLE_MATCH_FIELDS.map(f => option(f, TABLE_FIELDS.find(t => t.field === f).label.toLowerCase() + ' is', table.match?.field === f)).join('')}
+                    </select>
+                </label>
+                <input type="text" id="tableMatchValue" class="form-input" list="tableMatchValues"
+                       value="${this.escapeHtml(table.match?.value || '')}" placeholder="e.g. North">
+                <datalist id="tableMatchValues"></datalist>
+            </div>
+            <div class="table-editor-subtitle">Columns <small>(sized to fit; rename as you like)</small></div>
+            <div class="table-editor-columns">
+                ${TABLE_FIELDS.map(f => `
+                    <label class="table-column ${shown.has(f.field) ? 'on' : ''}">
+                        <input type="checkbox" data-field="${f.field}" ${shown.has(f.field) ? 'checked' : ''}
+                               onchange="this.closest('.table-column').classList.toggle('on', this.checked)">
+                        <input type="text" class="form-input" data-label="${f.field}" value="${this.escapeHtml(shown.get(f.field) ?? f.label)}" maxlength="50">
+                    </label>`).join('')}
+            </div>
+            <small class="form-hint">Rows come from the Court Calendar under Live Data. Long lists page every ${table.pageSeconds || 12} seconds. Save changes to update the TV.</small>`;
+        this.fillMatchValues();
+    }
+
+    // Suggest values for the "only where" filter from the loaded calendar
+    fillMatchValues() {
+        const field = document.getElementById('tableMatchField')?.value;
+        const values = field ? [...new Set(this.calendarRows.map(row => row[field]).filter(Boolean))].sort() : [];
+        document.getElementById('tableMatchValues').innerHTML = values.map(v => `<option value="${this.escapeHtml(v)}">`).join('');
+        document.getElementById('tableMatchValue').disabled = !field;
+    }
+
+    // The table spec from the editor, keeping the existing styling
+    readTableEditor(table, width) {
+        const chosen = TABLE_FIELDS.filter(f => document.querySelector(`#tableEditor input[data-field="${f.field}"]`)?.checked);
+        if (!chosen.length) throw new Error('Choose at least one column for the table');
+        const widths = tableColumnWidths(chosen, width);
+        const columns = chosen.map((f, i) => {
+            const label = document.querySelector(`#tableEditor input[data-label="${f.field}"]`).value.trim();
+            return { field: f.field, label: label || f.label, width: widths[i] };
+        });
+        const matchField = document.getElementById('tableMatchField').value;
+        const matchValue = document.getElementById('tableMatchValue').value.trim();
+        return {
+            ...table,
+            filter: document.getElementById('tableFilter').value,
+            columns,
+            match: matchField && matchValue ? { field: matchField, value: matchValue } : null
+        };
     }
 
     // Image layers show only the image on the TV, so hide the text-only fields
@@ -1180,6 +1328,9 @@ class MultiLayerManager {
             // Keep fields the editor doesn't show
             layerData.layer_type = editing.layer_type;
             layerData.content = { ...editing.content, ...layerData.content };
+            if (editing.content?.table) {
+                layerData.content.table = this.readTableEditor(editing.content.table, layerData.position.width);
+            }
         }
 
         try {
@@ -1925,6 +2076,14 @@ function duplicateScene() {
 
 function deleteScene() {
     manager.deleteScene();
+}
+
+function connectCalendarSource() {
+    manager.connectCalendarSource();
+}
+
+function disconnectCalendarSource() {
+    manager.disconnectCalendarSource();
 }
 
 function insertToken(token) {

@@ -1898,3 +1898,94 @@
     border-top: 2px dashed #ec4899;
     transform: translateY(-1px);
 }
+
+/* Calendar: live source and table editor */
+:is(#layers-section, #scenes-section) .calendar-source {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--ml-border);
+}
+
+:is(#layers-section, #scenes-section) .data-card-subtitle,
+:is(#layers-section, #scenes-section) .table-editor-subtitle {
+    font-weight: 600;
+    font-size: 13px;
+    margin: 4px 0;
+}
+
+:is(#layers-section, #scenes-section) .data-card-status.live { color: #276749; }
+:is(#layers-section, #scenes-section) .data-card-status.error { color: #c53030; }
+
+:is(#layers-section, #scenes-section) .calendar-source-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto auto;
+    gap: 6px;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+:is(#layers-section, #scenes-section) .table-editor {
+    padding: 12px;
+    margin-bottom: 12px;
+    border: 1px solid var(--ml-border);
+    border-radius: 8px;
+    background: var(--ml-background);
+}
+
+:is(#layers-section, #scenes-section) .table-editor-title {
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+:is(#layers-section, #scenes-section) .table-editor-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+:is(#layers-section, #scenes-section) .table-editor-row label {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 12px;
+}
+
+:is(#layers-section, #scenes-section) .table-editor-row .form-input {
+    max-width: 220px;
+}
+
+:is(#layers-section, #scenes-section) .table-editor-columns {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: 6px;
+    margin-bottom: 6px;
+}
+
+:is(#layers-section, #scenes-section) .table-column {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 6px;
+    border: 1px solid var(--ml-border);
+    border-radius: 6px;
+    opacity: 0.6;
+}
+
+:is(#layers-section, #scenes-section) .table-column.on {
+    opacity: 1;
+    border-color: #c9a227;
+}
+
+:is(#layers-section, #scenes-section) .table-column .form-input {
+    padding: 4px 6px;
+    font-size: 13px;
+    min-width: 0;
+}
+
+@media (max-width: 700px) {
+    :is(#layers-section, #scenes-section) .calendar-source-form {
+        grid-template-columns: 1fr;
+    }
+}

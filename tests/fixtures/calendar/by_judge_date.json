@@ -1,0 +1,82 @@
+{
+ "total_rows": 16,
+ "offset": 0,
+ "rows": [
+  {
+   "id": "hearing:h-20261025-n-0900-3451",
+   "key": [
+    "Judge Anderson",
+    "2026-10-25",
+    "09:00",
+    "North"
+   ],
+   "value": {
+    "id": "hearing:h-20261025-n-0900-3451",
+    "courtroom": "North",
+    "case_number": "26-21345",
+    "case_title": "In re Savanna G. Smith",
+    "matter": "Motion for Relief from Stay",
+    "movant": "First Utah Credit Union",
+    "trustee": "Chapter 13 Trustee",
+    "status": "heard"
+   }
+  },
+  {
+   "id": "hearing:h-20261025-n-0900-3452",
+   "key": [
+    "Judge Anderson",
+    "2026-10-25",
+    "09:00",
+    "North"
+   ],
+   "value": {
+    "id": "hearing:h-20261025-n-0900-3452",
+    "courtroom": "North",
+    "case_number": "26-21345",
+    "case_title": "In re Savanna G. Smith",
+    "matter": "Objection to Confirmation",
+    "movant": "Chapter 13 Trustee",
+    "trustee": "Chapter 13 Trustee",
+    "status": "scheduled"
+   }
+  },
+  {
+   "id": "hearing:h-20261025-n-0930-8771",
+   "key": [
+    "Judge Anderson",
+    "2026-10-25",
+    "09:30",
+    "North"
+   ],
+   "value": {
+    "id": "hearing:h-20261025-n-0930-8771",
+    "courtroom": "North",
+    "case_number": "26-20877",
+    "case_title": "In re Andie Arave and McKenzie Atterton",
+    "matter": "Confirmation Hearing (Chapter 13)",
+    "movant": null,
+    "trustee": "Chapter 13 Trustee",
+    "status": "scheduled"
+   }
+  },
+  {
+   "id": "hearing:h-20261025-n-1030-4101",
+   "key": [
+    "Judge Anderson",
+    "2026-10-25",
+    "10:30",
+    "North"
+   ],
+   "value": {
+    "id": "hearing:h-20261025-n-1030-4101",
+    "courtroom": "North",
+    "case_number": "25-24410",
+    "case_title": "In re Wasatch Front Logistics, LLC",
+    "matter": "Motion to Use Cash Collateral",
+    "movant": "Debtor",
+    "trustee": null,
+    "status": "scheduled"
+   }
+  }
+ ]
+}

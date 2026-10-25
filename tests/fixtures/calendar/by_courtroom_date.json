@@ -1,0 +1,44 @@
+{
+ "total_rows": 16,
+ "offset": 12,
+ "rows": [
+  {
+   "id": "hearing:h-20261025-s-0900-1121",
+   "key": [
+    "South",
+    "2026-10-25",
+    "09:00",
+    "Judge Parker"
+   ],
+   "value": {
+    "id": "hearing:h-20261025-s-0900-1121",
+    "judge": "Judge Parker",
+    "case_number": "26-20112",
+    "case_title": "In re Jordan T. Reyes",
+    "matter": "Motion to Redeem Property of the Estate",
+    "movant": "Beutler, Derek",
+    "trustee": "Chapter 7 Trustee",
+    "status": "scheduled"
+   }
+  },
+  {
+   "id": "hearing:h-20261025-s-1100-9011",
+   "key": [
+    "South",
+    "2026-10-25",
+    "11:00",
+    "Judge Parker"
+   ],
+   "value": {
+    "id": "hearing:h-20261025-s-1100-9011",
+    "judge": "Judge Parker",
+    "case_number": "24-25901",
+    "case_title": "Smith v. Granite Peak Lending",
+    "matter": "Status Conference",
+    "movant": "Plaintiff",
+    "trustee": null,
+    "status": "continued"
+   }
+  }
+ ]
+}

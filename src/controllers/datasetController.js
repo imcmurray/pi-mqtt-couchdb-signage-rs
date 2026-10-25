@@ -1,4 +1,6 @@
+const Joi = require('joi');
 const datasetService = require('../services/datasetService');
+const calendarSourceService = require('../services/calendarSourceService');
 const { normalizeCalendar, sampleCalendar } = require('../utils/calendarImport');
 
 const CALENDAR_ID = 'court_calendar';
@@ -38,6 +40,34 @@ class DatasetController {
       errors: errors.slice(0, 20),
       message: `Loaded ${rows.length} hearing(s)${errors.length ? `, skipped ${errors.length}` : ''}`
     });
+  }
+
+  // GET /api/datasets/court_calendar/source - the live CouchDB calendar, if any
+  async getCalendarSource(req, res) {
+    res.json(calendarSourceService.publicStatus());
+  }
+
+  // PUT /api/datasets/court_calendar/source { database, server_url? } - follow a
+  // CouchDB database of hearing documents with _design/calendar
+  async setCalendarSource(req, res) {
+    const { error, value } = Joi.object({
+      database: Joi.string().trim().pattern(/^[a-z][a-z0-9_$()+/-]*$/).max(238).required()
+        .messages({ 'string.pattern.base': 'Database names are lowercase letters, digits and _$()+-/' }),
+      server_url: Joi.string().trim().uri({ scheme: ['http', 'https'] }).allow('').default('')
+    }).validate(req.body);
+    if (error) return res.status(400).json({ error: error.details[0].message });
+    try {
+      res.json(await calendarSourceService.connect(value));
+    } catch (err) {
+      if (err.status) return res.status(err.status).json({ error: err.message });
+      throw err;
+    }
+  }
+
+  // DELETE /api/datasets/court_calendar/source - stop following; keeps the last calendar
+  async clearCalendarSource(req, res) {
+    await calendarSourceService.disconnect();
+    res.json(calendarSourceService.publicStatus());
   }
 
   // GET /api/datasets/court_calendar/sample - example upload file, dated today

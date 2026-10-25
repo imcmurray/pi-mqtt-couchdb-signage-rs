@@ -33,6 +33,16 @@ pub struct TableSpec {
     pub text_color: String,
     pub page_seconds: u64,
     pub empty_text: String,
+    /// Only rows whose `field` equals `value` (case-insensitive), e.g. one
+    /// courtroom's or one judge's hearings on the TV outside that courtroom
+    #[serde(rename = "match")]
+    pub row_match: Option<RowMatch>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RowMatch {
+    pub field: String,
+    pub value: String,
 }
 
 impl Default for TableSpec {
@@ -52,6 +62,7 @@ impl Default for TableSpec {
             text_color: "rgba(255, 255, 255, 1)".into(),
             page_seconds: 12,
             empty_text: "Nothing scheduled.".into(),
+            row_match: None,
         }
     }
 }
@@ -107,14 +118,20 @@ pub fn uses_clock(text: &str) -> bool {
 
 /// Rows from the data set that this table shows, in data set order
 pub fn table_rows<'a>(spec: &TableSpec, rows: &'a [serde_json::Value], today: NaiveDate) -> Vec<&'a serde_json::Value> {
+    let wanted = spec.row_match.as_ref()
+        .filter(|m| !m.field.is_empty() && !m.value.trim().is_empty())
+        .map(|m| (m.field.as_str(), m.value.trim().to_lowercase()));
     rows.iter()
         .filter(|row| {
             let date = row["date"].as_str().and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok());
-            match spec.filter.as_str() {
+            let in_window = match spec.filter.as_str() {
                 "all" => true,
                 "upcoming" => date.map_or(true, |d| d >= today),
                 _ => date == Some(today),
-            }
+            };
+            in_window && wanted.as_ref().map_or(true, |(field, value)| {
+                row[*field].as_str().map_or(false, |v| v.trim().to_lowercase() == *value)
+            })
         })
         .collect()
 }
@@ -144,6 +161,11 @@ pub fn cell_text(row: &serde_json::Value, field: &str) -> String {
         "date" => NaiveDate::parse_from_str(&raw, "%Y-%m-%d")
             .map(|d| d.format("%a %b %-d").to_string())
             .unwrap_or(raw),
+        // "heard" -> "Heard"
+        "status" => {
+            let mut chars = raw.chars();
+            chars.next().map(|c| c.to_uppercase().chain(chars).collect()).unwrap_or_default()
+        }
         _ => raw,
     }
 }
@@ -210,6 +232,27 @@ mod tests {
         assert_eq!(cell_text(&row, "case_number"), "26-1");
         assert_eq!(cell_text(&row, "courtroom"), "");
         assert_eq!(cell_text(&row, "missing"), "");
+    }
+
+    #[test]
+    fn match_limits_rows_to_one_courtroom() {
+        let rows = vec![
+            json!({"date": "2026-10-23", "courtroom": "North"}),
+            json!({"date": "2026-10-23", "courtroom": "south"}),
+            json!({"date": "2026-10-23", "courtroom": "South "}),
+            json!({"date": "2026-10-24", "courtroom": "South"}),
+        ];
+        let today = NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
+        let spec: TableSpec = serde_json::from_value(json!({ "match": { "field": "courtroom", "value": "South" } })).unwrap();
+        assert_eq!(table_rows(&spec, &rows, today).len(), 2);
+        let blank: TableSpec = serde_json::from_value(json!({ "match": { "field": "courtroom", "value": " " } })).unwrap();
+        assert_eq!(table_rows(&blank, &rows, today).len(), 3);
+    }
+
+    #[test]
+    fn status_cells_are_capitalised() {
+        assert_eq!(cell_text(&json!({"status": "continued"}), "status"), "Continued");
+        assert_eq!(cell_text(&json!({"status": ""}), "status"), "");
     }
 
     #[test]

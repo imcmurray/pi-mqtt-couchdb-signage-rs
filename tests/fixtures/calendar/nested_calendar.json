@@ -1,0 +1,204 @@
+{
+ "date": "2026-10-25",
+ "timezone": "America/Denver",
+ "court": "U.S. Bankruptcy Court, District of Utah",
+ "sessions": [
+  {
+   "courtroom": "Central",
+   "slots": [
+    {
+     "start_time": "13:30",
+     "judges": [
+      {
+       "judge": "Judge Thomson",
+       "cases": [
+        {
+         "case": {
+          "number": "26-21990",
+          "title": "In re Bonneville Dental Group, PLLC"
+         },
+         "matters": [
+          {
+           "id": "hearing:h-20261025-c-1330-9901",
+           "matter": "First Day Motions",
+           "movant": "Debtor",
+           "trustee": "Subchapter V Trustee",
+           "status": "scheduled"
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "start_time": "14:00",
+     "judges": [
+      {
+       "judge": "Judge Thomson",
+       "cases": [
+        {
+         "case": {
+          "number": "26-22001",
+          "title": "In re Marcus L. Ortega"
+         },
+         "matters": [
+          {
+           "id": "hearing:h-20261025-c-1400-0011",
+           "matter": "Motion to Dismiss",
+           "movant": "Chapter 13 Trustee",
+           "trustee": "Chapter 13 Trustee",
+           "status": "cancelled"
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "courtroom": "North",
+   "slots": [
+    {
+     "start_time": "09:00",
+     "judges": [
+      {
+       "judge": "Judge Anderson",
+       "cases": [
+        {
+         "case": {
+          "number": "26-21345",
+          "title": "In re Savanna G. Smith"
+         },
+         "matters": [
+          {
+           "id": "hearing:h-20261025-n-0900-3451",
+           "matter": "Motion for Relief from Stay",
+           "movant": "First Utah Credit Union",
+           "trustee": "Chapter 13 Trustee",
+           "status": "heard"
+          },
+          {
+           "id": "hearing:h-20261025-n-0900-3452",
+           "matter": "Objection to Confirmation",
+           "movant": "Chapter 13 Trustee",
+           "trustee": "Chapter 13 Trustee",
+           "status": "scheduled"
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "start_time": "09:30",
+     "judges": [
+      {
+       "judge": "Judge Anderson",
+       "cases": [
+        {
+         "case": {
+          "number": "26-20877",
+          "title": "In re Andie Arave and McKenzie Atterton"
+         },
+         "matters": [
+          {
+           "id": "hearing:h-20261025-n-0930-8771",
+           "matter": "Confirmation Hearing (Chapter 13)",
+           "movant": null,
+           "trustee": "Chapter 13 Trustee",
+           "status": "scheduled"
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "start_time": "10:30",
+     "judges": [
+      {
+       "judge": "Judge Anderson",
+       "cases": [
+        {
+         "case": {
+          "number": "25-24410",
+          "title": "In re Wasatch Front Logistics, LLC"
+         },
+         "matters": [
+          {
+           "id": "hearing:h-20261025-n-1030-4101",
+           "matter": "Motion to Use Cash Collateral",
+           "movant": "Debtor",
+           "trustee": null,
+           "status": "scheduled"
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "courtroom": "South",
+   "slots": [
+    {
+     "start_time": "09:00",
+     "judges": [
+      {
+       "judge": "Judge Parker",
+       "cases": [
+        {
+         "case": {
+          "number": "26-20112",
+          "title": "In re Jordan T. Reyes"
+         },
+         "matters": [
+          {
+           "id": "hearing:h-20261025-s-0900-1121",
+           "matter": "Motion to Redeem Property of the Estate",
+           "movant": "Beutler, Derek",
+           "trustee": "Chapter 7 Trustee",
+           "status": "scheduled"
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "start_time": "11:00",
+     "judges": [
+      {
+       "judge": "Judge Parker",
+       "cases": [
+        {
+         "case": {
+          "number": "24-25901",
+          "title": "Smith v. Granite Peak Lending"
+         },
+         "matters": [
+          {
+           "id": "hearing:h-20261025-s-1100-9011",
+           "matter": "Status Conference",
+           "movant": "Plaintiff",
+           "trustee": null,
+           "status": "continued"
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

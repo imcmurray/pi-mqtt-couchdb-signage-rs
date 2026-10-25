@@ -56,9 +56,9 @@ describe('calendarImport', () => {
       });
 
       expect(errors).toEqual([]);
-      expect(rows).toEqual([
-        { courtroom: 'Courtroom 341', date: '2026-10-23', time: '09:00', case_number: '26-2', case_title: 'A', reason: 'Motion', movant: 'Beutler, Derek' },
-        { courtroom: 'Courtroom 369', date: '2026-10-23', time: '14:00', case_number: '24-1', case_title: 'B', reason: 'Status', movant: 'Plaintiff' }
+      expect(rows.map(r => [r.courtroom, r.date, r.time, r.case_number, r.case_title, r.reason, r.movant])).toEqual([
+        ['Courtroom 341', '2026-10-23', '09:00', '26-2', 'A', 'Motion', 'Beutler, Derek'],
+        ['Courtroom 369', '2026-10-23', '14:00', '24-1', 'B', 'Status', 'Plaintiff']
       ]);
     });
 
@@ -77,6 +77,62 @@ describe('calendarImport', () => {
       expect(errors).toEqual([]);
       expect(rows).toHaveLength(5);
       expect(rows[0]).toMatchObject({ date: '2026-10-23', time: '09:00' });
+    });
+  });
+
+  // Real responses from a CouchDB with the court's _design/calendar (tests/fixtures/calendar)
+  describe('court hearing documents from CouchDB', () => {
+    const fixture = name => require(`../../fixtures/calendar/${name}.json`);
+    const summary = rows => rows.map(r => [r.date, r.time, r.courtroom, r.judge, r.case_number, r.reason, r.movant, r.trustee, r.status]);
+
+    const today = normalizeCalendar(fixture('by_date_courtroom_time'));
+
+    it('reads the by_date_courtroom_time view, taking courtroom/time/judge from the key', () => {
+      expect(today.errors).toEqual([]);
+      expect(today.rows).toHaveLength(8);
+      expect(today.rows[0]).toEqual({
+        hearing_id: 'hearing:h-20261025-n-0900-3451',
+        date: '2026-10-25',
+        time: '09:00',
+        courtroom: 'North',
+        judge: 'Judge Anderson',
+        case_number: '26-21345',
+        case_title: 'In re Savanna G. Smith',
+        reason: 'Motion for Relief from Stay',
+        movant: 'First Utah Credit Union',
+        trustee: 'Chapter 13 Trustee',
+        status: 'heard'
+      });
+      // Sorted by time across courtrooms, not by courtroom like the view key
+      expect(today.rows.map(r => r.time)).toEqual(['09:00', '09:00', '09:00', '09:30', '10:30', '11:00', '13:30', '14:00']);
+    });
+
+    it.each(['find', 'nested_calendar'])('reads %s output the same way', name => {
+      const { rows, errors } = normalizeCalendar(fixture(name));
+      expect(errors).toEqual([]);
+      expect(summary(rows)).toEqual(summary(today.rows));
+    });
+
+    it('reads _all_docs?include_docs=true, skipping other document types', () => {
+      const { rows, errors } = normalizeCalendar(fixture('all_docs'));
+      expect(errors).toEqual([]);
+      expect(summary(rows.filter(r => r.date === '2026-10-25'))).toEqual(summary(today.rows));
+      expect(rows).toHaveLength(16);
+    });
+
+    it('reads the judge and courtroom views', () => {
+      const judge = normalizeCalendar(fixture('by_judge_date')).rows;
+      expect(judge.every(r => r.judge === 'Judge Anderson' && r.courtroom === 'North')).toBe(true);
+      expect(summary(judge)).toEqual(summary(today.rows.filter(r => r.judge === 'Judge Anderson')));
+
+      const room = normalizeCalendar(fixture('by_courtroom_date')).rows;
+      expect(summary(room)).toEqual(summary(today.rows.filter(r => r.courtroom === 'South')));
+    });
+
+    it('treats a missing trustee or movant as blank', () => {
+      const arave = today.rows.find(r => r.case_number === '26-20877');
+      expect(arave.movant).toBe('');
+      expect(arave.trustee).toBe('Chapter 13 Trustee');
     });
   });
 });

@@ -118,11 +118,12 @@ module.exports = [
             filter: 'today',
             columns: [
               { field: 'time', label: 'Time', width: 150 },
-              { field: 'courtroom', label: 'Courtroom', width: 230 },
-              { field: 'case_number', label: 'Case Number', width: 220 },
-              { field: 'case_title', label: 'Case Title', width: 520 },
-              { field: 'reason', label: 'Reason for Hearing', width: 470 },
-              { field: 'movant', label: 'Movant', width: 250 }
+              { field: 'courtroom', label: 'Courtroom', width: 180 },
+              { field: 'judge', label: 'Judge', width: 262 },
+              { field: 'case_number', label: 'Case Number', width: 200 },
+              { field: 'case_title', label: 'Case Title', width: 419 },
+              { field: 'reason', label: 'Matter', width: 367 },
+              { field: 'movant', label: 'Movant', width: 262 }
             ],
             rowHeight: 76,
             fontSize: 28,

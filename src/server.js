@@ -374,6 +374,8 @@ async function startServer() {
       await require('./services/sequenceService').migratePlaylists();
       // A demo interrupted by a restart: put its TV back
       await require('./services/demoService').restoreLeftovers();
+      // Follow the court's hearings database, if one is set
+      await require('./services/calendarSourceService').start();
     } catch (error) {
       console.error('Could not create starter scenes / sequences:', error.message);
     }

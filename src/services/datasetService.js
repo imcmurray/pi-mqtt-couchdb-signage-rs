@@ -30,7 +30,7 @@ class DatasetService {
   }
 
   // Replace a data set and tell every TV to refresh its layers (which re-reads data sets)
-  async save(datasetId, fields) {
+  async save(datasetId, fields, retry = true) {
     const existing = await this.get(datasetId);
     const doc = {
       ...fields,
@@ -40,7 +40,13 @@ class DatasetService {
       updated_at: new Date().toISOString()
     };
     if (existing) doc._rev = existing._rev;
-    await this.getDb().insert(doc);
+    try {
+      await this.getDb().insert(doc);
+    } catch (error) {
+      // Another writer saved it between our read and write: replace theirs once
+      if (error.statusCode === 409 && retry) return this.save(datasetId, fields, false);
+      throw error;
+    }
     await this.notifyTvs();
     return doc;
   }

@@ -446,7 +446,7 @@
                                             <div class="emoji-group"><span class="emoji-group-label">Weather</span><button type="button" class="emoji-chip" onclick="insertToken('☀️')">☀️</button><button type="button" class="emoji-chip" onclick="insertToken('🌤️')">🌤️</button><button type="button" class="emoji-chip" onclick="insertToken('⛅')">⛅</button><button type="button" class="emoji-chip" onclick="insertToken('☁️')">☁️</button><button type="button" class="emoji-chip" onclick="insertToken('🌧️')">🌧️</button><button type="button" class="emoji-chip" onclick="insertToken('⛈️')">⛈️</button><button type="button" class="emoji-chip" onclick="insertToken('❄️')">❄️</button><button type="button" class="emoji-chip" onclick="insertToken('🌫️')">🌫️</button><button type="button" class="emoji-chip" onclick="insertToken('💨')">💨</button></div>
                                         </details>
                                     </div>
-                                    <p class="table-layer-note" id="tableLayerNote" hidden></p>
+                                    <div class="table-editor" id="tableEditor" hidden></div>
                                     <div class="editor-grid">
                                         <div class="form-group"><label for="layerX">X</label><input type="number" id="layerX" class="form-input" min="0" max="1920" value="0"></div>
                                         <div class="form-group"><label for="layerY">Y</label><input type="number" id="layerY" class="form-input" min="0" max="1920" value="100"></div>
@@ -539,7 +539,18 @@
                                         </label>
                                         <a class="btn btn-secondary btn-sm" href="/api/datasets/court_calendar/sample" download>Download sample</a>
                                     </div>
-                                    <small class="form-hint">One entry per hearing with: courtroom, date, time, case_number, case_title, reason, movant. Common alternatives (e.g. "Courtroom Name", "Hearing Date", "Reason for Hearing", "moving party") are recognised.</small>
+                                    <small class="form-hint">Hearing documents (<code>type: "hearing"</code> with date, start_time, courtroom, judge, case_number, case_title, matter, movant, trustee, status), a CouchDB view, <code>_find</code> or <code>_all_docs</code> export, or the <code>nested_calendar</code> output. Other exports with similar field names work too.</small>
+                                    <div class="calendar-source">
+                                        <div class="data-card-subtitle">Live source</div>
+                                        <div class="data-card-status" id="calendarSourceStatus">Not connected</div>
+                                        <div class="calendar-source-form">
+                                            <input type="text" id="calendarSourceDb" class="form-input" placeholder="Database, e.g. court_calendar" autocomplete="off">
+                                            <input type="text" id="calendarSourceUrl" class="form-input" placeholder="Server (blank = this CouchDB), e.g. http://user:pass@host:5984" autocomplete="off">
+                                            <button type="button" class="btn btn-primary btn-sm" onclick="connectCalendarSource()">Connect</button>
+                                            <button type="button" class="btn btn-secondary btn-sm" id="calendarSourceDisconnect" onclick="disconnectCalendarSource()" hidden>Disconnect</button>
+                                        </div>
+                                        <small class="form-hint">Follows a CouchDB database of hearing documents that has the court's <code>_design/calendar</code>: today and the next 14 days, updated within seconds of any change. While connected, an upload only lasts until the next change.</small>
+                                    </div>
                                 </div>
                                 <div class="data-card">
                                     <div class="data-card-title">🌤️ Weather</div>
