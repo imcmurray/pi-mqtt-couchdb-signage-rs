@@ -1,7 +1,7 @@
 {
-  "version": "v1.3.0",
-  "commit_hash": "2dc84acba0327a6720d75afbebc72561672bee1f",
-  "commit_short": "2dc84ac",
+  "version": "v1.3.1",
+  "commit_hash": "45bf1e53f6ec3ef38b6bfb3e7febca4a641b15b1",
+  "commit_short": "45bf1e5",
   "branch": "main",
-  "build_time": "2026-10-25T21:18:03.301Z"
+  "build_time": "2026-10-25T21:18:29.000Z"
 }
