@@ -230,7 +230,7 @@ function sampleCalendar(date = courthouseToday()) {
     hearing('North', '09:30', 'Judge Anderson', '26-20877', 'In re Andie Arave and McKenzie Atterton', 'Confirmation Hearing (Chapter 13)', null, 'Chapter 13 Trustee'),
     hearing('South', '10:00', 'Judge Parker', '25-24410', 'In re Wasatch Front Logistics, LLC', 'Motion to Use Cash Collateral', 'Debtor', null),
     hearing('South', '13:30', 'Judge Parker', '26-20112', 'In re Jordan T. Reyes', 'Motion to Redeem Property of the Estate', 'Beutler, Derek', 'Chapter 7 Trustee'),
-    hearing('Central', '14:00', 'Judge Thomson', '24-25901', 'Smith v. Granite Peak Lending', 'Status Conference', 'Plaintiff', null, 'continued')
+    hearing('South', '14:00', 'Judge Thomson', '24-25901', 'Smith v. Granite Peak Lending', 'Status Conference', 'Plaintiff', null, 'continued')
   ];
 }
 

@@ -4,61 +4,6 @@
  "court": "U.S. Bankruptcy Court, District of Utah",
  "sessions": [
   {
-   "courtroom": "Central",
-   "slots": [
-    {
-     "start_time": "13:30",
-     "judges": [
-      {
-       "judge": "Judge Thomson",
-       "cases": [
-        {
-         "case": {
-          "number": "26-21990",
-          "title": "In re Bonneville Dental Group, PLLC"
-         },
-         "matters": [
-          {
-           "id": "hearing:h-20261025-c-1330-9901",
-           "matter": "First Day Motions",
-           "movant": "Debtor",
-           "trustee": "Subchapter V Trustee",
-           "status": "scheduled"
-          }
-         ]
-        }
-       ]
-      }
-     ]
-    },
-    {
-     "start_time": "14:00",
-     "judges": [
-      {
-       "judge": "Judge Thomson",
-       "cases": [
-        {
-         "case": {
-          "number": "26-22001",
-          "title": "In re Marcus L. Ortega"
-         },
-         "matters": [
-          {
-           "id": "hearing:h-20261025-c-1400-0011",
-           "matter": "Motion to Dismiss",
-           "movant": "Chapter 13 Trustee",
-           "trustee": "Chapter 13 Trustee",
-           "status": "cancelled"
-          }
-         ]
-        }
-       ]
-      }
-     ]
-    }
-   ]
-  },
-  {
    "courtroom": "North",
    "slots": [
     {
@@ -191,6 +136,56 @@
            "movant": "Plaintiff",
            "trustee": null,
            "status": "continued"
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "start_time": "13:30",
+     "judges": [
+      {
+       "judge": "Judge Thomson",
+       "cases": [
+        {
+         "case": {
+          "number": "26-21990",
+          "title": "In re Bonneville Dental Group, PLLC"
+         },
+         "matters": [
+          {
+           "id": "hearing:h-20261025-s-1330-9901",
+           "matter": "First Day Motions",
+           "movant": "Debtor",
+           "trustee": "Subchapter V Trustee",
+           "status": "scheduled"
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "start_time": "14:00",
+     "judges": [
+      {
+       "judge": "Judge Thomson",
+       "cases": [
+        {
+         "case": {
+          "number": "26-22001",
+          "title": "In re Marcus L. Ortega"
+         },
+         "matters": [
+          {
+           "id": "hearing:h-20261025-s-1400-0011",
+           "matter": "Motion to Dismiss",
+           "movant": "Chapter 13 Trustee",
+           "trustee": "Chapter 13 Trustee",
+           "status": "cancelled"
           }
          ]
         }
