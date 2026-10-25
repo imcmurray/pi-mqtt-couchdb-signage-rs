@@ -1,7 +1,7 @@
 {
-  "version": "v1.2.0-2-gcd5588c",
-  "commit_hash": "cd5588c4ff33322a6639d2a92137311e6b6b60e8",
-  "commit_short": "cd5588c",
+  "version": "v1.3.0",
+  "commit_hash": "fae901e62db1a3908331f58fa3537c1ac53b76f7",
+  "commit_short": "fae901e",
   "branch": "main",
-  "build_time": "2026-10-25T20:55:07.647Z"
+  "build_time": "2026-10-25T20:56:08.000Z"
 }
