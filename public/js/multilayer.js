@@ -27,7 +27,7 @@ const PREVIEW_FONTS = {
 // "Scheduled"); long text fields share what's left by weight.
 const TABLE_FIELDS = [
     { field: 'time', label: 'Time', fixed: 150 },
-    { field: 'date', label: 'Date', fixed: 170 },
+    { field: 'date', label: 'Date', fixed: 210 },
     { field: 'courtroom', label: 'Courtroom', fixed: 180 },
     { field: 'judge', label: 'Judge', weight: 1.25 },
     { field: 'case_number', label: 'Case Number', fixed: 200 },

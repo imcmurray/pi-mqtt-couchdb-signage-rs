@@ -7,7 +7,10 @@ const BUILTIN_PRESETS = require('../config/builtinPresets');
 // in the layers database holding its elements, so TVs can read it directly.
 // Elements have the same shape as Layer Control layers (`layer_id` is their id).
 const MAX_ELEMENTS = 40;
-const STARTER_PRESETS = ['courthouse-welcome', 'courthouse-information', 'court-calendar'];
+const STARTER_PRESETS = ['courthouse-welcome', 'courthouse-information', 'court-calendar',
+  'courtroom-docket', 'judge-calendar', 'trustee-calendar', 'hearing-status-board', 'upcoming-hearings'];
+// Created on first run; the rest are offered when making a new scene
+const SEED_PRESETS = ['courthouse-welcome', 'courthouse-information', 'court-calendar'];
 
 const newId = prefix => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
 
@@ -157,10 +160,10 @@ class SceneService {
   async seedStarters() {
     const existing = await this.getDb().find({ selector: { type: 'scene' }, fields: ['_id'], limit: 1 });
     if (existing.docs.length) return;
-    for (const starter of this.starters()) {
+    for (const starter of this.starters().filter(s => SEED_PRESETS.includes(s.preset_id))) {
       await this.create({ name: starter.name, from_preset: starter.preset_id });
     }
-    console.log(`🎬 Created ${STARTER_PRESETS.length} starter scenes`);
+    console.log(`🎬 Created ${SEED_PRESETS.length} starter scenes`);
   }
 }
 

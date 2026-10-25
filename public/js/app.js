@@ -460,7 +460,8 @@ class DigitalSignageApp {
             const item = this.createTvListItem(tv);
             list.appendChild(item);
         });
-        
+        this.scrollSequenceStrips();
+
         // Load version info for all TVs after DOM is updated
         setTimeout(() => {
             this.tvs.forEach(tv => {
@@ -609,17 +610,42 @@ class DigitalSignageApp {
     renderTvSequence(tv, sequence) {
         const clips = sequence.clips.filter(clip => clip.enabled);
         const loop = clips.reduce((sum, clip) => sum + clip.duration_ms, 0) / 1000;
-        const strip = clips.map(clip => {
-            const isNow = clip.clip_id === tv.current_clip;
+        const live = tv.status === 'online';
+        const nowIndex = live ? clips.findIndex(clip => clip.clip_id === tv.current_clip) : -1;
+        const nextIndex = nowIndex >= 0 && clips.length > 1 ? (nowIndex + 1) % clips.length : -1;
+        const label = clip => {
             const image = clip.kind === 'image' ? this.images.find(img => img._id === clip.ref) : null;
-            const name = clip.kind === 'scene' ? this.sceneName(clip.ref) : (image?.original_name || 'Image');
+            return { image, name: clip.kind === 'scene' ? this.sceneName(clip.ref) : (image?.original_name || 'Image') };
+        };
+        const seconds = ms => `${Math.round(ms / 1000)}s`;
+
+        const strip = clips.map((clip, index) => {
+            const { image, name } = label(clip);
+            const isNow = index === nowIndex;
+            const isNext = index === nextIndex;
             const inner = image
-                ? `<img src="/api/images/${image._id}/attachment?width=160" alt="" loading="lazy">`
-                : `<i class="fas fa-film"></i>`;
-            return `<div class="tv-sequence-clip ${clip.kind} ${isNow ? 'now' : ''}" title="${this.escapeHtml(name)} · ${clip.duration_ms / 1000}s">
-                ${inner}${isNow ? '<span class="playlist-badge now">Now</span>' : ''}
+                ? `<img src="/api/images/${image._id}/attachment?width=240" alt="" loading="lazy">`
+                : `<span class="tv-sequence-icon">${this.sceneIcon(clip.ref)}</span>`;
+            // Progress through the clip now on, when we saw it start
+            let progress = '';
+            if (isNow && tv.clip_started) {
+                const elapsed = Math.min(Date.now() - tv.clip_started, clip.duration_ms);
+                progress = `<span class="tv-sequence-progress" style="animation-duration:${clip.duration_ms}ms;animation-delay:-${elapsed}ms"></span>`;
+            }
+            return `<div class="tv-sequence-clip ${clip.kind} ${isNow ? 'now' : ''} ${isNext ? 'next' : ''}" title="${this.escapeHtml(name)} · ${seconds(clip.duration_ms)}">
+                ${inner}
+                <span class="tv-sequence-badge">${isNow ? '▶ Now' : isNext ? 'Next' : index + 1}</span>
+                <span class="tv-sequence-name"><span>${this.escapeHtml(name)}</span><small>${seconds(clip.duration_ms)}</small></span>
+                ${progress}
             </div>`;
         }).join('');
+
+        const playing = nowIndex >= 0
+            ? `<div class="tv-sequence-now">
+                   <span class="now-dot"></span> Now: <strong>${this.escapeHtml(label(clips[nowIndex]).name)}</strong>
+                   ${nextIndex >= 0 ? `<span class="tv-sequence-then">→ Next: ${this.escapeHtml(label(clips[nextIndex]).name)}</span>` : ''}
+               </div>`
+            : `<div class="tv-sequence-now idle">${live ? 'Waiting for the TV to report its clip…' : 'TV is offline'}</div>`;
 
         return `
             <div class="tv-playlist tv-sequence">
@@ -629,8 +655,29 @@ class DigitalSignageApp {
                     <span class="tv-playlist-summary">${clips.length} clip${clips.length === 1 ? '' : 's'} · ${Math.floor(loop / 60)}:${String(Math.round(loop % 60)).padStart(2, '0')} loop</span>
                     <button class="btn btn-sm btn-secondary" onclick="app.openSequence('${this.escapeHtml(sequence.sequence_id)}')">Open in Sequences</button>
                 </div>
-                <div class="tv-sequence-strip">${strip || '<span class="tv-playlist-empty">Nothing in rotation</span>'}</div>
+                ${clips.length ? playing : ''}
+                <div class="tv-sequence-strip" data-now="${nowIndex}">${strip || '<span class="tv-playlist-empty">Nothing in rotation</span>'}</div>
             </div>`;
+    }
+
+    // A scene tile's icon, from what the scene shows
+    sceneIcon(sceneId) {
+        const scene = this.scenes.find(s => s.scene_id === sceneId);
+        const text = `${scene?.source || ''} ${scene?.name || ''}`.toLowerCase();
+        if (/calendar|docket|hearing/.test(text)) return '📅';
+        if (/welcome/.test(text)) return '🏛️';
+        if (/direction|map/.test(text)) return '🧭';
+        if (/contact|phone/.test(text)) return '☎️';
+        if (/information|info/.test(text)) return 'ℹ️';
+        return '🎬';
+    }
+
+    // Keep each strip's playing clip in view
+    scrollSequenceStrips() {
+        document.querySelectorAll('.tv-sequence-strip').forEach(strip => {
+            const now = strip.querySelector('.tv-sequence-clip.now');
+            if (now) strip.scrollLeft = Math.max(0, now.offsetLeft - strip.offsetLeft - 40);
+        });
     }
 
     // Guided tour on the TV: start button, or progress with Stop while it runs
@@ -1477,6 +1524,8 @@ class DigitalSignageApp {
             tv.current_image_id = payload.image_id || null;
             tv.current_image = payload.image_id || null;
             if ('clip_id' in payload || 'scene_id' in payload) {
+                // When this clip came on, for the strip's progress bar (only known for changes seen live)
+                if ((payload.clip_id || null) !== (tv.current_clip || null)) tv.clip_started = Date.now();
                 tv.current_clip = payload.clip_id || null;
                 tv.current_scene = payload.scene_id || null;
             }

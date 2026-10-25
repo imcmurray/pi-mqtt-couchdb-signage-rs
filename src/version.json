@@ -1,7 +1,7 @@
 {
-  "version": "v1.2.0-1-ge31849b",
-  "commit_hash": "e31849bb4d54d018954a94b960bf1da4bbe8a92e",
-  "commit_short": "e31849b",
+  "version": "v1.2.0-2-gcd5588c",
+  "commit_hash": "cd5588c4ff33322a6639d2a92137311e6b6b60e8",
+  "commit_short": "cd5588c",
   "branch": "main",
-  "build_time": "2026-10-25T19:05:11.592Z"
+  "build_time": "2026-10-25T20:55:07.647Z"
 }
