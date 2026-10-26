@@ -1943,7 +1943,7 @@ class DigitalSignageApp {
                 version: 'unknown',
                 is_dirty: false
             };
-            this.updateVersionDisplay('1.3.1');
+            this.updateVersionDisplay('1.4.0');
         }
     }
 
