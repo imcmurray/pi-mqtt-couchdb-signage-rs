@@ -134,14 +134,19 @@ class NotifyService {
   /**
    * Report the state of one thing being watched (e.g. "tv:pi21:online").
    * ok: true/false. Pushes when it changes; a first sighting pushes only if bad.
+   * label: what's watched, for the System page ("Dev1 online")
    * problem / recovery: { title, body } for each direction.
    */
-  async report(key, ok, { problem, recovery, priority = 'high' }) {
+  async report(key, ok, { label, problem, recovery, priority = 'high' }) {
     const alerts = await this.loadState();
     const previous = alerts[key];
     const now = ok ? 'ok' : 'bad';
-    if (previous?.state === now) return false;
-    alerts[key] = { state: now, since: new Date().toISOString(), title: ok ? recovery.title : problem.title };
+    if (previous?.state === now && previous.label === label) return false;
+    alerts[key] = { state: now, since: previous?.state === now ? previous.since : new Date().toISOString(), label, problem: ok ? null : problem.title };
+    if (previous?.state === now) {
+      await this.saveState();
+      return false;
+    }
     await this.saveState();
     if (ok && !previous) return false;  // healthy first sighting is not news
     const message = ok ? recovery : problem;

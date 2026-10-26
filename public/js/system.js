@@ -36,7 +36,8 @@ const systemPage = {
             document.getElementById('notifyEnabled').checked = settings.enabled;
             document.getElementById('notifyStates').innerHTML = settings.states.length
                 ? settings.states.map(s => `<div class="system-row"><span class="dot ${s.state}"></span>
-                    <span>${this.escape(s.title || s.key)}</span><small>since ${this.when(s.since)}</small></div>`).join('')
+                    <span>${this.escape(s.label || s.key)}</span>
+                    <small class="${s.state === 'bad' ? 'problem' : ''}">${s.state === 'ok' ? 'OK' : 'failing'} since ${this.when(s.since)}</small></div>`).join('')
                 : '<div class="system-row muted">Nothing reported yet</div>';
         } catch (error) {
             document.getElementById('notifyStatus').textContent = error.message;
@@ -90,8 +91,8 @@ const systemPage = {
             const last = backups.last;
             const status = document.getElementById('backupStatus');
             status.textContent = last
-                ? (last.ok ? `Last backup ${this.when(last.at)} · ${(last.size / 1e6).toFixed(1)} MB` : `Last backup failed ${this.when(last.at)}: ${last.error}`)
-                : `Nightly at ${backups.schedule}; keeps ${backups.keep}`;
+                ? (last.ok ? `Last backup ${this.when(last.at)} · ${(last.size / 1e6).toFixed(1)} MB · runs ${backups.schedule}` : `Last backup failed ${this.when(last.at)}: ${last.error}`)
+                : `Runs ${backups.schedule}; keeps the last ${backups.keep}`;
             status.className = `system-status ${last && !last.ok ? 'bad' : 'ok'}`;
             document.getElementById('backupList').innerHTML = backups.backups.length
                 ? backups.backups.map(b => `<div class="system-row"><i class="fas fa-file-archive"></i>

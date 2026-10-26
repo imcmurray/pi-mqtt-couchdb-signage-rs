@@ -42,6 +42,13 @@ describe('notifyService', () => {
     expect(pushes[0].url).toBe('https://ntfy.sh/secret-topic');
   });
 
+  it('updates the label without pushing when only the label changes', async () => {
+    await offline(false);
+    await notifyService.report('tv:pi21:online', false, { label: 'Courtroom North online', problem: { title: 'x', body: '' }, recovery: { title: 'y', body: '' } });
+    expect(pushes).toHaveLength(1);
+    expect(notifyService.state.doc.alerts['tv:pi21:online'].label).toBe('Courtroom North online');
+  });
+
   it('pushes a problem seen on the first check', async () => {
     await offline(false);
     expect(pushes).toHaveLength(1);

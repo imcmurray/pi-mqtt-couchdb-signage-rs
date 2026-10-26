@@ -60,6 +60,7 @@ class MonitorService {
     const silentFor = Date.now() - Date.parse(tv.last_heartbeat);
     const online = silentFor < OFFLINE_MS;
     await notifyService.report(`tv:${tv._id}:online`, online, {
+      label: `${label(tv)} online`,
       problem: { title: `Signage: ${label(tv)} is offline`, body: `No word from ${label(tv)} (${tv.ip_address || 'no IP'}) since ${new Date(tv.last_heartbeat).toLocaleString('en-US', { timeZone: 'America/Denver' })}.` },
       recovery: { title: `Signage: ${label(tv)} is back online`, body: `${label(tv)} is reporting again.` }
     });
@@ -67,6 +68,7 @@ class MonitorService {
 
     const frozenMs = this.frozenFor(tv, sequences);
     await notifyService.report(`tv:${tv._id}:playing`, frozenMs === 0, {
+      label: `${label(tv)} changing clips`,
       problem: { title: `Signage: ${label(tv)} looks stuck`, body: `${label(tv)} is online and playing but has shown the same clip for ${Math.round(frozenMs / 60000)} minutes. The screen may be frozen.` },
       recovery: { title: `Signage: ${label(tv)} is changing clips again`, body: `${label(tv)} moved on to the next clip.` }
     });
@@ -75,6 +77,7 @@ class MonitorService {
     if (version?.version) {
       const matches = version.version === MANAGER_VERSION;
       await notifyService.report(`tv:${tv._id}:version`, matches, {
+        label: `${label(tv)} on the manager's version`,
         problem: { title: `Signage: ${label(tv)} runs a different version`, body: `${label(tv)} runs ${version.version}; the manager is ${MANAGER_VERSION}. Run scripts/deploy-fleet.sh.` },
         recovery: { title: `Signage: ${label(tv)} is up to date`, body: `${label(tv)} now runs ${version.version}.` },
         priority: 'default'
@@ -108,6 +111,7 @@ class MonitorService {
     else this.sourceErrorSince = null;
     const failing = this.sourceErrorSince && Date.now() - this.sourceErrorSince >= SOURCE_GRACE_MS;
     await notifyService.report('calendar:source', !failing, {
+      label: 'Court calendar updating',
       problem: { title: 'Signage: court calendar is not updating', body: `The live calendar (${source.database}) has failed for over 5 minutes: ${source.error}\nTVs show "Last updated" after 35 minutes and hide the calendar after 2 hours.` },
       recovery: { title: 'Signage: court calendar is updating again', body: `The live calendar (${source.database}) is back: ${source.hearings} hearing(s).` }
     });

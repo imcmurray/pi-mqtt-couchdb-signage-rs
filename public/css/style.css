@@ -3160,6 +3160,7 @@ body.dark-theme {
 
 .system-row .dot.ok { background: #38a169; }
 .system-row .dot.bad { background: #e53e3e; }
+.system-row .problem { color: #c53030; }
 
 .system-row .version {
     margin-left: auto;

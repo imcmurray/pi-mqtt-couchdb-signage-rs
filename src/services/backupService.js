@@ -20,6 +20,14 @@ const SCHEDULE = process.env.BACKUP_SCHEDULE || '15 2 * * *';   // 2:15 AM court
 const TIME_ZONE = process.env.COURT_TIME_ZONE || 'America/Denver';
 const FILE_PATTERN = /^signage-\d{8}-\d{6}\.json\.gz$/;
 
+// "15 2 * * *" -> "every night at 2:15 AM"; anything fancier is shown as written
+function describeSchedule(schedule) {
+  const match = schedule.match(/^(\d{1,2}) (\d{1,2}) \* \* \*$/);
+  if (!match) return `${schedule} (${TIME_ZONE})`;
+  const [minute, hour] = [Number(match[1]), Number(match[2])];
+  return `every night at ${((hour + 11) % 12) + 1}:${String(minute).padStart(2, '0')} ${hour < 12 ? 'AM' : 'PM'}`;
+}
+
 const stamp = date => date.toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
 
 class BackupService {
@@ -65,6 +73,7 @@ class BackupService {
       this.last = { ok: true, file: name, size, counts, at: new Date().toISOString() };
       console.log(`💾 Backup ${name}: ${Object.entries(counts).map(([db, n]) => `${db} ${n}`).join(', ')} (${(size / 1e6).toFixed(1)} MB)`);
       await notifyService.report('backup:nightly', true, {
+        label: 'Nightly backup',
         problem: { title: '', body: '' },
         recovery: { title: 'Signage: backups are working again', body: `Backed up ${name} (${(size / 1e6).toFixed(1)} MB).` }
       });
@@ -74,6 +83,7 @@ class BackupService {
       this.last = { ok: false, error: error.message, at: new Date().toISOString() };
       console.error('Backup failed:', error.message);
       await notifyService.report('backup:nightly', false, {
+        label: 'Nightly backup',
         problem: { title: 'Signage: backup failed', body: `The signage database backup failed: ${error.message}` },
         recovery: { title: '', body: '' }
       });
@@ -137,7 +147,7 @@ class BackupService {
   }
 
   async status() {
-    return { directory: BACKUP_DIR, keep: KEEP, schedule: `${SCHEDULE} (${TIME_ZONE})`, last: this.last, running: !!this.running, backups: await this.list() };
+    return { directory: BACKUP_DIR, keep: KEEP, schedule: describeSchedule(SCHEDULE), last: this.last, running: !!this.running, backups: await this.list() };
   }
 }
 
