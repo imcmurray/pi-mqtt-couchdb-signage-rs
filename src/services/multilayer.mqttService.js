@@ -108,7 +108,10 @@ class MultilayerMqttService extends EventEmitter {
     if ('clip_id' in payload || 'current_clip' in payload) {
       // Sequence playback: a scene clip shows no image (image_id is null)
       state.current_image = payload.image_id ?? payload.current_image ?? null;
-      state.current_clip = payload.clip_id ?? payload.current_clip ?? null;
+      const clip = payload.clip_id ?? payload.current_clip ?? null;
+      // When the clip last changed, to spot a TV stuck on one clip (monitorService)
+      if (clip !== state.current_clip || !state.clip_changed_at) state.clip_changed_at = new Date().toISOString();
+      state.current_clip = clip;
       state.current_scene = payload.scene_id ?? payload.current_scene ?? null;
     } else {
       const imageId = payload.image_id || payload.current_image;

@@ -916,7 +916,8 @@ class DigitalSignageApp {
             scenes: 'Scenes',
             layers: 'Layer Control',
             'alert-templates': 'Alert Templates',
-            mqtt: 'MQTT Activity'
+            mqtt: 'MQTT Activity',
+            system: 'System'
         };
         document.getElementById('page-title').textContent = titles[section];
 
@@ -1028,10 +1029,8 @@ class DigitalSignageApp {
         }
     }
 
+    // Through the manager (MQTT). TVs refuse control from other addresses.
     async controlTv(tvId, action) {
-        const tv = this.tvs.find(t => t._id === tvId);
-
-        // Primary: MQTT via backend
         try {
             const response = await fetch(`/api/tvs/${tvId}/control/${action}`, { method: 'POST' });
             if (response.ok) {
@@ -1040,23 +1039,6 @@ class DigitalSignageApp {
             }
         } catch (error) {
             console.warn('MQTT control failed:', error);
-        }
-
-        // Backup: Direct HTTP to TV endpoint
-        if (tv?.ip_address && tv.ip_address !== 'Unknown') {
-            try {
-                const response = await fetch(`http://${tv.ip_address}:8080/api/control`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action })
-                });
-                if (response.ok) {
-                    this.showToast(`TV ${action} command sent (direct)`, 'success');
-                    return;
-                }
-            } catch (error) {
-                console.warn('Direct HTTP control also failed:', error);
-            }
         }
 
         this.showToast(`Failed to ${action} TV`, 'error');
@@ -1966,6 +1948,8 @@ class DigitalSignageApp {
     }
 
     updateVersionDisplay(version) {
+        // Release number (e.g. "1.3.1"), to spot TVs running something else
+        this.managerVersion = String(version).replace(/^v/, '').split('-')[0];
         const versionDisplay = document.getElementById('version-display');
         if (versionDisplay) {
             versionDisplay.textContent = `v${version}`;
@@ -2155,8 +2139,12 @@ class DigitalSignageApp {
             if (response.ok) {
                 const versionData = await response.json();
                 const version = versionData.data;
-                versionElement.innerHTML = `<span class="pill-label">v</span><span class="pill-value">${version.version}</span>`;
-                versionElement.title = `${version.version} (${version.commit_short})`;
+                const managerVersion = this.managerVersion;
+                const mismatch = managerVersion && version.version !== managerVersion;
+                versionElement.innerHTML = `<span class="pill-label">v</span><span class="pill-value ${mismatch ? 'version-mismatch' : ''}">${version.version}${mismatch ? ' ⚠' : ''}</span>`;
+                versionElement.title = mismatch
+                    ? `${version.version} (${version.commit_short}); the manager is ${managerVersion}. Run scripts/deploy-fleet.sh`
+                    : `${version.version} (${version.commit_short})`;
                 tv.versionInfo = version;
             } else {
                 versionElement.innerHTML = `<span class="pill-label">v</span><span class="pill-value version-error">--</span>`;

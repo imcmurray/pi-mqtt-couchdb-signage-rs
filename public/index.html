@@ -43,6 +43,9 @@
                 <li><a href="#mqtt" class="nav-link" data-section="mqtt">
                     <i class="fas fa-broadcast-tower"></i> MQTT Activity
                 </a></li>
+                <li><a href="#system" class="nav-link" data-section="system">
+                    <i class="fas fa-heartbeat"></i> System
+                </a></li>
             </ul>
         </nav>
 
@@ -208,6 +211,46 @@
 
             <!-- Layer Control Section -->
             <!-- Sequences: the looping timeline of image and scene clips each TV plays -->
+            <section id="system-section" class="content-section">
+                <div class="section-header">
+                    <h2>System</h2>
+                    <button class="btn btn-secondary" onclick="systemPage.load()"><i class="fas fa-sync"></i> Refresh</button>
+                </div>
+                <div class="system-grid">
+                    <div class="system-card">
+                        <h3><i class="fas fa-bell"></i> Notifications</h3>
+                        <p class="system-hint">Pushes to an <a href="https://ntfy.sh" target="_blank" rel="noopener">ntfy</a> topic when a TV goes offline or looks stuck,
+                            the live calendar stops updating, a backup fails or a TV runs a different version, and again when each recovers.</p>
+                        <div class="system-status" id="notifyStatus">Loading…</div>
+                        <div class="system-form" id="notifyForm">
+                            <input type="text" class="form-input" id="notifyUrl" placeholder="Topic URL, e.g. https://ntfy.sh/your-secret-topic" autocomplete="off">
+                            <button class="btn btn-primary btn-sm" onclick="systemPage.saveTopic()">Save</button>
+                        </div>
+                        <div class="system-actions">
+                            <label class="system-toggle"><input type="checkbox" id="notifyEnabled" onchange="systemPage.setEnabled(this.checked)"> Send notifications</label>
+                            <button class="btn btn-secondary btn-sm" onclick="systemPage.test()">Send a test</button>
+                        </div>
+                        <div class="system-subtitle">What's being watched</div>
+                        <div id="notifyStates" class="system-list"></div>
+                    </div>
+                    <div class="system-card">
+                        <h3><i class="fas fa-tv"></i> Fleet versions</h3>
+                        <p class="system-hint">Each TV should run the manager's version. Update them all with <code>scripts/deploy-fleet.sh</code>.</p>
+                        <div id="fleetTable" class="system-list">Loading…</div>
+                    </div>
+                    <div class="system-card">
+                        <h3><i class="fas fa-database"></i> Backups</h3>
+                        <p class="system-hint">Every signage database (TVs, images, scenes, sequences, overlays, data sets, alerts) nightly.
+                            Restore with <code>node scripts/restore-backup.js &lt;file&gt;</code>.</p>
+                        <div class="system-status" id="backupStatus">Loading…</div>
+                        <div class="system-actions">
+                            <button class="btn btn-primary btn-sm" id="backupNow" onclick="systemPage.backupNow()">Back up now</button>
+                        </div>
+                        <div id="backupList" class="system-list"></div>
+                    </div>
+                </div>
+            </section>
+
             <section id="sequences-section" class="content-section">
                 <div class="sequences-container">
                     <div class="sequence-bar">
@@ -1096,6 +1139,7 @@
     <script src="js/multilayer.js"></script>
     <script src="js/sequences.js"></script>
     <script src="js/alert-templates.js"></script>
+    <script src="js/system.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>

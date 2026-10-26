@@ -24,3 +24,5 @@ temp-*.png
 temp-*.jpg
 temp-*.txt
 create-demo-*
+# Database backups (backupService)
+backups/

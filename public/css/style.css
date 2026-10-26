@@ -3061,3 +3061,119 @@ body.dark-theme {
     object-fit: contain;
     background: #000;
 }
+
+/* ===== System page: notifications, fleet versions, backups ===== */
+.system-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 16px;
+}
+
+.system-card {
+    background: var(--card-bg, #fff);
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 16px;
+    min-width: 0;
+}
+
+.system-card h3 {
+    margin: 0 0 6px;
+    font-size: 1.05rem;
+}
+
+.system-hint {
+    font-size: 0.82rem;
+    color: #718096;
+    margin: 0 0 10px;
+}
+
+.system-status {
+    font-size: 0.9rem;
+    padding: 6px 10px;
+    border-radius: 6px;
+    background: #f7fafc;
+    margin-bottom: 10px;
+    overflow-wrap: anywhere;
+}
+
+.system-status.ok { background: #f0fff4; color: #276749; }
+.system-status.warn { background: #fffbeb; color: #975a16; }
+.system-status.bad { background: #fff5f5; color: #c53030; }
+
+.system-form,
+.system-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+}
+
+.system-form .form-input {
+    flex: 1;
+    min-width: 0;
+}
+
+.system-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.9rem;
+    margin-right: auto;
+}
+
+.system-subtitle {
+    font-weight: 600;
+    font-size: 0.85rem;
+    margin: 6px 0 4px;
+}
+
+.system-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid #edf2f7;
+    font-size: 0.88rem;
+    min-width: 0;
+}
+
+.system-row > span:not(.dot):not(.version) {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.system-row small { color: #718096; white-space: nowrap; }
+.system-row.muted { color: #718096; }
+.system-row a { overflow-wrap: anywhere; flex: 1; }
+
+.system-row .dot {
+    flex: none;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #a0aec0;
+}
+
+.system-row .dot.ok { background: #38a169; }
+.system-row .dot.bad { background: #e53e3e; }
+
+.system-row .version {
+    margin-left: auto;
+    font-family: monospace;
+    white-space: nowrap;
+}
+
+.system-row .version.ok { color: #276749; }
+.system-row .version.warn { color: #c05621; font-weight: 600; }
+.system-row .version.muted { color: #a0aec0; }
+
+.dark-theme .system-card { background: #2d3748; border-color: #4a5568; }
+.dark-theme .system-status { background: #1a202c; }
+.dark-theme .system-row { border-color: #4a5568; }
+
+/* A TV card's version pill when it differs from the manager */
+.pill-value.version-mismatch { color: #c05621; font-weight: 700; }

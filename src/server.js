@@ -229,6 +229,7 @@ app.use('/api/datasets', require('./routes/datasetRoutes')); // Court calendar +
 app.use('/api/scenes', require('./routes/sceneRoutes')); // Scenes: designed screens that sequences play
 app.use('/api/sequences', require('./routes/sequenceRoutes')); // Sequences: looping image/scene timelines per TV
 app.use('/api/demo', require('./routes/demoRoutes')); // Guided demo tour on a TV
+app.use('/api/system', require('./routes/systemRoutes')); // Notifications, fleet versions, backups
 
 // WebSocket handling for real-time updates
 wss.on('connection', (ws) => {
@@ -379,6 +380,10 @@ async function startServer() {
     } catch (error) {
       console.error('Could not create starter scenes / sequences:', error.message);
     }
+
+    // Watch the fleet (ntfy on state changes) and back up nightly
+    require('./services/monitorService').start();
+    require('./services/backupService').start();
 
     // Start HTTP server
     const port = config.server.port;
