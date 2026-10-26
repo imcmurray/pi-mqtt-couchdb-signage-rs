@@ -500,11 +500,24 @@ class MultiLayerManager {
         const spec = layer.content.table;
         const today = this.localDate(new Date());
         const match = spec.match?.field && spec.match.value?.trim() ? spec.match : null;
+        // Same rules as the TV (pi-slideshow-rs layer_data.rs): heard hearings drop
+        // off an hour after they start, the hearing on now is highlighted
+        const now = new Date();
+        const minutesSince = row => row.time ? (now - new Date(`${row.date}T${row.time}:00`)) / 60000 : null;
+        const status = row => String(row.status || '').trim().toLowerCase();
+        const hideHeard = spec.hideHeardAfterMinutes ?? 60;
         const rows = this.calendarRows.filter(row =>
             (spec.filter === 'all' ? true
                 : spec.filter === 'upcoming' ? row.date >= today
                     : row.date === today)
+            && !(hideHeard > 0 && status(row) === 'heard' && minutesSince(row) >= hideHeard)
             && (!match || String(row[match.field] || '').trim().toLowerCase() === match.value.trim().toLowerCase()));
+        const scheduled = row => ['', 'scheduled', 'in progress', 'in_progress'].includes(status(row));
+        const currentStart = spec.highlightCurrent === false ? null : rows
+            .filter(row => row.date === today && scheduled(row) && minutesSince(row) >= 0 && minutesSince(row) < 90)
+            .map(row => row.time).sort().pop();
+        const rowClass = row => ({ heard: 'heard', continued: 'continued', cancelled: 'cancelled', canceled: 'cancelled', vacated: 'cancelled' })[status(row)]
+            || (currentStart && row.date === today && row.time === currentStart ? 'current' : '');
         const rowHeight = (spec.rowHeight || 70) * scale;
         const perPage = Math.max(1, Math.floor((layer.position.height - (spec.rowHeight || 70) * 1.5) / (spec.rowHeight || 70)));
         const columns = spec.columns.map(c => `${c.width}fr`).join(' ');
@@ -518,9 +531,9 @@ class MultiLayerManager {
         };
         const header = spec.columns.map(c => `<span>${this.escapeHtml(c.label)}</span>`).join('');
         const body = rows.slice(0, perPage).map((row, i) => `
-            <div class="table-preview-row" style="height:${rowHeight}px; grid-template-columns:${columns};
+            <div class="table-preview-row ${rowClass(row)}" style="height:${rowHeight}px; grid-template-columns:${columns};
                  background:${this.cssColor(i % 2 ? spec.altRowBackground : spec.rowBackground)}">
-                ${spec.columns.map(c => `<span>${this.escapeHtml(cell(row[c.field], c.field))}</span>`).join('')}
+                ${spec.columns.map(c => `<span class="${c.field === 'status' ? 'status' : ''}">${this.escapeHtml(cell(row[c.field], c.field))}</span>`).join('')}
             </div>`).join('');
         const pages = Math.max(1, Math.ceil(rows.length / perPage));
 

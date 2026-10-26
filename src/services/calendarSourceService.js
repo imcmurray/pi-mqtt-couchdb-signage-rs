@@ -17,6 +17,10 @@ const RESYNC_MS = 15 * 60 * 1000;
 const CHANGE_DEBOUNCE_MS = 2000;
 const RETRY_MS = 30 * 1000;
 const LONGPOLL_MS = 55 * 1000;
+// The data set carries checked_at so TVs can tell a dead source from a quiet one
+// (see TableSpec.stale_minutes on the Pi). Re-stamp it at least this often even
+// when nothing changed; RESYNC_MS triggers that.
+const RESTAMP_MS = 10 * 60 * 1000;
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -137,6 +141,12 @@ class CalendarSourceService {
     await this.saveSettings({ database: null, server_url: null });
     this.stop();
     this.status = { state: 'off' };
+    // What's left is a snapshot now: no checked_at, so TVs don't call it stale
+    const current = await datasetService.get('court_calendar');
+    if (current?.checked_at) {
+      const { _id, _rev, type, dataset_id, updated_at, checked_at, ...fields } = current;
+      await datasetService.save('court_calendar', { ...fields, source: `${(fields.source || 'CouchDB').replace(' (live)', '')} (disconnected)` });
+    }
   }
 
   stop() {
@@ -177,14 +187,16 @@ class CalendarSourceService {
       const { rows } = normalizeCalendar(view);
       const current = await datasetService.get('court_calendar');
       const changed = JSON.stringify(current?.rows) !== JSON.stringify(rows) || current?.source !== this.sourceLabel();
-      if (changed) {
+      const stampAge = Date.now() - Date.parse(current?.checked_at || 0);
+      if (changed || !(stampAge < RESTAMP_MS)) {
         await datasetService.save('court_calendar', {
           name: 'Court Calendar',
           source: this.sourceLabel(),
           row_count: rows.length,
-          rows
+          rows,
+          checked_at: new Date().toISOString()
         });
-        console.log(`📅 Court calendar synced from ${settings.database}: ${rows.length} hearing(s) ${from}..${to}`);
+        if (changed) console.log(`📅 Court calendar synced from ${settings.database}: ${rows.length} hearing(s) ${from}..${to}`);
       }
       this.status = { state: 'live', last_sync: new Date().toISOString(), hearings: rows.length, window: [from, to] };
     } catch (error) {

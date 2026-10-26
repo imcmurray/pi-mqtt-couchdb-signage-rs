@@ -974,6 +974,11 @@ impl SlideshowController {
         for id in dataset_ids {
             match couchdb_client.get_dataset(id).await {
                 Ok(dataset) => {
+                    if let Some(checked) = dataset.as_ref()
+                        .and_then(|d| d["checked_at"].as_str())
+                        .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok()) {
+                        data.checked_at.insert(id.to_string(), checked.with_timezone(&chrono::Utc));
+                    }
                     let rows = dataset.and_then(|d| d["rows"].as_array().cloned()).unwrap_or_default();
                     println!("📊 Loaded data set {} ({} rows)", id, rows.len());
                     data.datasets.insert(id.to_string(), rows);
@@ -1562,6 +1567,7 @@ mod tests {
             data: LayerData {
                 values: HashMap::from([("weather".to_string(), "49°F".to_string())]),
                 datasets: HashMap::from([("court_calendar".to_string(), vec![serde_json::json!({ "date": "2026-10-23" })])]),
+                ..Default::default()
             },
         };
         let restored: SequenceCache = serde_json::from_slice(&serde_json::to_vec(&cache).unwrap()).unwrap();

@@ -3,7 +3,7 @@
 //! `dataset_<id>` documents in the layers database; the TV fills in the clock
 //! itself and pages tables on its own, so both keep working offline.
 
-use chrono::{DateTime, FixedOffset, NaiveDate, NaiveTime};
+use chrono::{DateTime, FixedOffset, NaiveDate, NaiveTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -37,6 +37,16 @@ pub struct TableSpec {
     /// courtroom's or one judge's hearings on the TV outside that courtroom
     #[serde(rename = "match")]
     pub row_match: Option<RowMatch>,
+    /// A live data set not refreshed for this long shows "Last updated …"
+    pub stale_minutes: i64,
+    /// … and for this long, the rows are replaced by `unavailable_text`: a wrong
+    /// hearing time on the wall is worse than none
+    pub unavailable_minutes: i64,
+    pub unavailable_text: String,
+    /// Heard hearings drop off this long after their start time (0 = keep)
+    pub hide_heard_after_minutes: i64,
+    /// Highlight the hearing on now in today's list
+    pub highlight_current: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -63,8 +73,78 @@ impl Default for TableSpec {
             page_seconds: 12,
             empty_text: "Nothing scheduled.".into(),
             row_match: None,
+            stale_minutes: 35,
+            unavailable_minutes: 120,
+            unavailable_text: "The court calendar is temporarily unavailable. Please check with the clerk's office.".into(),
+            hide_heard_after_minutes: 60,
+            highlight_current: true,
         }
     }
+}
+
+/// How a row is drawn
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RowStyle {
+    Normal,
+    /// The hearing on now (latest scheduled start today, within the last 90 minutes)
+    Current,
+    Heard,
+    Continued,
+    Cancelled,
+}
+
+/// How old a live data set is
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Freshness {
+    /// Live and recent, or uploaded (never goes stale)
+    Fresh,
+    /// Shown with its age
+    Stale(DateTime<Utc>),
+    Unavailable,
+}
+
+pub fn freshness(spec: &TableSpec, checked_at: Option<DateTime<Utc>>, now: DateTime<Utc>) -> Freshness {
+    let Some(checked) = checked_at else { return Freshness::Fresh };
+    let age = (now - checked).num_minutes();
+    if spec.unavailable_minutes > 0 && age >= spec.unavailable_minutes {
+        Freshness::Unavailable
+    } else if spec.stale_minutes > 0 && age >= spec.stale_minutes {
+        Freshness::Stale(checked)
+    } else {
+        Freshness::Fresh
+    }
+}
+
+fn status_of(row: &serde_json::Value) -> String {
+    row["status"].as_str().unwrap_or("").trim().to_lowercase()
+}
+
+fn start_of(row: &serde_json::Value) -> Option<chrono::NaiveDateTime> {
+    let date = NaiveDate::parse_from_str(row["date"].as_str()?, "%Y-%m-%d").ok()?;
+    let time = NaiveTime::parse_from_str(row["time"].as_str()?, "%H:%M").ok()?;
+    Some(date.and_time(time))
+}
+
+/// Style for each of `rows` (already filtered) at local time `now`
+pub fn row_styles(spec: &TableSpec, rows: &[&serde_json::Value], now: chrono::NaiveDateTime) -> Vec<RowStyle> {
+    // The current slot: the latest start at or before now among today's
+    // still-scheduled hearings, if it began in the last 90 minutes
+    let current = if spec.highlight_current {
+        rows.iter()
+            .filter(|row| matches!(status_of(row).as_str(), "" | "scheduled" | "in progress" | "in_progress"))
+            .filter_map(|row| start_of(row))
+            .filter(|start| start.date() == now.date() && *start <= now && (now - *start).num_minutes() < 90)
+            .max()
+    } else {
+        None
+    };
+    rows.iter().map(|row| match status_of(row).as_str() {
+        "heard" => RowStyle::Heard,
+        "continued" => RowStyle::Continued,
+        "cancelled" | "canceled" | "vacated" => RowStyle::Cancelled,
+        _ if current.is_some() && start_of(row) == current => RowStyle::Current,
+        _ => RowStyle::Normal,
+    }).collect()
 }
 
 /// Fill `{token}`s: clock values from `now`, the rest from `values` (e.g. the
@@ -116,8 +196,9 @@ pub fn uses_clock(text: &str) -> bool {
     ["{time", "{date", "{short_date}", "{day}", "{month}", "{year}"].iter().any(|t| text.contains(t))
 }
 
-/// Rows from the data set that this table shows, in data set order
-pub fn table_rows<'a>(spec: &TableSpec, rows: &'a [serde_json::Value], today: NaiveDate) -> Vec<&'a serde_json::Value> {
+/// Rows from the data set that this table shows at local time `now`, in data set order
+pub fn table_rows<'a>(spec: &TableSpec, rows: &'a [serde_json::Value], now: chrono::NaiveDateTime) -> Vec<&'a serde_json::Value> {
+    let today = now.date();
     let wanted = spec.row_match.as_ref()
         .filter(|m| !m.field.is_empty() && !m.value.trim().is_empty())
         .map(|m| (m.field.as_str(), m.value.trim().to_lowercase()));
@@ -129,7 +210,10 @@ pub fn table_rows<'a>(spec: &TableSpec, rows: &'a [serde_json::Value], today: Na
                 "upcoming" => date.map_or(true, |d| d >= today),
                 _ => date == Some(today),
             };
-            in_window && wanted.as_ref().map_or(true, |(field, value)| {
+            let heard_long_ago = spec.hide_heard_after_minutes > 0
+                && status_of(row) == "heard"
+                && start_of(row).is_some_and(|start| (now - start).num_minutes() >= spec.hide_heard_after_minutes);
+            in_window && !heard_long_ago && wanted.as_ref().map_or(true, |(field, value)| {
                 row[*field].as_str().map_or(false, |v| v.trim().to_lowercase() == *value)
             })
         })
@@ -207,7 +291,7 @@ mod tests {
     #[test]
     fn filters_rows_by_day() {
         let rows = vec![json!({"date": "2026-10-22"}), json!({"date": "2026-10-23"}), json!({"date": "2026-10-24"})];
-        let today = NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
+        let today = NaiveDate::from_ymd_opt(2026, 10, 23).unwrap().and_hms_opt(12, 0, 0).unwrap();
         let spec = |filter: &str| TableSpec { filter: filter.into(), ..Default::default() };
         assert_eq!(table_rows(&spec("today"), &rows, today).len(), 1);
         assert_eq!(table_rows(&spec("upcoming"), &rows, today).len(), 2);
@@ -242,7 +326,7 @@ mod tests {
             json!({"date": "2026-10-23", "courtroom": "South "}),
             json!({"date": "2026-10-24", "courtroom": "South"}),
         ];
-        let today = NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
+        let today = NaiveDate::from_ymd_opt(2026, 10, 23).unwrap().and_hms_opt(12, 0, 0).unwrap();
         let spec: TableSpec = serde_json::from_value(json!({ "match": { "field": "courtroom", "value": "South" } })).unwrap();
         assert_eq!(table_rows(&spec, &rows, today).len(), 2);
         let blank: TableSpec = serde_json::from_value(json!({ "match": { "field": "courtroom", "value": " " } })).unwrap();
@@ -265,5 +349,49 @@ mod tests {
         assert_eq!(spec.row_height, 76);
         assert_eq!(spec.columns[0].label, "Time");
         assert_eq!(spec.filter, "today");
+    }
+
+    fn hearing(time: &str, status: &str) -> serde_json::Value {
+        json!({ "date": "2026-10-23", "time": time, "status": status })
+    }
+
+    fn local(time: &str) -> chrono::NaiveDateTime {
+        NaiveDate::from_ymd_opt(2026, 10, 23).unwrap().and_time(NaiveTime::parse_from_str(time, "%H:%M").unwrap())
+    }
+
+    #[test]
+    fn styles_rows_by_status_and_highlights_the_current_slot() {
+        let rows = vec![hearing("09:00", "heard"), hearing("09:30", "scheduled"), hearing("09:30", "scheduled"),
+                        hearing("10:00", "continued"), hearing("11:00", "cancelled"), hearing("13:00", "scheduled")];
+        let refs: Vec<_> = rows.iter().collect();
+        let spec = TableSpec::default();
+        use RowStyle::*;
+        assert_eq!(row_styles(&spec, &refs, local("09:45")), vec![Heard, Current, Current, Continued, Cancelled, Normal]);
+        // Nothing is "on now" before the first hearing or long after the last start
+        assert!(!row_styles(&spec, &refs, local("08:00")).contains(&Current));
+        assert!(!row_styles(&spec, &refs, local("16:00")).contains(&Current));
+        let off = TableSpec { highlight_current: false, ..Default::default() };
+        assert!(!row_styles(&off, &refs, local("09:45")).contains(&Current));
+    }
+
+    #[test]
+    fn heard_hearings_drop_off_after_an_hour() {
+        let rows = vec![hearing("09:00", "heard"), hearing("09:00", "scheduled")];
+        let spec = TableSpec::default();
+        assert_eq!(table_rows(&spec, &rows, local("09:59")).len(), 2);
+        assert_eq!(table_rows(&spec, &rows, local("10:00")).len(), 1);
+        let keep = TableSpec { hide_heard_after_minutes: 0, ..Default::default() };
+        assert_eq!(table_rows(&keep, &rows, local("17:00")).len(), 2);
+    }
+
+    #[test]
+    fn live_data_goes_stale_then_unavailable() {
+        let spec = TableSpec::default();
+        let now = at("2026-10-23T12:00:00Z").with_timezone(&Utc);
+        let ago = |minutes| Some(now - chrono::Duration::minutes(minutes));
+        assert_eq!(freshness(&spec, None, now), Freshness::Fresh);
+        assert_eq!(freshness(&spec, ago(20), now), Freshness::Fresh);
+        assert_eq!(freshness(&spec, ago(40), now), Freshness::Stale(ago(40).unwrap()));
+        assert_eq!(freshness(&spec, ago(120), now), Freshness::Unavailable);
     }
 }

@@ -349,10 +349,19 @@ pub struct LayerManager {
 pub struct LayerData {
     pub values: HashMap<String, String>,
     pub datasets: HashMap<String, Vec<serde_json::Value>>,
+    /// When the manager last confirmed a live data set (absent for uploads)
+    #[serde(default)]
+    pub checked_at: HashMap<String, chrono::DateTime<chrono::Utc>>,
 }
 
 /// Space between a table cell's edge and its text
 const CELL_PADDING: f32 = 14.0;
+/// Calendar rows: the hearing on now, and status colours
+const CURRENT_ROW: (u8, u8, u8, u8) = (201, 162, 39, 70);
+const CURRENT_MARK: (u8, u8, u8, u8) = (201, 162, 39, 255);
+const STATUS_CONTINUED: (u8, u8, u8, u8) = (246, 173, 85, 255);
+const STATUS_CANCELLED: (u8, u8, u8, u8) = (252, 129, 129, 255);
+const STATUS_HEARD: (u8, u8, u8, u8) = (154, 230, 180, 200);
 
 impl LayerManager {
     pub fn new(width: u32, height: u32, orientation: String) -> Self {
@@ -421,9 +430,10 @@ impl LayerManager {
                 }
                 LayerContent::Table(spec) => {
                     let rows = data.datasets.get(&spec.dataset).map(Vec::as_slice).unwrap_or(&[]);
-                    let count = layer_data::table_rows(spec, rows, now.date_naive()).len();
+                    let count = layer_data::table_rows(spec, rows, now.naive_local()).len();
                     let (_, _, page) = layer_data::paging(spec, layer.position.height, count, now.timestamp() as u64);
-                    key.push_str(&format!("{}:{}:{}|", layer.id, now.date_naive(), page));
+                    // The minute too: the current hearing, heard rows dropping off and staleness move with it
+                    key.push_str(&format!("{}:{}:{}|", layer.id, now.format("%Y%m%d%H%M"), page));
                 }
                 _ => {}
             }
@@ -779,7 +789,13 @@ impl LayerManager {
         let now = chrono::Local::now().fixed_offset();
         let data = self.data.read().await;
         let all_rows = data.datasets.get(&spec.dataset).map(Vec::as_slice).unwrap_or(&[]);
-        let rows = layer_data::table_rows(spec, all_rows, now.date_naive());
+        let freshness = layer_data::freshness(spec, data.checked_at.get(&spec.dataset).copied(), chrono::Utc::now());
+        let rows = if freshness == layer_data::Freshness::Unavailable {
+            Vec::new()
+        } else {
+            layer_data::table_rows(spec, all_rows, now.naive_local())
+        };
+        let styles = layer_data::row_styles(spec, &rows, now.naive_local());
 
         let pos = &layer.position;
         let row_height = spec.row_height.max(20);
@@ -797,28 +813,59 @@ impl LayerManager {
             x += column.width;
         }
 
-        // Rows on the current page, striped
+        // Rows on the current page, striped; styled by hearing status
         let row_colors = [parse_rgba_string(&spec.row_background), parse_rgba_string(&spec.alt_row_background)];
-        for (i, row) in rows.iter().skip(page * per_page).take(per_page).enumerate() {
+        let dim = |c: (u8, u8, u8, u8)| (c.0, c.1, c.2, (c.3 as f32 * 0.55) as u8);
+        for (i, (row, style)) in rows.iter().zip(&styles).skip(page * per_page).take(per_page).enumerate() {
+            use layer_data::RowStyle;
             let y = pos.y + row_height * (i as u32 + 1);
             self.fill_rect(pos.x, y, pos.width, row_height, row_colors[i % 2], opacity, composite);
+            if *style == RowStyle::Current {
+                self.fill_rect(pos.x, y, pos.width, row_height, CURRENT_ROW, opacity, composite);
+                self.fill_rect(pos.x, y, 8, row_height, CURRENT_MARK, opacity, composite);
+            }
+            let row_color = match style {
+                RowStyle::Heard | RowStyle::Cancelled => dim(text_color),
+                _ => text_color,
+            };
             let mut x = pos.x;
             for column in &spec.columns {
+                let is_status = column.field == "status";
+                let color = match (style, is_status) {
+                    (RowStyle::Continued, true) => STATUS_CONTINUED,
+                    (RowStyle::Cancelled, true) => STATUS_CANCELLED,
+                    (RowStyle::Heard, true) => STATUS_HEARD,
+                    _ => row_color,
+                };
                 let value = layer_data::cell_text(row, &column.field);
                 let value = fit_text(&font, &value, spec.font_size as f32, column.width as f32 - 2.0 * CELL_PADDING);
-                self.draw_text(&font, &value, spec.font_size as f32, x as f32 + CELL_PADDING, y, row_height, x + column.width, text_color, opacity, composite);
+                self.draw_text(&font, &value, spec.font_size as f32, x as f32 + CELL_PADDING, y, row_height, x + column.width, color, opacity, composite);
+                // Cancelled: strike through everything but the status itself
+                if *style == RowStyle::Cancelled && !is_status && !value.is_empty() {
+                    let width = text_width(&font, &value, spec.font_size as f32).ceil() as u32;
+                    self.fill_rect(x + CELL_PADDING as u32, y + row_height / 2, width.min(column.width), 2, row_color, opacity, composite);
+                }
                 x += column.width;
             }
         }
 
         let size = spec.font_size as f32;
-        if rows.is_empty() {
+        let small = size * 0.75;
+        if let layer_data::Freshness::Stale(checked) = freshness {
+            // Bottom left, in the page indicator's strip
+            let label = format!("Last updated {} · times may have changed", checked.with_timezone(&chrono::Local).format("%-I:%M %p"));
+            self.draw_text(&font, &label, small, pos.x as f32 + CELL_PADDING, pos.y + row_height * (per_page as u32 + 1), row_height / 2, pos.x + pos.width, STATUS_CONTINUED, opacity, composite);
+        }
+        if freshness == layer_data::Freshness::Unavailable {
+            let message = fit_text(&font, &spec.unavailable_text, size, pos.width as f32 - 2.0 * CELL_PADDING);
+            let left = pos.x as f32 + (pos.width as f32 - text_width(&font, &message, size)) / 2.0;
+            self.draw_text(&font, &message, size, left, pos.y + row_height, row_height * 2, pos.x + pos.width, text_color, opacity, composite);
+        } else if rows.is_empty() {
             let message = fit_text(&font, &spec.empty_text, size, pos.width as f32 - 2.0 * CELL_PADDING);
             let left = pos.x as f32 + (pos.width as f32 - text_width(&font, &message, size)) / 2.0;
             self.draw_text(&font, &message, size, left, pos.y + row_height, row_height * 2, pos.x + pos.width, text_color, opacity, composite);
         } else if pages > 1 {
             let label = format!("Page {} of {}", page + 1, pages);
-            let small = size * 0.75;
             let left = (pos.x + pos.width) as f32 - CELL_PADDING - text_width(&font, &label, small);
             self.draw_text(&font, &label, small, left, pos.y + row_height * (per_page as u32 + 1), row_height / 2, pos.x + pos.width, text_color, opacity, composite);
         }

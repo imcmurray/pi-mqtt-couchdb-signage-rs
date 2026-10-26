@@ -1989,3 +1989,11 @@
         grid-template-columns: 1fr;
     }
 }
+
+/* Calendar table preview: row styles match the TV */
+.table-preview-row.current { box-shadow: inset 6px 0 0 #c9a227; background-image: linear-gradient(rgba(201, 162, 39, 0.27), rgba(201, 162, 39, 0.27)); }
+.table-preview-row.heard span, .table-preview-row.cancelled span { opacity: 0.55; }
+.table-preview-row.cancelled span:not(.status) { text-decoration: line-through; }
+.table-preview-row.cancelled span.status { color: #fc8181; opacity: 1; }
+.table-preview-row.continued span.status { color: #f6ad55; }
+.table-preview-row.heard span.status { color: #9ae6b4; }
