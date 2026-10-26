@@ -180,6 +180,7 @@ pub fn parse_rgba_string(rgba: &str) -> (u8, u8, u8, u8) {
 impl MqttClient {
     pub async fn new(
         broker_url: &str,
+        credentials: Option<(String, String)>,
         tv_id: String,
         command_sender: broadcast::Sender<SlideshowCommand>,
         status_receiver: mpsc::Receiver<TvStatus>,
@@ -203,6 +204,9 @@ impl MqttClient {
         let mut mqttoptions = MqttOptions::new(&tv_id, &hostname, port);
         mqttoptions.set_keep_alive(Duration::from_secs(60));
         mqttoptions.set_clean_session(true);
+        if let Some((username, password)) = credentials {
+            mqttoptions.set_credentials(username, password);
+        }
         // Add connection timeout for faster failure (if method exists)
         // Note: Some versions of rumqttc may not have this method
 

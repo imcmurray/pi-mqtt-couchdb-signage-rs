@@ -1,0 +1,23 @@
+# Installed by scripts/provision-pi.sh as /etc/systemd/system/slideshow.service
+# (@TV_ID@ and @SERVER@ are filled in). Credentials and the HTTP allow list come
+# from /etc/signage/slideshow.env, so they never appear in the process list.
+[Unit]
+Description=Signage TV (pi-slideshow-rs)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=/home/pi
+Environment=DISPLAY=
+EnvironmentFile=/etc/signage/slideshow.env
+ExecStart=/home/pi/pi-slideshow-rs --tv-id @TV_ID@ --enable-mqtt --mqtt-broker mqtt://@SERVER@:1883 --couchdb-url http://@SERVER@:5984 --couchdb-database tvs_multilayer --couchdb-images-database images_multilayer
+ExecStop=/bin/kill -SIGINT $MAINPID
+TimeoutStopSec=10
+Restart=always
+RestartSec=5
+User=pi
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

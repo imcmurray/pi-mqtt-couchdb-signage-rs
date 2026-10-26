@@ -95,13 +95,28 @@ struct Args {
     #[arg(long, default_value = "http://localhost:5984")]
     couchdb_url: String,
 
-    /// CouchDB username (optional)
-    #[arg(long)]
+    /// CouchDB username (optional; or SIGNAGE_COUCHDB_USERNAME)
+    #[arg(long, env = "SIGNAGE_COUCHDB_USERNAME")]
     couchdb_username: Option<String>,
 
-    /// CouchDB password (optional)
-    #[arg(long)]
+    /// CouchDB password (optional; prefer SIGNAGE_COUCHDB_PASSWORD from an
+    /// EnvironmentFile, which keeps it out of the process list)
+    #[arg(long, env = "SIGNAGE_COUCHDB_PASSWORD", hide_env_values = true)]
     couchdb_password: Option<String>,
+
+    /// MQTT username (optional; or SIGNAGE_MQTT_USERNAME)
+    #[arg(long, env = "SIGNAGE_MQTT_USERNAME")]
+    mqtt_username: Option<String>,
+
+    /// MQTT password (optional; or SIGNAGE_MQTT_PASSWORD)
+    #[arg(long, env = "SIGNAGE_MQTT_PASSWORD", hide_env_values = true)]
+    mqtt_password: Option<String>,
+
+    /// Addresses allowed to control this TV over HTTP (comma separated,
+    /// normally the manager's IP; or SIGNAGE_HTTP_ALLOW). Empty allows anyone.
+    /// Read-only endpoints (health, version, status, preview) stay open.
+    #[arg(long, env = "SIGNAGE_HTTP_ALLOW", value_delimiter = ',')]
+    http_allow: Vec<std::net::IpAddr>,
 
     /// CouchDB database name for TVs
     #[arg(long, default_value = "tvs_multilayer")]
@@ -1413,6 +1428,7 @@ async fn run_with_mqtt_control(args: Args, tv_id: String, start_time: std::time:
         Duration::from_secs(5),
         MqttClient::new(
             &args.mqtt_broker,
+            args.mqtt_username.clone().zip(args.mqtt_password.clone()),
             tv_id.clone(),
             command_sender.clone(),
             status_receiver,
@@ -1467,8 +1483,9 @@ async fn run_with_mqtt_control(args: Args, tv_id: String, start_time: std::time:
     let http_controller = controller.clone();
     let http_command_sender = command_sender.clone();
     let http_port = args.http_port;
+    let http_allow = args.http_allow.clone();
     tokio::spawn(async move {
-        http_server::run_http_server(http_port, http_controller, http_command_sender).await;
+        http_server::run_http_server(http_port, http_controller, http_command_sender, http_allow).await;
     });
     
     // Run main slideshow loop

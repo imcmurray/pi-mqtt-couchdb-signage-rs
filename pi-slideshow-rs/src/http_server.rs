@@ -1,5 +1,6 @@
 use std::convert::Infallible;
 use std::io::Cursor;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -12,6 +13,42 @@ use warp::{reply, Filter, Rejection, Reply};
 
 use crate::mqtt_client::SlideshowCommand;
 use crate::slideshow_controller::SlideshowController;
+
+#[derive(Debug)]
+struct Forbidden;
+impl warp::reject::Reject for Forbidden {}
+
+/// Whether a peer may change the TV (control, config). An empty list allows
+/// everyone (the old behaviour); the TV itself is always allowed.
+pub fn peer_allowed(allow: &[IpAddr], peer: Option<IpAddr>) -> bool {
+    allow.is_empty() || peer.is_some_and(|ip| ip.is_loopback() || allow.contains(&ip))
+}
+
+/// Only peers on the allow list (normally just the manager) get through
+fn allowed_peers(allow: Arc<Vec<IpAddr>>) -> impl Filter<Extract = (), Error = Rejection> + Clone {
+    warp::addr::remote()
+        .and_then(move |addr: Option<SocketAddr>| {
+            let allow = allow.clone();
+            async move {
+                if peer_allowed(&allow, addr.map(|a| a.ip())) {
+                    Ok(())
+                } else {
+                    eprintln!("🔒 Refused a control request from {:?}", addr);
+                    Err(warp::reject::custom(Forbidden))
+                }
+            }
+        })
+        .untuple_one()
+}
+
+async fn forbidden_to_403(err: Rejection) -> Result<impl Reply, Rejection> {
+    if err.find::<Forbidden>().is_some() {
+        let body = reply::json(&serde_json::json!({ "success": false, "message": "Changes to this TV are only accepted from the signage manager" }));
+        Ok(reply::with_status(body, warp::http::StatusCode::FORBIDDEN))
+    } else {
+        Err(err)
+    }
+}
 
 #[derive(Debug)]
 struct ControlError(#[allow(dead_code)] String);
@@ -55,8 +92,15 @@ pub async fn run_http_server(
     port: u16,
     controller: SlideshowController,
     command_sender: broadcast::Sender<SlideshowCommand>,
+    allow: Vec<IpAddr>,
 ) {
     let controller = Arc::new(controller);
+    if allow.is_empty() {
+        println!("⚠️  HTTP control is open to any address (set --http-allow to the manager's IP)");
+    } else {
+        println!("🔒 HTTP control accepted from {:?} and this TV only", allow);
+    }
+    let allow = Arc::new(allow);
     let command_sender = Arc::new(command_sender);
 
     // Health check endpoint
@@ -96,6 +140,7 @@ pub async fn run_http_server(
     let control_sender = command_sender.clone();
     let control = warp::path("control")
         .and(warp::post())
+        .and(allowed_peers(allow.clone()))
         .and(warp::body::json::<ControlRequest>())
         .and_then(move |req: ControlRequest| {
             let sender = control_sender.clone();
@@ -111,6 +156,7 @@ pub async fn run_http_server(
     let config_sender = command_sender.clone();
     let config = warp::path("config")
         .and(warp::put())
+        .and(allowed_peers(allow.clone()))
         .and(warp::body::json::<ConfigRequest>())
         .and_then(move |req: ConfigRequest| {
             let sender = config_sender.clone();
@@ -158,7 +204,7 @@ pub async fn run_http_server(
 
     // Combine all routes
     let api = warp::path("api")
-        .and(health.or(version).or(status).or(control).or(config).or(images).or(preview).or(stream))
+        .and(health.or(version).or(status).or(control.or(config).recover(forbidden_to_403)).or(images).or(preview).or(stream))
         .with(warp::cors().allow_any_origin().allow_headers(vec!["content-type"]).allow_methods(vec!["GET", "POST", "PUT"]));
 
     // Root endpoint
@@ -336,4 +382,20 @@ async fn get_mjpeg_stream(controller: Arc<SlideshowController>) -> Result<impl R
         .unwrap();
 
     Ok(response)
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn control_only_from_allowed_peers() {
+        let manager: IpAddr = "192.168.1.215".parse().unwrap();
+        let laptop: IpAddr = "192.168.1.50".parse().unwrap();
+        let local: IpAddr = "127.0.0.1".parse().unwrap();
+        assert!(peer_allowed(&[], Some(laptop)), "no list keeps the old open behaviour");
+        assert!(peer_allowed(&[manager], Some(manager)));
+        assert!(peer_allowed(&[manager], Some(local)));
+        assert!(!peer_allowed(&[manager], Some(laptop)));
+        assert!(!peer_allowed(&[manager], None));
+    }
 }
