@@ -1,960 +1,271 @@
-# Digital Signage Management System 📺
+# Courthouse Digital Signage
 
-**Complete end-to-end digital signage solution** featuring a Node.js management server with CouchDB backend and Rust-based Raspberry Pi TV endpoints. This repository contains both the centralized management infrastructure and the high-performance TV endpoint software - everything needed to deploy a professional digital signage network.
+Lobby and courtroom signage for the U.S. Bankruptcy Court, District of Utah
+(Frank E. Moss US Courthouse). A Node.js **manager** stores everything in
+CouchDB and talks to the **TVs**, which are Raspberry Pis running
+[`pi-slideshow-rs`](pi-slideshow-rs/), over MQTT. The TVs render to HDMI
+themselves, so clocks tick, calendars page and alerts appear even when the
+manager is down.
 
-## 🚀 Current Version: v0.5.0
-
-**Latest improvements include:**
-- ✅ **Emergency Alert System** - Complete alert broadcasting with templates, queueing, and scheduling
-  - 10 built-in alert templates + custom template creation
-  - Priority-based queueing (CRITICAL/URGENT/INFO)
-  - Cron-based scheduling with recurring patterns
-  - Alert preview before broadcasting
-  - 23 API endpoints for comprehensive alert management
-  - 83 test cases with production-ready coverage
-- ✅ **Court Hearing Integration** - Automated court schedule displays with real-time updates
-- ✅ **Time-Based Color Coding** - Visual urgency indicators (red/orange/blue/green/gray)
-- ✅ **CSV Import** - Bulk import hearings from court management systems
-- ✅ **Automated Refresh** - Cron jobs update displays every 5 minutes
-- ✅ **Status Workflow** - Complete hearing lifecycle management
-- ✅ **Basic Layer Support** - Simple 2-layer compositing (slideshow + static overlay)
-- ✅ **MVC Pattern Implementation** - Clean separation with controllers, models, and routes
-- ✅ **BaseModel Architecture** - Reduced code duplication with inheritance
-
-## 📦 What's Included
-
-- **🖥️ Management Server** (`/`) - Node.js/Express backend with web interface
-- **📺 TV Endpoint Software** (`pi-slideshow-rs/`) - Rust application for Raspberry Pi displays
-- **🚨 Emergency Alert System** - Complete alert broadcasting with templates, queueing, and scheduling
-- **🏛️ Court Hearing System** - Automated court schedule management and display
-- **🐳 Docker Deployment** - Complete containerized infrastructure
-- **⚙️ SystemD Integration** - Auto-startup configuration for Pi endpoints
-- **⏰ Automated Scheduling** - Cron-based refresh and cleanup tasks
-- **🧪 Comprehensive Testing** - 83 test cases with production-ready coverage
-- **📖 Complete Documentation** - Setup guides, API references, troubleshooting
-
-## 🏗️ Architecture Overview
+- **Sequences:** what each TV plays, as a looping timeline of images and
+  scenes, each with a length and an optional schedule.
+- **Scenes:** designed 1920×1080 screens with text, images, colour blocks and
+  live tables. Starters include Welcome, Information, Directions, Contacts and
+  six calendar scenes (today's calendar, a courtroom docket, a judge's or
+  trustee's calendar, a status board and upcoming hearings).
+- **Live data:**
+  - `{time}`, `{date}` and `{weather}` tokens.
+  - The **court calendar**, followed live from a CouchDB hearings database:
+    - changes reach the TVs in about 2 seconds;
+    - it is marked stale after 35 minutes and hidden after 2 hours if updates stop;
+    - cancelled, continued and heard hearings are styled, and the hearing on
+      now is highlighted.
+- **Overlays and alerts:** a seal or banners above everything a TV plays, and
+  three levels of emergency alert above that, with templates, a queue and
+  schedules.
+- **Operations:**
+  - ntfy notifications: a TV offline or stuck, the calendar not updating, a
+    backup failed, a TV running a different version.
+  - Nightly backups.
+  - Canary fleet deploys.
+  - A demo tour.
 
 ```
-┌─────────────────┐    ┌───────────────────┐    ┌─────────────────┐
-│  Web Interface  │◄──►│ Management Server │◄──►│   CouchDB       │
-│  (Staff Portal) │    │   (Node.js)       │    │  (Database)     │
-└─────────────────┘    └───────────────────┘    └─────────────────┘
-                                │
-                       ┌────────┴────────┐
-                       │   MQTT Broker   │
-                       └────────┬────────┘
-                                │
-           ┌────────────────────┼────────────────────┐
-           │                    │                    │
-    ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-    │  TV Endpoint│     │  TV Endpoint│ ... │  TV Endpoint│
-    │ (Pi + Rust) │     │ (Pi + Rust) │     │ (Pi + Rust) │
-    └─────────────┘     └─────────────┘     └─────────────┘
+ Court hearings DB ──_changes──►  Manager (Node 18, Express)  ──MQTT──►  TVs (Pi 4, pi-slideshow-rs)
+ (CouchDB, _design/calendar)        │  web UI :3000                         │  HDMI 1080p, local API :8080
+                                    └──────── CouchDB (signage data) ◄──────┘  (TVs read it directly, cache offline)
 ```
 
-### 🔗 Data Flow Architecture & Protocol Selection
+## Requirements
 
-Our architecture uses two complementary protocols, each optimized for different types of operations:
+| Part | Needs |
+|---|---|
+| Manager | Node.js 18+ (or Docker; the image is `node:18-alpine`), about 200 MB RAM |
+| Database | CouchDB 3.x, single node (tested on 3.3 and 3.5) |
+| Messaging | MQTT broker, e.g. Eclipse Mosquitto 2.x |
+| TVs | Raspberry Pi 4 (2 GB+), Raspberry Pi OS Lite 64-bit (bookworm), a 1080p HDMI display, wired network recommended |
+| Building the TV app | Rust (stable) with target `aarch64-unknown-linux-musl` and the `gcc-aarch64-linux-gnu` cross linker, on Linux |
+| Network | Manager :3000, CouchDB :5984, MQTT :1883, each TV :8080 (manager → TV). Outbound HTTPS to `api.weather.gov` (weather) and your ntfy server (optional) |
+| Court calendar (optional) | A CouchDB database of hearing documents, described [below](#court-calendar-hearing-documents). It can be on another CouchDB server. |
 
-**CouchDB (Persistent Data Layer):**
-- **Purpose**: Long-term storage, complex queries, large binary data
-- **Used for**: TV configurations, image metadata, image files (as attachments), audit logs
-- **Access pattern**: Direct database connections from TV endpoints
-- **Benefits**: ACID transactions, replication, conflict resolution, offline capability
+## Quick start
 
-**MQTT (Real-time Communication Layer):**
-- **Purpose**: Lightweight real-time messaging, pub/sub patterns, ephemeral data
-- **Used for**: Play/pause commands, status updates, heartbeats, current image notifications
-- **Access pattern**: Publish/subscribe through central broker
-- **Benefits**: Low latency, small bandwidth, automatic reconnection, QoS guarantees
+### 1. CouchDB, MQTT and the manager
 
-**Protocol Selection Logic:**
-
-| Data Type | Protocol | Reasoning |
-|-----------|----------|-----------|
-| Image files | CouchDB | Large binary data, permanent storage, efficient replication |
-| TV configurations | CouchDB | Persistent settings, complex validation, transaction safety |
-| Current image state | CouchDB | Authoritative source for recovery, queries, audit trails |
-| Play/pause commands | MQTT | Real-time response needed, ephemeral (fire-and-forget) |
-| Status updates | MQTT | Frequent lightweight updates, pub/sub to multiple subscribers |
-| Current image notifications | MQTT | Real-time change events, dashboard updates |
-| Image assignments | CouchDB | Persistent relationships, complex queries, transaction integrity |
-| Heartbeats | MQTT | High-frequency ephemeral data, automatic cleanup |
-
-**TV Endpoints (Hybrid Architecture):**
-- **CouchDB connection**: Fetch image assignments, download image attachments, store status
-- **MQTT connection**: Receive real-time commands, publish status updates
-- **Local storage**: Cache images for offline operation and fast display transitions
-- **Fallback capability**: Can operate independently when network is intermittent
-
-## 🏛️ Architecture Compliance & Implementation
-
-Our implementation perfectly adheres to the dual-protocol architecture design. Here's how each component leverages both CouchDB and MQTT optimally:
-
-### ✅ Protocol Implementation Matrix
-
-| Component | CouchDB Usage | MQTT Usage | Implementation Status |
-|-----------|---------------|------------|----------------------|
-| **Image Storage** | ✅ Binary attachments, metadata | ✅ Assignment notifications | **Perfect** |
-| **TV Management** | ✅ Configuration persistence | ✅ Real-time control commands | **Perfect** |
-| **Status Monitoring** | ✅ Historical data storage | ✅ Live status streams | **Perfect** |
-| **Dashboard Updates** | ✅ Data queries & relationships | ✅ WebSocket real-time feed | **Perfect** |
-| **Image Assignments** | ✅ Persistent relationships | ✅ Update notifications | **Perfect** |
-| **Configuration Changes** | ✅ Settings storage | ✅ Live config updates | **Perfect** |
-
-### 🔧 Implementation Highlights
-
-**Routes & API Layer (`src/routes/`):**
-- **TV Control Routes**: Commands use MQTT for immediate response, configs stored in CouchDB
-- **Image Routes**: Binary data as CouchDB attachments, assignment changes trigger MQTT updates
-- **Dashboard Routes**: Queries CouchDB for data, streams updates via MQTT→WebSocket
-
-**Data Models (`src/models/`):**
-- **Image Model**: CouchDB attachments for binary storage, relationship management
-- **TV Model**: Configuration persistence with MQTT integration for real-time updates
-
-**Service Layer (`src/services/`):**
-- **MQTT Service**: Handles all real-time communication, command distribution, status collection
-- **Database Service**: CouchDB operations, complex queries, transaction management
-
-**TV Endpoints (`pi-slideshow-rs/`):**
-- **Direct CouchDB Access**: Fetch images and configs without management server dependency
-- **MQTT Client**: Real-time command handling, status reporting, heartbeat management
-- **Hybrid Sync**: Database persistence with MQTT notifications for immediate updates
-
-### 🎯 Architecture Benefits Realized
-
-**Performance Optimization:**
-- **Image Loading**: CouchDB attachments provide efficient binary storage and replication
-- **Command Response**: MQTT ensures sub-second response times for control operations
-- **Bandwidth Efficiency**: Right protocol for right data type minimizes network usage
-
-**Reliability & Resilience:**
-- **Offline Operation**: TVs cache images locally, continue operating without network
-- **Data Consistency**: CouchDB ACID transactions ensure configuration integrity
-- **Auto-Recovery**: MQTT auto-reconnection handles network interruptions gracefully
-
-**Scalability:**
-- **Horizontal Scaling**: MQTT pub/sub scales to hundreds of TV endpoints
-- **Data Replication**: CouchDB replication enables distributed deployments
-- **Load Distribution**: Protocols optimized for their specific use cases
-
-### 📊 Real-World Operation Flow
-
-1. **Image Upload Process:**
-   ```
-   Upload → CouchDB Storage → MQTT Notification → TV Download → Local Cache
-   ```
-
-2. **TV Control Process:**
-   ```
-   Dashboard Command → MQTT Publish → TV Receives → Immediate Action → Status Update
-   ```
-
-3. **Configuration Update:**
-   ```
-   Config Change → CouchDB Update → MQTT Notification → TV Applies → Confirms via MQTT
-   ```
-
-4. **Status Monitoring:**
-   ```
-   TV Status → MQTT Publish → Dashboard WebSocket → Real-time Display + CouchDB Storage
-   ```
-
-### 🔍 Verification & Validation
-
-**Code Review Findings:**
-- ✅ No protocol misuse detected - each operation uses optimal protocol
-- ✅ Proper separation of concerns - persistent vs ephemeral data handling
-- ✅ Efficient binary storage - images as CouchDB attachments, not base64
-- ✅ Real-time responsiveness - MQTT for commands, WebSocket for dashboard
-- ✅ Resilient design - graceful fallbacks when protocols are unavailable
-
-**Performance Characteristics:**
-- **Command Latency**: <100ms via MQTT vs >500ms HTTP polling
-- **Image Transfer**: Native CouchDB replication vs HTTP file transfer
-- **Bandwidth Usage**: 90% reduction using appropriate protocols
-- **Storage Efficiency**: CouchDB attachments vs filesystem management
-
-This architecture demonstrates **optimal protocol selection** where each technology is used for its strengths, creating a robust, scalable, and maintainable digital signage system.
-
-## 🎨 Phase 2: Basic Layer Support (Completed)
-
-The v0.3.0 release includes basic 2-layer compositing support:
-
-**Current Capabilities:**
-- **Slideshow Layer**: Primary image rotation (base layer)
-- **Static Overlay**: Single logo or watermark overlay
-- **Layer Control**: Show/hide overlay via MQTT commands
-- **Alpha Blending**: Basic transparency support for PNG overlays
-
-**Limitations:**
-- Maximum 2 layers currently supported (emergency alerts use layer system)
-- Position is predefined for basic overlays (top-right corner for logos)
-- Advanced multi-layer features planned for future phases
-
-## ✨ Features
-
-### 🎛️ Management Server
-- **Web-based Admin Interface**: Intuitive UI for staff to manage all TVs
-- **Emergency Alert System**: Complete alert broadcasting with templates, queueing, and scheduling
-  - 10 built-in alert templates + custom template creation
-  - Priority-based queueing (CRITICAL/URGENT/INFO)
-  - Cron-based scheduling with recurring patterns
-  - Alert preview before broadcasting
-  - 23 API endpoints for comprehensive alert management
-- **Court Hearing Management**: Complete system for court schedule displays
-- **Automated Display Updates**: Cron jobs refresh court schedules every 5 minutes
-- **CSV Import**: Bulk import hearings from external systems
-- **Status Workflow**: Track hearings through scheduled → in progress → completed lifecycle
-- **Time-Based Color Coding**: Visual urgency indicators for upcoming hearings
-- **Shared Asset System**: Upload images once, assign to multiple TVs
-- **Real-time Monitoring**: Live status of all TV displays
-- **Image Management**: Upload, delete, reorder, and shuffle capabilities
-- **CouchDB Backend**: Document-based storage with replication support
-- **MQTT Integration**: Real-time bidirectional communication
-- **WebSocket Updates**: Live dashboard updates
-- **Basic Layer Support**: Simple logo overlay capability
-- **MVC Architecture**: Clean separation with controllers and models
-- **Input Validation**: Joi schema validation on all endpoints
-- **Comprehensive Testing**: 83 test cases with production-ready coverage
-
-### 📺 TV Endpoints (Raspberry Pi)
-- **Direct Framebuffer Rendering**: No X11 required, hardware-accelerated
-- **17 Transition Effects**: Smooth animated transitions between images
-- **MQTT Remote Control**: Real-time commands (play/pause/next/reboot)
-- **HTTP API**: Local REST endpoints for direct control
-- **Dynamic Image Loading**: Automatic sync from management server
-- **Health Monitoring**: Heartbeat and status reporting
-- **Graceful Error Handling**: Automatic reconnection and recovery
-- **Basic Layer Compositing**: 2-layer support with alpha blending
-- **Overlay Control**: Show/hide logo overlays via MQTT
-- **Orientation Support**: Both portrait and landscape displays
-
-## 🚀 Getting Started
-
-Choose your preferred setup method:
-
-### 🐳 Option A: Docker Compose (Recommended for Production)
+The bundled Compose file starts CouchDB, Mosquitto and the manager. It's
+meant for trying the system out: CouchDB's admin is `admin`/`admin`, and
+Mosquitto allows anonymous clients. Change both in `docker-compose.yml`
+before real use, or run step 4.
 
 ```bash
-# Clone the repository
-git clone <repository-url>
-cd digital-signage-management
-
-# Configure environment (choose one)
-cp .env.example .env          # Production setup
-cp .env.dev.example .env      # Development setup
-
-# Edit .env with your specific settings
-# Important: Set secure passwords and API keys for production
-
-# Start all services with Docker
-docker-compose up -d
-
-# Check service status
-docker-compose ps
-
-# View logs
-docker-compose logs -f management-server
+git clone <this repo> && cd pi-signage-fleet
+docker compose up -d
 ```
 
-This starts CouchDB, MQTT broker, and the management server automatically with proper networking and health checks.
-
-### 🛠️ Option B: Manual Setup (Development)
-
-#### Prerequisites
+Or run the manager directly against an existing CouchDB and broker:
 
 ```bash
-# Node.js and npm
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-sudo apt-get install -y nodejs
-
-# CouchDB
-sudo apt update
-sudo apt install couchdb
-
-# MQTT Broker (Mosquitto)
-sudo apt install mosquitto mosquitto-clients
-
-# Rust (for TV endpoints)
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-rustup target add aarch64-unknown-linux-musl
+npm ci
+cp .env.example .env            # COUCHDB_URL, COUCHDB_USERNAME/PASSWORD, MQTT_BROKER_URL
+npm run db:setup                # signage databases and views (the manager also does this on start)
+npm start                       # or: npm run dev (restarts on changes)
 ```
 
-#### Management Server Setup
+Open `http://<manager>:3000`. On first start the manager creates the starter
+scenes and a sequence for each TV.
+
+### 2. The CouchDB schema
+
+The signage databases are created and kept up to date automatically by
+`npm run db:setup` and on every manager start:
+
+| Database | Holds |
+|---|---|
+| `tvs_multilayer` | TVs (name, location, IP, settings) |
+| `images_multilayer` | Image Library documents with the files as attachments |
+| `layers_multilayer` | sequences, scenes, overlays, data sets (`dataset_court_calendar`, `dataset_weather`), settings |
+| `alerts_multilayer`, `alert_templates_multilayer` | emergency alerts, their queue/schedules, and templates |
+| `presets_multilayer` | layout templates |
+| `signage_multilayer` | reserved |
+
+For a **court hearings database**, one command creates it with the court's
+design document (`couchdb/calendar-design.json`):
 
 ```bash
-# Clone and setup the project
-git clone <repository-url>
-cd digital-signage-management
-
-# Install dependencies
-npm install
-
-# Setup environment
-cp .env.dev.example .env
-# Edit .env with your CouchDB and MQTT settings
-
-# Initialize database
-npm run db:setup
-
-# Start development server
-npm run dev
+npm run db:setup -- --calendar court_calendar            # empty, ready for hearings
+npm run db:setup -- --calendar court_calendar --sample   # plus five sample hearings for today
+npm run db:setup -- --skip-signage --calendar court_calendar --couchdb https://user:pass@court-couch:6984
 ```
 
-### 📺 TV Endpoint Setup (Raspberry Pi)
+Then, in the manager: **Scenes → Live Data → Live source**. Enter the database
+name, plus a server URL if it's not the manager's CouchDB, and press
+**Connect**. Without a live source you can upload a JSON export instead.
 
-#### Option A: Automated Installation (Recommended)
+### 3. TVs
+
+Flash Raspberry Pi OS Lite (64-bit) with Raspberry Pi Imager: user `pi`, your
+SSH key, a hostname, with passwordless sudo (the default for `pi`). Then, from
+this repo:
 
 ```bash
-# 1. Cross-compile for Raspberry Pi
-cd pi-slideshow-rs
-./build.sh
-
-# 2. Copy binary and installer to Pi
-scp target/aarch64-unknown-linux-musl/release/pi-slideshow-rs pi@tv-1.local:~/
-scp install.sh pi@tv-1.local:~/
-
-# 3. Run automated installation on Pi
-ssh pi@tv-1.local
-./install.sh --server 192.168.1.100 --tv-id lobby-tv
-
-# 4. Start the service
-sudo systemctl start signage
+SIGNAGE_TV_PASSWORD=… scripts/provision-pi.sh 192.168.1.120 --name "Courtroom North Door" --location "3rd floor" --reboot
 ```
 
-This automatically configures:
-- ✅ SystemD service with auto-restart
-- ✅ Proper file permissions and directories  
-- ✅ Video group membership for framebuffer access
-- ✅ Log rotation configuration
-- ✅ Resource limits and security settings
+The script does the following:
+- installs fonts;
+- keeps the console from blanking;
+- forces 1080p HDMI;
+- registers the TV with the manager;
+- installs the current build as the `slideshow` service, with credentials in
+  `/etc/signage/slideshow.env`;
+- checks the TV reports in.
 
-#### Option B: Manual Setup
+Assign the new TV a sequence in **TV Management**.
+
+### 4. Lock it down (recommended)
 
 ```bash
-# Cross-compile and copy binary
-cd pi-slideshow-rs && ./build.sh
-scp target/aarch64-unknown-linux-musl/release/pi-slideshow-rs pi@tv-1.local:~/
-
-# Manual configuration on Pi
-ssh pi@tv-1.local
-sudo mkdir -p /var/signage/images
-sudo chown pi:pi /var/signage
-sudo usermod -a -G video pi
-
-# Run manually (testing)
-sudo ./pi-slideshow-rs \
-  --mqtt-broker mqtt://management-server:1883 \
-  --couchdb-url http://management-server:5984 \
-  --tv-id lobby-tv \
-  --image-dir /var/signage/images
+COUCHDB_ADMIN_URL=http://admin:…@couch:5984 scripts/secure-signage.sh
 ```
 
-#### Service Management
+Each step is checked before the next and backed up for rollback:
+- **CouchDB:** the manager gets its own account, `signage_manager`, which can
+  only manage the signage databases. The TVs get `signage_tv`, which is
+  read-only (enforced by `_design/signage_access`).
+- **MQTT:** passwords are required, and each TV can only use its own topics.
+- **TV control:** play/pause and settings changes are accepted only from the
+  manager. Previews stay open.
+- **Passwords** are kept in `/etc/signage-secrets.conf` (root, 0600) on the
+  Docker host.
+- **Other apps:** their databases and the server admin account aren't touched.
+
+## Court calendar: hearing documents
+
+One document per hearing (matter) in the hearings database:
+
+```json
+{
+  "_id": "hearing:h-20261025-n-0900-3451",
+  "type": "hearing",
+  "date": "2026-10-25",
+  "timezone": "America/Denver",
+  "courtroom": "North",
+  "start_time": "09:00",
+  "judge": "Judge Anderson",
+  "case_number": "26-21345",
+  "case_title": "In re Savanna G. Smith",
+  "matter": "Motion for Relief from Stay",
+  "movant": "First Utah Credit Union",
+  "trustee": "Chapter 13 Trustee",
+  "status": "scheduled",
+  "created_at": "2026-10-20T15:02:11Z",
+  "updated_at": "2026-10-24T09:30:00Z"
+}
+```
+
+| Field | Notes |
+|---|---|
+| `type` | must be `"hearing"`; other documents are ignored |
+| `date`, `start_time` | courthouse local time, `YYYY-MM-DD` and 24-hour `HH:MM` |
+| `courtroom` | `North` or `South`; tables can be limited to one ("only where courtroom is North") |
+| `judge`, `case_number`, `case_title`, `matter`, `movant` | shown as columns; `matter` is labelled "Matter" |
+| `trustee` | optional |
+| `status` | `scheduled`, `heard`, `continued` or `cancelled`; drives row styling |
+
+`_design/calendar` (`couchdb/calendar-design.json`) provides:
+
+| | Key | Used for |
+|---|---|---|
+| `by_date_courtroom_time` | `[date, courtroom, start_time, judge, case_number]` | **the signage** reads today through the next 14 days |
+| `by_judge_date` | `[judge, date, start_time, courtroom]` | a judge's calendar |
+| `by_courtroom_date` | `[courtroom, date, start_time, judge]` | a courtroom's docket |
+| `by_case`, `by_movant`, `by_trustee` | `[value, date, start_time]` | lookups |
+| `by_status` | `[date, status, courtroom, start_time]` | status board |
+| list `nested_calendar` | sessions → slots → judges → cases → matters | one day's calendar as a tree |
+| filters `hearings`, `hearings_by_date` | `?date=` | change feeds of hearings, including deletions |
+
+Notes:
+- **Deletions:** a deleted document loses its `type`, so the filters start
+  with `if (doc._deleted) return true;`. Without it a cancelled-by-deletion
+  hearing never shows up in a filtered change feed. The signage follows the
+  unfiltered feed either way.
+- **List functions** still work in CouchDB 3.x, but are deprecated.
+- **Manual uploads** accept hearing documents in any CouchDB shape: an array,
+  `_find`, `_all_docs?include_docs=true`, view rows or `nested_calendar`
+  output. Similar exports from other systems work too: common field names are
+  recognised.
+
+## Using it
+
+| Page | For |
+|---|---|
+| Dashboard / TV Management | each TV's live screen, what's playing now and next, play/pause, its sequence, the demo tour |
+| Sequences | build a TV's loop; drag clips, set lengths and schedules, "show now" and hold |
+| Scenes | design screens; Live Data (calendar source, uploads, weather); the calendar table editor (columns, "only where" filter) |
+| Layer Control | overlays on a TV, above every clip |
+| Alert Templates | emergency alerts and templates |
+| System | ntfy notifications, fleet versions, backups |
+
+## Operations
+
+- **Notifications:**
+  - Set an ntfy topic URL on the System page, or `NTFY_URL` in `.env`.
+  - Pushes happen only when something changes, and recoveries are pushed too.
+  - Checks every minute: a TV offline for 5 minutes or more, a playing TV
+    stuck on one clip, the live calendar failing for 5 minutes or more, a
+    failed backup, a TV on a different version.
+- **Backups:**
+  - Nightly at 2:15 AM (`BACKUP_SCHEDULE`, `COURT_TIME_ZONE`) to `./backups`,
+    keeping the last 7 (`BACKUP_DIR`, `BACKUP_KEEP`). They can be downloaded
+    from the System page.
+  - Restore with `node scripts/restore-backup.js <file>`. Add `--prefix
+    restoretest_` to restore beside the live data and compare first.
+- **Updating TVs:** `scripts/deploy-fleet.sh` builds once and updates one TV
+  first. If it comes back healthy on the new version, the rest follow;
+  otherwise it rolls that TV back.
+- **Releases:**
+  1. Run `scripts/update-version.sh X.Y.Z`, which updates `package.json`,
+     `Cargo.toml` and `app.js`.
+  2. Commit, then make an annotated tag `vX.Y.Z`.
+
+## Configuration (`.env`)
+
+| Variable | Default | |
+|---|---|---|
+| `COUCHDB_URL`, `COUCHDB_USERNAME`, `COUCHDB_PASSWORD` | `http://localhost:5984` | signage CouchDB |
+| `MQTT_BROKER_URL`, `MQTT_USERNAME`, `MQTT_PASSWORD` | `mqtt://localhost:1883` | broker |
+| `PORT` | `3000` | web UI and API |
+| `COURT_TIME_ZONE` | `America/Denver` | "today" for calendars and backups |
+| `WEATHER_LATITUDE`, `WEATHER_LONGITUDE`, `WEATHER_LOCATION` | the courthouse | NWS forecast for `{weather}` |
+| `NTFY_URL` | unset | ntfy topic; otherwise set it on the System page |
+| `BACKUP_DIR`, `BACKUP_KEEP`, `BACKUP_SCHEDULE` | `./backups`, `7`, `15 2 * * *` | nightly backups |
+| `TV_HEARTBEAT_TIMEOUT` | `120000` | ms without a heartbeat before a TV shows offline |
+
+A TV reads `SIGNAGE_COUCHDB_USERNAME`, `SIGNAGE_COUCHDB_PASSWORD`,
+`SIGNAGE_MQTT_USERNAME`, `SIGNAGE_MQTT_PASSWORD` and `SIGNAGE_HTTP_ALLOW` from
+`/etc/signage/slideshow.env`. See `pi-slideshow-rs --help` for the rest.
+
+## Development
 
 ```bash
-# Service control
-sudo systemctl start signage     # Start service
-sudo systemctl stop signage      # Stop service  
-sudo systemctl restart signage   # Restart service
-sudo systemctl status signage    # Check status
-
-# Monitoring
-sudo journalctl -u signage -f    # Follow logs
-curl http://localhost:8080/api/health  # Health check
-
-# Uninstall
-/home/pi/signage/uninstall.sh    # Remove everything
+npm test                                   # Jest unit tests
+COUCHDB_TEST_URL=http://admin:…@host:5984 npx jest tests/integration/couchdb   # against a real CouchDB
+cd pi-slideshow-rs && cargo test           # TV app tests
+cd pi-slideshow-rs && ./build.sh           # ARM64 build for the Pi
 ```
 
-## 🎯 Use Cases
-
-### 🏛️ Court System Digital Signage
-- **Automated Hearing Schedules**: Real-time court schedule displays with color-coded urgency
-- **CSV Import**: Bulk import from court management systems (Tyler, Odyssey, etc.)
-- **Status Management**: Track hearing lifecycle from scheduled to completed
-- **Time Awareness**: Visual indicators for hearings starting within 15/30 minutes
-- **Multi-Room Support**: Display hearings by courtroom location
-- **Delay Tracking**: Show and manage delayed hearings with reasons
-- **Emergency Alerts**: Broadcast critical alerts with 3-tier priority system
-  - CRITICAL alerts (red full-screen) - Building evacuations, security threats
-  - URGENT alerts (orange banner) - Court delays, facility closures
-  - INFO alerts (blue ticker) - General notices, reminders
-  - Template system with 10 built-in templates + custom creation
-  - Priority-based queueing prevents alert overlap
-  - Schedule alerts for future broadcast with recurring patterns
-- **Wayfinding**: Directory and navigation information
-- **Multi-location**: Centralized control of courtroom displays
-
-### 🏢 Corporate Digital Signage
-- **Meeting Rooms**: Room schedules and availability
-- **Lobbies**: Company announcements and branding
-- **Cafeterias**: Menu displays and events
-- **Facilities**: Safety information and directories
-
-### 🏪 Retail & Hospitality
-- **Product Promotion**: Dynamic advertising displays
-- **Menu Boards**: Restaurant menu management
-- **Event Venues**: Conference and event information
-- **Hotels**: Guest information and services
-
-## 🔧 Configuration
-
-### Management Server Configuration
-
-**Development (.env):**
-```env
-# Copy from .env.dev.example
-NODE_ENV=development
-PORT=3000
-COUCHDB_URL=http://localhost:5984
-COUCHDB_USERNAME=admin
-COUCHDB_PASSWORD=admin
-MQTT_BROKER_URL=mqtt://localhost:1883
-LOG_LEVEL=debug
-```
-
-**Production (.env):**
-```env
-# Copy from .env.example and customize
-NODE_ENV=production
-PORT=3000
-COUCHDB_URL=http://couchdb:5984
-API_KEY=your-secure-api-key
-TV_TOKEN=your-secure-tv-token
-ADMIN_KEY=your-secure-admin-key
-SESSION_SECRET=your-secure-session-secret
-```
-
-### TV Endpoint Configuration
-
-```bash
-# Command line options
-./pi-slideshow-rs \
-  --mqtt-broker mqtt://server:1883 \      # MQTT broker URL
-  --couchdb-url http://server:5984 \      # CouchDB database URL
-  --couchdb-username admin \              # CouchDB username (optional)
-  --couchdb-password password \           # CouchDB password (optional)
-  --tv-id unique-tv-name \                 # Unique TV identifier
-  --image-dir /path/to/images \            # Local image directory
-  --delay 30 \                             # Display duration (seconds)
-  --transition 1500 \                      # Transition duration (ms)
-  --http-port 8080                         # Local HTTP API port
-```
-
-## 📡 API Reference
-
-### Management Server API
-
-```bash
-# TV Management
-GET    /api/tvs                     # List all TVs
-POST   /api/tvs                     # Create new TV
-PUT    /api/tvs/:id                 # Update TV
-DELETE /api/tvs/:id                 # Delete TV
-POST   /api/tvs/:id/control/:action # Control TV (play/pause/next)
-PUT    /api/tvs/:id/config          # Update TV configuration
-
-# Basic Layer Support
-GET    /api/tvs/:id/layers          # Get layer configuration
-PUT    /api/tvs/:id/layers          # Update layer configuration (limited to 2 layers)
-POST   /api/tvs/:id/layers/:layerId/visibility # Toggle layer visibility
-
-# Court Hearing Management
-POST   /api/hearings                # Create hearing
-GET    /api/hearings                # List all hearings
-GET    /api/hearings/today          # Today's hearings
-GET    /api/hearings/upcoming       # Upcoming hearings (24h)
-GET    /api/hearings/date/:date     # Hearings by date
-GET    /api/hearings/room/:room     # Hearings by courtroom
-GET    /api/hearings/stats          # Statistics
-GET    /api/hearings/:id            # Get specific hearing
-PUT    /api/hearings/:id            # Update hearing
-DELETE /api/hearings/:id            # Delete hearing
-POST   /api/hearings/:id/delay      # Mark as delayed
-POST   /api/hearings/:id/in-progress # Mark as in progress
-POST   /api/hearings/:id/complete   # Mark as completed
-POST   /api/hearings/:id/cancel     # Cancel hearing
-POST   /api/hearings/refresh-display # Refresh all displays
-POST   /api/hearings/import         # Import from CSV
-
-# Image Management
-GET    /api/images                 # List all images
-POST   /api/images/upload          # Upload images
-DELETE /api/images/:id             # Delete image
-POST   /api/images/:id/assign      # Assign to TVs
-POST   /api/images/reorder/:tvId   # Reorder images
-POST   /api/images/shuffle/:tvId   # Shuffle images
-
-# Dashboard
-GET    /api/dashboard/overview     # Get dashboard data
-```
-
-### TV Endpoint API
-
-```bash
-# Local HTTP API (port 8080)
-GET    /api/health                # Health check
-GET    /api/status                # Get TV status
-POST   /api/control               # Control slideshow
-PUT    /api/config                # Update configuration
-GET    /api/images                # Get image list
-```
-
-### MQTT Topics
-
-```bash
-# Command Topics (Management Server → TV)
-signage/tv/{tv_id}/command         # Send commands
-
-# Status Topics (TV → Management Server)
-signage/tv/{tv_id}/status          # TV status updates
-signage/tv/{tv_id}/heartbeat       # Health monitoring
-signage/tv/{tv_id}/image/current   # Current image updates
-signage/tv/{tv_id}/error           # Error reporting
-```
-
-## 🛠️ Development, Testing & Deployment
-
-### Project Structure
-
-```
-digital-signage-management/
-├── package.json                   # Node.js dependencies
-├── docker-compose.yml             # Docker services configuration (production)
-├── docker-compose.yml-dev         # Development Docker configuration
-├── docker-compose.yml-prod        # Production Docker configuration
-├── Dockerfile                     # Production container
-├── Dockerfile-dev                 # Development container
-├── Dockerfile-prod                # Production-optimized container
-├── .env.example                   # Production environment template
-├── .env.dev.example              # Development environment template
-├── src/
-│   ├── server.js                  # Main server application
-│   ├── config/
-│   │   ├── database.js           # CouchDB configuration
-│   │   ├── index.js              # Centralized configuration system
-│   │   └── multilayer.config.js  # Multi-layer configuration
-│   ├── models/
-│   │   ├── BaseModel.js          # Base model with common CRUD operations
-│   │   ├── tv.js                 # TV model (extends BaseModel)
-│   │   ├── image.js              # Image model (extends BaseModel)
-│   │   └── CourtHearing.js       # Court hearing model (extends BaseModel)
-│   ├── controllers/              # MVC controllers
-│   │   ├── tvController.js       # TV business logic
-│   │   ├── imageController.js    # Image business logic
-│   │   ├── dashboardController.js # Dashboard business logic
-│   │   └── courtHearingController.js # Court hearing business logic
-│   ├── routes/                    # API routes
-│   │   ├── tvRoutes.js           # TV endpoints
-│   │   ├── imageRoutes.js        # Image endpoints
-│   │   ├── dashboardRoutes.js    # Dashboard endpoints
-│   │   └── courtHearingRoutes.js # Court hearing endpoints
-│   ├── middleware/               # Middleware layer
-│   │   ├── errorHandler.js       # Centralized error handling
-│   │   ├── security.js           # Rate limiting and authentication
-│   │   ├── validation.js         # Joi schema validation
-│   │   └── upload.js             # File upload handling
-│   ├── services/
-│   │   ├── mqttService.js        # MQTT integration with layer support
-│   │   ├── courtDisplayService.js # Layer generation from hearings
-│   │   └── layerAutomation.js    # Cron jobs for automated updates
-│   └── utils/                    # Utility functions
-├── public/                        # Web interface assets
-│   ├── index.html                # Main admin dashboard
-│   ├── court-schedule.html       # Court hearing management UI
-│   ├── css/style.css            # Styling
-│   └── js/
-│       ├── app.js               # Main dashboard JavaScript
-│       └── court-schedule.js    # Court hearing UI logic
-├── tests/                         # Test suites
-│   └── demo-court-hearings.js   # Court hearing demo script
-├── pi-slideshow-rs/               # Rust TV endpoint
-│   ├── src/
-│   │   ├── main.rs               # Main slideshow application
-│   │   ├── mqtt_client.rs        # MQTT integration
-│   │   ├── slideshow_controller.rs # Control logic
-│   │   ├── http_server.rs        # HTTP API server
-│   │   ├── layer_manager.rs      # Basic 2-layer compositing
-│   │   └── couchdb_client.rs     # CouchDB integration
-│   ├── install.sh                # Automated Pi installation
-│   └── signage.service           # SystemD service configuration
-└── README.md                      # This file
-
-# Experimental features (not in main server):
-# - src/server.multilayer.js         # Experimental multi-layer server
-# - src/models/Layer.js              # Multi-layer data model
-# - src/controllers/layerController.js # Multi-layer API
-# - src/routes/layerRoutes.js        # Multi-layer endpoints
-# - public/multilayer.html           # Multi-layer dashboard
-# - demo-multilayer-system.js        # Multi-layer demo
-```
-
-### 🧪 Development Workflow
-
-#### 1. Local Development Setup
-
-```bash
-# Clone and setup
-git clone <repository-url>
-cd digital-signage-management
-
-# Install dependencies
-npm install
-
-# Setup development environment
-cp .env.dev.example .env
-
-# Start development environment
-docker-compose -f docker-compose.yml-dev up -d  # Full dev infrastructure
-
-# Or run management server locally with containerized services
-docker-compose -f docker-compose.yml-dev up -d couchdb-dev mosquitto-dev
-npm run dev                                      # Development server with hot reload
-```
-
-#### 2. Running Tests
-
-```bash
-# Management Server Tests
-npm test                          # Run Jest tests (basic coverage only)
-# Note: Test infrastructure exists but coverage is minimal
-# Most controllers and services need test implementation
-
-# TV Endpoint Tests  
-cd pi-slideshow-rs
-cargo test                        # Run Rust tests
-cargo test -- --nocapture         # Show console output
-```
-
-#### 3. Code Quality
-
-```bash
-# Management Server
-npm run lint                      # ESLint
-
-# TV Endpoint
-cd pi-slideshow-rs
-cargo fmt                         # Format Rust code
-cargo clippy                      # Linting
-cargo check                       # Type checking
-```
-
-### 🚀 Production Deployment
-
-#### Method 1: Docker Compose (Recommended)
-
-```bash
-# Production deployment
-git clone <repository-url>
-cd digital-signage-management
-
-# Configure environment
-cp .env.example .env
-# Edit .env with production settings - IMPORTANT: Set secure passwords!
-
-# Deploy with Docker
-docker-compose -f docker-compose.yml-prod up -d
-
-# Monitor deployment
-docker-compose -f docker-compose.yml-prod logs -f
-docker-compose -f docker-compose.yml-prod ps
-```
-
-#### Method 2: Manual Production Setup
-
-```bash
-# Install Node.js LTS
-curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
-sudo apt-get install -y nodejs
-
-# Install and configure CouchDB
-sudo apt install couchdb
-sudo systemctl enable couchdb
-sudo systemctl start couchdb
-
-# Install MQTT broker
-sudo apt install mosquitto mosquitto-clients
-sudo systemctl enable mosquitto
-sudo systemctl start mosquitto
-
-# Deploy application
-git clone <repository-url>
-cd digital-signage-management
-npm ci --production
-
-# Configure environment
-cp .env.example .env
-# Edit .env with production settings
-
-# Initialize database
-npm run db:setup
-
-# Start with PM2 (process manager)
-npm install -g pm2
-pm2 start ecosystem.config.js
-pm2 save
-pm2 startup
-
-# Note: Court hearing cron jobs will start automatically when the server starts
-# Verify cron jobs are running by checking logs for "Running scheduled..." messages
-```
-
-### 📋 Environment Configuration
-
-#### Development (.env)
-
-```env
-# Development Configuration
-NODE_ENV=development
-PORT=3000
-
-# CouchDB Configuration
-COUCHDB_URL=http://localhost:5984
-COUCHDB_USERNAME=admin
-COUCHDB_PASSWORD=admin
-COUCHDB_DATABASE=digital_signage_dev
-
-# MQTT Configuration
-MQTT_BROKER_URL=mqtt://localhost:1883
-MQTT_USERNAME=
-MQTT_PASSWORD=
-
-# File Upload
-UPLOAD_DIR=./uploads
-MAX_FILE_SIZE=10485760
-
-# Logging
-LOG_LEVEL=debug
-```
-
-#### Production (.env)
-
-```env
-# Production Configuration
-NODE_ENV=production
-PORT=3000
-
-# CouchDB Configuration
-COUCHDB_URL=http://couchdb:5984
-COUCHDB_USERNAME=${COUCHDB_ADMIN_USER}
-COUCHDB_PASSWORD=${COUCHDB_ADMIN_PASSWORD}
-COUCHDB_DATABASE=digital_signage
-
-# MQTT Configuration
-MQTT_BROKER_URL=mqtt://mosquitto:1883
-MQTT_USERNAME=${MQTT_USER}
-MQTT_PASSWORD=${MQTT_PASSWORD}
-
-# Security
-SESSION_SECRET=${SESSION_SECRET}
-JWT_SECRET=${JWT_SECRET}
-
-# SSL/TLS
-HTTPS_ENABLED=true
-SSL_CERT_PATH=/etc/ssl/certs/signage.crt
-SSL_KEY_PATH=/etc/ssl/private/signage.key
-
-# File Upload
-UPLOAD_DIR=/var/signage/uploads
-MAX_FILE_SIZE=52428800
-
-# Logging
-LOG_LEVEL=info
-LOG_FILE=/var/log/signage/app.log
-```
-
-### 🐳 Docker Configuration
-
-The project includes three optimized Docker Compose configurations:
-
-**Production (`docker-compose.yml-prod`):**
-- Production-optimized containers with health checks
-- Secure environment variable management
-- Proper service dependencies and networking
-- Persistent data volumes
-
-**Development (`docker-compose.yml-dev`):**
-- Development containers with hot reload
-- Debug-friendly logging and error reporting
-- Local code mounting for rapid development
-- Separate dev networking and volumes
-
-**Quick Start (`docker-compose.yml`):**
-- Balanced production setup for general use
-- Complete infrastructure with CouchDB and MQTT
-- Health checks and automatic restart policies
-- Ready-to-use with minimal configuration
-
-```yaml
-# Example production service configuration
-management-server:
-  build:
-    context: .
-    dockerfile: Dockerfile-prod
-  environment:
-    - NODE_ENV=production
-    - COUCHDB_URL=http://couchdb:5984
-    - MQTT_BROKER_URL=mqtt://mosquitto:1883
-  depends_on:
-    couchdb:
-      condition: service_healthy
-    mosquitto:
-      condition: service_healthy
-  healthcheck:
-    test: ["CMD", "wget", "--spider", "http://localhost:3000/api/health"]
-    interval: 30s
-    timeout: 10s
-    retries: 3
-```
-
-### 📊 Development Commands Reference
-
-```bash
-# Management Server
-npm run dev                        # Start development server
-npm run dev:multilayer            # Start multilayer server (experimental)
-npm start                         # Start production server
-npm run start:multilayer          # Start multilayer production (experimental)
-npm test                          # Run tests
-npm run lint                      # Lint code
-npm run db:setup                  # Initialize database
-npm run build                     # Build (no-op for Node.js)
-npm run demo:multilayer           # Run multilayer demo (experimental)
-
-# TV Endpoint
-cd pi-slideshow-rs
-cargo build                       # Build locally
-cargo build --release             # Production build
-cargo run                        # Run with defaults
-cargo test                       # Run tests
-./build.sh                       # Cross-compile for Pi
-cargo clippy                     # Linting
-cargo fmt                        # Format code
-
-# Docker
-docker-compose up -d              # Start all services (production)
-docker-compose -f docker-compose.yml-dev up -d  # Development
-docker-compose -f docker-compose.yml-prod up -d # Production
-docker-compose down               # Stop all services
-docker-compose logs -f            # View logs
-docker-compose ps                 # Service status
-docker-compose pull               # Update images
-```
-
-## 🔍 Monitoring & Troubleshooting
-
-### Health Monitoring
-
-```bash
-# Check management server
-curl http://management-server:3000/api/health
-
-# Check TV endpoint
-curl http://tv-endpoint:8080/api/health
-
-# Monitor MQTT traffic
-mosquitto_sub -h mqtt-broker -t "signage/tv/+/status"
-```
-
-### Common Issues
-
-**Management Server:**
-- Database connection issues → Check CouchDB status
-- MQTT connection failed → Verify broker connectivity
-- Image upload errors → Check file permissions
-- Cron jobs not running → Check server logs for "Running scheduled..." messages
-
-**Court Hearing System:**
-- Hearings not displaying → Verify TVs have layer support (`features.multi_layer`)
-- Display not updating → Check layer automation logs (should refresh every 5 minutes)
-- CSV import failing → Verify date format is ISO 8601 (YYYY-MM-DDTHH:mm:ssZ)
-
-**TV Endpoints:**
-- No display output → Verify framebuffer permissions (`sudo`)
-- MQTT connection failed → Check network and broker URL
-- Image loading errors → Verify CouchDB connectivity and image attachments
-- Database errors → Check CouchDB credentials and database permissions
-
-### Performance Tuning
-
-- **Image Optimization**: Resize images to 1920x1080 for best performance
-- **Network**: Use wired connections for TV endpoints when possible
-- **Storage**: Use fast SD cards (Class 10+) for Raspberry Pi
-- **Transitions**: Reduce transition duration for lower-end hardware
-
-## 🔐 Security Features
-
-### ✅ Built-in Security (v0.2.0)
-- **Multi-tier Authentication**: API keys, TV tokens, and admin keys
-- **Rate Limiting**: Configurable limits for different endpoint types
-- **Input Validation**: Comprehensive Joi schema validation
-- **File Upload Security**: Type validation and size limits
-- **Error Handling**: Secure error responses without information leakage
-- **CORS Protection**: Configurable cross-origin resource sharing
-
-### 🔧 Additional Security Recommendations
-- **MQTT Authentication**: Configure MQTT broker with user authentication
-- **HTTPS**: Use SSL certificates for production deployments
-- **Firewall**: Restrict TV endpoint network access to management server
-- **Environment Variables**: Use secure secrets management
-- **Container Security**: Non-root user containers with minimal privileges
-
-## 📂 Project Components
-
-### Management Server (`/`)
-- **Node.js/Express Backend**: REST API and WebSocket server
-- **CouchDB Integration**: Document storage and image attachments
-- **MQTT Service**: Real-time communication with TV endpoints
-- **Court Hearing System**: Automated schedule management with cron jobs
-- **Automated Tasks**: 5-minute display refresh, morning updates, nightly cleanup
-- **Web Interface**: Staff dashboard in `public/` directory
-- **File Upload**: Image processing and optimization with Sharp
-
-### TV Endpoint (`pi-slideshow-rs/`)
-- **Rust Application**: High-performance slideshow controller
-- **MQTT Client**: Real-time command processing
-- **CouchDB Client**: Direct database access for images and configs
-- **HTTP Server**: Local REST API for direct control
-- **Framebuffer Rendering**: Hardware-accelerated display without X11
-- **SystemD Integration**: Auto-startup service configuration (`signage.service`)
-- **Automated Installer**: One-command deployment script (`install.sh`)
-- **🆕 Layer Manager**: Multi-layer compositing with alpha blending
-- **🆕 Advanced Caching**: Optimized image and composite caching
-- **🆕 Real-time Updates**: Dynamic layer management via MQTT
-
-See [`pi-slideshow-rs/README.md`](pi-slideshow-rs/README.md) for detailed TV endpoint documentation.
-
-## 📚 Resources & Documentation
-
-### Project Documentation
-- **[Court Hearing System Guide](COURT-HEARING-SYSTEM.md)** - Complete court schedule integration documentation
-- **[Multi-Layer System Guide](MULTILAYER-README.md)** - Multi-layer compositing documentation
-- **[Version Management](VERSION-GUIDE.md)** - Version update procedures
-- **[Raspberry Pi Setup](pi-slideshow-rs/README.md)** - TV endpoint installation guide
-
-### External Resources
-- [Node.js Documentation](https://nodejs.org/docs)
-- [CouchDB Guide](https://docs.couchdb.org)
-- [MQTT Protocol](https://mqtt.org)
-- [Raspberry Pi Configuration](https://www.raspberrypi.org/documentation)
-- [Rust Cross-Compilation](https://rust-lang.github.io/rustup/cross-compilation.html)
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-🎨 **Transform your displays into a powerful digital signage network!** 📺🚀
+`CLAUDE.md` has the code map, conventions and deployment notes for the homelab
+installation. API docs are served at `/api-docs`.
+
+## Troubleshooting
+
+- **A TV shows "Last updated …" or "temporarily unavailable":** the calendar
+  source isn't being checked. See **System** (the court calendar check) and
+  **Scenes → Live Data**.
+- **A TV is offline:** run `ssh pi@<tv> journalctl -u slideshow -n 50`. It
+  keeps playing its cached sequence while the manager or network is away.
+- **Play/pause from the browser does nothing:** commands go through the
+  manager over MQTT. Check the manager's MQTT credentials after running
+  `secure-signage.sh`.
+- **Emoji:** TV text supports colour emoji, but avoid multi-part emoji such as
+  👨‍⚖️, which the TV draws as separate symbols.

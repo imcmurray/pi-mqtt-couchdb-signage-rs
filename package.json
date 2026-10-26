@@ -9,8 +9,7 @@
     "test": "jest",
     "lint": "eslint src/",
     "build": "echo 'No build step required for Node.js'",
-    "db:setup": "node scripts/db-setup.js",
-    "demo": "node demo-multilayer-system.js"
+    "db:setup": "node scripts/setup-couchdb.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
