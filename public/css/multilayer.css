@@ -1997,3 +1997,102 @@
 .table-preview-row.cancelled span.status { color: #fc8181; opacity: 1; }
 .table-preview-row.continued span.status { color: #f6ad55; }
 .table-preview-row.heard span.status { color: #9ae6b4; }
+
+/* Calendar table: grabbers on the column borders of the selected table */
+:is(#layers-section, #scenes-section) .column-grabber {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 12px;
+    margin-left: -6px;
+    cursor: col-resize;
+    pointer-events: auto;
+    z-index: 6;
+    touch-action: none;
+}
+
+:is(#layers-section, #scenes-section) .column-grabber::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 5px;
+    width: 2px;
+    background: rgba(59, 130, 246, 0.55);
+}
+
+:is(#layers-section, #scenes-section) .column-grabber::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 8px;
+    height: 14px;
+    border-radius: 3px;
+    background: #3b82f6;
+    box-shadow: 0 0 0 1px #fff;
+}
+
+:is(#layers-section, #scenes-section) .column-grabber:hover::before,
+:is(#layers-section, #scenes-section) .column-grabber.active::before {
+    background: #3b82f6;
+    width: 3px;
+}
+
+:is(#layers-section, #scenes-section) .column-size:empty { display: none; }
+
+:is(#layers-section, #scenes-section) .column-size {
+    position: absolute;
+    left: 50%;
+    bottom: 4px;
+    transform: translateX(-50%);
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: rgba(15, 23, 42, 0.85);
+    color: #fff;
+    font: 12px/1.4 system-ui, sans-serif;
+    white-space: nowrap;
+    z-index: 7;
+}
+
+/* Countdown ring option and its preview */
+:is(#layers-section, #scenes-section) .countdown-ring-option {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+:is(#layers-section, #scenes-section) .countdown-ring-option .color-input {
+    padding: 2px;
+}
+
+:is(#layers-section, #scenes-section) .countdown-ring-option .form-hint {
+    flex-basis: 100%;
+}
+
+:is(#layers-section, #scenes-section) .countdown-ring-preview {
+    position: absolute;
+    overflow: visible;
+    pointer-events: none;
+    transform: rotate(-90deg);
+}
+
+:is(#layers-section, #scenes-section) .countdown-ring-preview circle {
+    fill: none;
+}
+
+:is(#layers-section, #scenes-section) .ring-settings {
+    flex-basis: 100%;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+    gap: 8px;
+}
+
+:is(#layers-section, #scenes-section) .ring-settings[hidden] {
+    display: none;
+}
+
+:is(#layers-section, #scenes-section) .layer-preview.has-ring {
+    overflow: visible;
+}

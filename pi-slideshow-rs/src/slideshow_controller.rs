@@ -6,7 +6,7 @@ use crate::mqtt_client::{AlertData, ImageInfo, MqttClient, SlideshowCommand, Sli
 use std::collections::{HashMap, HashSet};
 use crate::couchdb_client::CouchDbClient;
 use crate::layer_manager::{LayerManager, LayerConfig, Layer, LayerContent, LayerData, LayerType};
-use crate::layer_data::TableSpec;
+use crate::layer_data::{self, TableSpec};
 
 #[derive(Debug, Clone)]
 pub enum SlideshowState {
@@ -607,6 +607,22 @@ impl SlideshowController {
         since.elapsed() >= self.current_display_duration().await
     }
 
+    /// Tell countdown rings how much of the current clip's time is left: none
+    /// while paused or held, or when there is only one clip to show
+    pub async fn update_clip_remaining(&self, last_change: Instant) {
+        let remaining = if self.is_playing().await && self.images.read().await.len() > 1 {
+            let since = match *self.manual_change_at.read().await {
+                Some(manual) if manual > last_change => manual,
+                _ => last_change,
+            };
+            let total = self.current_display_duration().await.as_secs_f32().max(0.001);
+            Some(1.0 - since.elapsed().as_secs_f32() / total)
+        } else {
+            None
+        };
+        self.layer_manager.read().await.set_clip_remaining(remaining).await;
+    }
+
     /// The showing image's own display time, falling back to the TV's
     async fn current_display_duration(&self) -> Duration {
         let index = *self.current_index.read().await;
@@ -1051,6 +1067,9 @@ impl SlideshowController {
             layer.content = LayerContent::ImagePath(Self::layer_image_path(image_dir, image_id).to_string_lossy().to_string());
         }
         layer.visible = value["visible"].as_bool().unwrap_or(true);
+        layer.countdown_ring = serde_json::from_value::<layer_data::CountdownRing>(content["countdownRing"].clone())
+            .ok()
+            .filter(|ring| ring.enabled);
         if let Some(name) = value["name"].as_str() {
             layer = layer.with_name(name.to_string());
         }
@@ -1132,6 +1151,20 @@ impl SlideshowController {
         Layer::new(alert.alert_id.clone(), LayerType::Emergency)
             .with_position(x, y, width, height)
             .with_data_row(text, bg_color, text_color, font_size, alignment)
+    }
+
+    /// Squares to redraw when only countdown rings moved (see LayerManager::ring_patches)
+    pub async fn ring_patches(&self) -> Option<Vec<(image::RgbaImage, u32, u32)>> {
+        self.layer_manager.read().await.ring_patches().await
+    }
+
+    /// Keep /api/preview in step with patched screen updates
+    pub async fn apply_patches_to_current_frame(&self, patches: &[(image::RgbaImage, u32, u32)]) {
+        if let Some(frame) = self.current_frame.write().await.as_mut() {
+            for (patch, x, y) in patches {
+                image::imageops::replace(frame, patch, *x as i64, *y as i64);
+            }
+        }
     }
 
     pub async fn render_composite_image(&self) -> Result<image::RgbaImage, String> {

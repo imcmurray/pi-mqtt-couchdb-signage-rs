@@ -529,6 +529,7 @@ impl CouchDbClient {
                 content,
                 name: Some(layer_id.clone()),
                 animation_state: None,
+                countdown_ring: None,
             };
             
             layers.insert(layer_id.clone(), layer);

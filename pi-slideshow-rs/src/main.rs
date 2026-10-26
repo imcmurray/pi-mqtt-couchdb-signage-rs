@@ -475,6 +475,41 @@ impl Framebuffer {
         self.display_buffer(&buffer)
     }
 
+    /// Write just one rectangle (`patch` at x, y) to the screen, e.g. a ticking
+    /// countdown ring, a row at a time. False when there's no framebuffer to
+    /// write into (the fallback file only takes whole frames).
+    fn display_patch(&mut self, patch: &RgbaImage, x: u32, y: u32) -> IoResult<bool> {
+        if self.mmap.is_none() && self.file.is_none() {
+            return Ok(false);
+        }
+        let width = patch.width().min(self.width.saturating_sub(x));
+        let height = patch.height().min(self.height.saturating_sub(y));
+        let mut row = Vec::with_capacity(width as usize * 4);
+        for py in 0..height {
+            row.clear();
+            for px in 0..width {
+                let p = patch.get_pixel(px, py);
+                row.extend_from_slice(&[p[2], p[1], p[0], p[3]]);
+            }
+            let start = (((y + py) * self.width + x) * 4) as usize;
+            if start + row.len() > self.max_buffer_size {
+                break;
+            }
+            if let Some(ref mut mmap) = self.mmap {
+                mmap[start..start + row.len()].copy_from_slice(&row);
+            } else if let Some(ref mut file) = self.file {
+                file.seek(SeekFrom::Start(start as u64))?;
+                file.write_all(&row)?;
+            }
+        }
+        if let Some(ref mut mmap) = self.mmap {
+            mmap.flush()?;
+        } else if let Some(ref mut file) = self.file {
+            file.flush()?;
+        }
+        Ok(true)
+    }
+
     fn image_to_bgra_buffer(&self, image: &RgbaImage) -> Vec<u8> {
         // If image dimensions don't match framebuffer exactly, this could cause garbled display
         if image.width() != self.width || image.height() != self.height {
@@ -1583,6 +1618,7 @@ async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoRe
         
         // Check if we should advance automatically based on controller state
         let should_advance = controller.should_advance_automatically(last_image_change).await;
+        controller.update_clip_remaining(last_image_change).await;
         let _elapsed = last_image_change.elapsed();
         let _is_playing = controller.is_playing().await;
         
@@ -1727,7 +1763,18 @@ async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoRe
                 // Layers changed or are animating over the same image: recomposite
                 // without restarting the image's display time
                 if !needs_reload && controller.layers_need_redraw().await {
-                    match controller.render_composite_image().await {
+                    // Only a countdown ring moved: redraw just its square
+                    let mut patched = false;
+                    if let Some(patches) = controller.ring_patches().await {
+                        patched = true;
+                        for (patch, x, y) in &patches {
+                            patched &= fb.display_patch(patch, *x, *y).unwrap_or(false);
+                        }
+                        if patched {
+                            controller.apply_patches_to_current_frame(&patches).await;
+                        }
+                    }
+                    if !patched { match controller.render_composite_image().await {
                         Ok(composite_image) => {
                             controller.set_current_frame(composite_image.clone()).await;
                             if let Err(e) = fb.display_image(&composite_image) {
@@ -1735,7 +1782,7 @@ async fn run_slideshow_loop(args: Args, controller: SlideshowController) -> IoRe
                             }
                         }
                         Err(e) => eprintln!("Failed to render layer update: {}", e),
-                    }
+                    } }
                 }
 
                 if needs_reload {

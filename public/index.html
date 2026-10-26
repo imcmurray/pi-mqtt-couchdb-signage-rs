@@ -543,6 +543,17 @@
                                         <div class="form-group text-only"><label for="layerTextColor">Text</label><input type="color" id="layerTextColor" class="form-input color-input" value="#ffffff"></div>
                                     </div>
                                     <div class="form-group checkbox-group"><label><input type="checkbox" id="layerVisible" checked> Visible</label></div>
+                                    <div class="form-group countdown-ring-option tv-only">
+                                        <label><input type="checkbox" id="layerCountdownRing" onchange="manager.updateRingOptions()"> Countdown ring</label>
+                                        <small class="form-hint">A circle around this layer that empties as the current screen's time runs out, so viewers can see when the next one is coming. It stays full while the TV is paused or held.</small>
+                                        <div class="ring-settings" id="ringSettings" oninput="manager.previewRingFromForm()" hidden>
+                                            <div class="form-group"><label for="layerRingThickness" title="How thick the ring is, in TV pixels">Width (px)</label><input type="number" id="layerRingThickness" class="form-input" min="1" max="40" value="6"></div>
+                                            <div class="form-group"><label for="layerRingGap" title="Space between the layer (e.g. the seal) and the ring, in TV pixels; negative pulls the ring in over the edge">Gap (px)</label><input type="number" id="layerRingGap" class="form-input" min="-20" max="60" value="4"></div>
+                                            <div class="form-group"><label for="layerCountdownColor">Time left</label><input type="color" id="layerCountdownColor" class="form-input color-input" value="#c9a227"></div>
+                                            <div class="form-group"><label for="layerRingTrackColor">Time used</label><input type="color" id="layerRingTrackColor" class="form-input color-input" value="#ffffff"></div>
+                                            <div class="form-group"><label for="layerRingTrackAlpha" title="How visible the used part of the ring is; 0 hides it">Used %</label><input type="number" id="layerRingTrackAlpha" class="form-input" min="0" max="100" step="5" value="25" title="0 hides the used part of the ring"></div>
+                                        </div>
+                                    </div>
                                     <div class="editor-actions">
                                         <button type="submit" class="btn btn-primary" id="layerSaveButton">Create layer</button>
                                         <button type="button" class="btn btn-secondary tv-only" id="layerSaveTemplateButton" onclick="openSaveTemplateModal()" style="display: none;">Save as template</button>

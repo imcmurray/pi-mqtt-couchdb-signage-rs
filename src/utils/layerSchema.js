@@ -28,7 +28,16 @@ const layerFields = {
         label: Joi.string().allow('').max(50).required(),
         width: Joi.number().min(20).max(1920).required()
       })).min(1).max(12).required()
-    }).unknown(true)
+    }).unknown(true),
+    // Overlay only: a ring around the layer that empties as the TV's current
+    // clip runs out (pi-slideshow-rs layer_data::CountdownRing)
+    countdownRing: Joi.object({
+      enabled: Joi.boolean().default(false),
+      color: Joi.string().pattern(/^rgba?\(\d+,\s*\d+,\s*\d+,\s*[\d.]+\)$/),
+      trackColor: Joi.string().pattern(/^rgba?\(\d+,\s*\d+,\s*\d+,\s*[\d.]+\)$/),
+      thickness: Joi.number().min(1).max(40),
+      gap: Joi.number().min(-20).max(60)
+    })
   }).required(), // no text and no image = a plain colour block
   position: Joi.object({
     x: Joi.number().min(0).required(),

@@ -124,6 +124,9 @@ pub struct Layer {
     pub content: LayerContent,
     pub name: Option<String>, // Human-readable name
     pub animation_state: Option<AnimationState>, // Current animation
+    /// Time-left ring around this layer (overlays only)
+    #[serde(default)]
+    pub countdown_ring: Option<layer_data::CountdownRing>,
 }
 
 impl Layer {
@@ -147,6 +150,7 @@ impl Layer {
             content: LayerContent::Empty,
             name: None,
             animation_state: None,
+            countdown_ring: None,
         }
     }
 
@@ -342,6 +346,11 @@ pub struct LayerManager {
     // Elements of the scene clip on screen: drawn above the slideshow and below
     // every overlay, whatever their priorities
     base_layers: Arc<RwLock<Vec<Layer>>>,
+    // Share of the current clip's time left (0..1); None when not counting down
+    // (paused, held, or a single clip). Drives countdown rings.
+    clip_remaining: Arc<RwLock<Option<f32>>>,
+    // Ring step last drawn; a change redraws just the rings over the cached composite
+    last_ring_key: Arc<RwLock<String>>,
 }
 
 /// Values for {tokens} (weather) and data set rows (court calendar)
@@ -386,6 +395,8 @@ impl LayerManager {
             transition_frame: Arc::new(RwLock::new(None)),
             data: Arc::new(RwLock::new(LayerData::default())),
             last_dynamic_key: Arc::new(RwLock::new(String::new())),
+            clip_remaining: Arc::new(RwLock::new(None)),
+            last_ring_key: Arc::new(RwLock::new(String::new())),
             base_layers: Arc::new(RwLock::new(Vec::new())),
         }
     }
@@ -672,7 +683,115 @@ impl LayerManager {
         Ok(overlay)
     }
 
+    /// The screen: every layer (cached until something changes), then any
+    /// countdown rings on top, so a ticking ring doesn't re-render the rest
     pub async fn render_composite(&self) -> Result<RgbaImage, String> {
+        let mut frame = self.render_layers_composite().await?;
+        self.draw_countdown_rings(&mut frame).await;
+        Ok(frame)
+    }
+
+    pub async fn set_clip_remaining(&self, remaining: Option<f32>) {
+        *self.clip_remaining.write().await = remaining.map(|r| r.clamp(0.0, 1.0));
+    }
+
+    /// What the rings would show now ("" when there are none)
+    async fn ring_key(&self) -> String {
+        let config = self.config.read().await;
+        let any = config.layers.values().any(|l| l.visible && l.countdown_ring.as_ref().is_some_and(|r| r.enabled));
+        if !any {
+            return String::new();
+        }
+        match *self.clip_remaining.read().await {
+            Some(remaining) => format!("{}", (remaining * layer_data::RING_STEPS).ceil() as u32),
+            None => "full".into(),
+        }
+    }
+
+    async fn draw_countdown_rings(&self, frame: &mut RgbaImage) {
+        let key = self.ring_key().await;
+        *self.last_ring_key.write().await = key.clone();
+        if key.is_empty() {
+            return;
+        }
+        let remaining = self.clip_remaining.read().await.unwrap_or(1.0);
+        for layer in self.ring_layers().await {
+            self.draw_ring(&layer, remaining, frame, 0, 0);
+        }
+    }
+
+    async fn ring_layers(&self) -> Vec<Layer> {
+        self.config.read().await.layers.values()
+            .filter(|l| l.visible && l.countdown_ring.as_ref().is_some_and(|r| r.enabled))
+            .cloned()
+            .collect()
+    }
+
+    /// Centre, radius, thickness and the square (x, y, size) a layer's ring covers
+    fn ring_geometry(layer: &Layer, ring: &layer_data::CountdownRing) -> (f32, f32, f32, f32, (u32, u32, u32, u32)) {
+        let pos = &layer.position;
+        let thickness = ring.thickness.max(1) as f32;
+        let radius = (pos.width.min(pos.height) as f32 / 2.0 + ring.gap as f32 + thickness / 2.0).max(thickness / 2.0);
+        let (cx, cy) = (pos.x as f32 + pos.width as f32 / 2.0, pos.y as f32 + pos.height as f32 / 2.0);
+        let reach = radius + thickness;
+        let (x0, y0) = ((cx - reach).max(0.0) as u32, (cy - reach).max(0.0) as u32);
+        let (x1, y1) = ((cx + reach).ceil() as u32, (cy + reach).ceil() as u32);
+        (cx, cy, radius, thickness, (x0, y0, x1 - x0, y1 - y0))
+    }
+
+    /// Draw a layer's ring into `image`, whose top-left corner is screen (ox, oy)
+    fn draw_ring(&self, layer: &Layer, remaining: f32, image: &mut RgbaImage, ox: u32, oy: u32) {
+        let Some(ring) = layer.countdown_ring.as_ref() else { return };
+        let (cx, cy, radius, thickness, (x0, y0, size_w, size_h)) = Self::ring_geometry(layer, ring);
+        let arc = parse_rgba_string(&ring.color);
+        let track = parse_rgba_string(&ring.track_color);
+        for sy in y0..y0 + size_h {
+            for sx in x0..x0 + size_w {
+                if sx < ox || sy < oy || sx - ox >= image.width() || sy - oy >= image.height() {
+                    continue;
+                }
+                let Some((coverage, on_arc)) = layer_data::ring_pixel(sx as f32 + 0.5 - cx, sy as f32 + 0.5 - cy, radius, thickness, remaining) else { continue };
+                let color = if on_arc { arc } else { track };
+                let alpha = (color.3 as f32 * coverage * layer.opacity) as u8;
+                let existing = *image.get_pixel(sx - ox, sy - oy);
+                image.put_pixel(sx - ox, sy - oy, self.blend_pixels(existing, Rgba([color.0, color.1, color.2, alpha])));
+            }
+        }
+    }
+
+    /// When nothing but the countdown rings changed: each ring's square, cut
+    /// from the cached composite with the ring redrawn, to write to the screen
+    /// without re-rendering or re-sending the whole frame. None means a full
+    /// redraw is needed.
+    pub async fn ring_patches(&self) -> Option<Vec<(RgbaImage, u32, u32)>> {
+        if *self.composite_dirty.read().await || self.config.read().await.layers.values().any(|l| l.animation_state.is_some()) {
+            return None;
+        }
+        let key = self.ring_key().await;
+        if key.is_empty() || *self.last_ring_key.read().await == key {
+            return None;
+        }
+        let cached = self.last_composite.read().await;
+        let base = cached.as_ref()?;
+        let remaining = self.clip_remaining.read().await.unwrap_or(1.0);
+        let mut patches = Vec::new();
+        for layer in self.ring_layers().await {
+            let Some(ring) = layer.countdown_ring.as_ref() else { continue };
+            let (_, _, _, _, (x, y, w, h)) = Self::ring_geometry(&layer, ring);
+            let w = w.min(base.width().saturating_sub(x));
+            let h = h.min(base.height().saturating_sub(y));
+            if w == 0 || h == 0 {
+                continue;
+            }
+            let mut patch = image::imageops::crop_imm(base, x, y, w, h).to_image();
+            self.draw_ring(&layer, remaining, &mut patch, x, y);
+            patches.push((patch, x, y));
+        }
+        *self.last_ring_key.write().await = key;
+        Some(patches)
+    }
+
+    async fn render_layers_composite(&self) -> Result<RgbaImage, String> {
         // Update animations first
         self.update_all_animations().await;
         
@@ -1116,6 +1235,10 @@ impl LayerManager {
             *self.composite_dirty.write().await = true;
         }
         if *self.composite_dirty.read().await {
+            return true;
+        }
+        // A countdown ring moved on a step
+        if *self.last_ring_key.read().await != self.ring_key().await {
             return true;
         }
         self.config.read().await.layers.values().any(|layer| layer.animation_state.is_some())

@@ -45,7 +45,7 @@ const card = (name, body, x, y) =>
 
 // Calendar table columns: short fields get a fixed width, text fields share the rest
 // (same rule as the table editor in public/js/multilayer.js)
-const FIXED_WIDTHS = { time: 150, date: 210, courtroom: 180, case_number: 200, status: 170 };
+const FIXED_WIDTHS = { time: 150, date: 210, courtroom: 165, case_number: 200, status: 170 };
 const TEXT_WEIGHTS = { judge: 1.25, case_title: 2, reason: 1.75, movant: 1.25, trustee: 1.25 };
 function tableColumns(columns, width = 1840) {
   const fixed = columns.reduce((sum, [field]) => sum + (FIXED_WIDTHS[field] || 0), 0);

@@ -76,8 +76,11 @@ if (config.isDevelopment()) {
   app.use(morgan('combined'));
 }
 
-// Static files
-app.use(express.static(path.join(__dirname, '../public')));
+// Static files. The UI must revalidate (a cheap 304 via ETag): a browser that
+// heuristically caches index.html against a newer multilayer.js breaks the editor.
+app.use(express.static(path.join(__dirname, '../public'), {
+  setHeaders: res => res.setHeader('Cache-Control', 'no-cache')
+}));
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // API Documentation

@@ -82,6 +82,55 @@ impl Default for TableSpec {
     }
 }
 
+/// A ring drawn around a layer (e.g. the court seal) that drains clockwise from
+/// 12 o'clock as the current clip's time runs out, so viewers can see when the
+/// screen will change. Set as `content.countdownRing` on the layer.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct CountdownRing {
+    pub enabled: bool,
+    pub color: String,
+    pub track_color: String,
+    /// Ring width, and space between the layer and the ring (TV pixels);
+    /// a negative gap pulls the ring in over the layer's edge
+    pub thickness: u32,
+    pub gap: i32,
+}
+
+impl Default for CountdownRing {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            color: "rgba(201, 162, 39, 1)".into(),
+            track_color: "rgba(255, 255, 255, 0.25)".into(),
+            thickness: 6,
+            gap: 4,
+        }
+    }
+}
+
+/// Steps in a full ring (5° each): it is redrawn when the time left crosses one
+pub const RING_STEPS: f32 = 72.0;
+
+/// How much of a ring pixel at offset (dx, dy) from the centre is covered
+/// (0..1, anti-aliased across the ring's width), and whether it falls on the
+/// remaining arc (true) or the empty track (false). `remaining` is 0..1.
+pub fn ring_pixel(dx: f32, dy: f32, radius: f32, thickness: f32, remaining: f32) -> Option<(f32, bool)> {
+    let distance = (dx * dx + dy * dy).sqrt();
+    let outer = (radius + thickness / 2.0 - distance + 0.5).clamp(0.0, 1.0);
+    let inner = (distance - (radius - thickness / 2.0) + 0.5).clamp(0.0, 1.0);
+    let coverage = outer * inner;
+    if coverage <= 0.0 {
+        return None;
+    }
+    // Clockwise from 12 o'clock, 0..1
+    let mut turn = dx.atan2(-dy) / std::f32::consts::TAU;
+    if turn < 0.0 {
+        turn += 1.0;
+    }
+    Some((coverage, turn <= remaining))
+}
+
 /// How a row is drawn
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RowStyle {
@@ -393,5 +442,30 @@ mod tests {
         assert_eq!(freshness(&spec, ago(20), now), Freshness::Fresh);
         assert_eq!(freshness(&spec, ago(40), now), Freshness::Stale(ago(40).unwrap()));
         assert_eq!(freshness(&spec, ago(120), now), Freshness::Unavailable);
+    }
+
+    #[test]
+    fn ring_drains_clockwise_from_twelve() {
+        let r = 50.0;
+        // Top, right, bottom, left of the ring with a quarter of the time left
+        assert_eq!(ring_pixel(0.0, -r, r, 6.0, 0.26).map(|p| p.1), Some(true));
+        assert_eq!(ring_pixel(r, 0.0, r, 6.0, 0.26).map(|p| p.1), Some(true));
+        assert_eq!(ring_pixel(0.0, r, r, 6.0, 0.26).map(|p| p.1), Some(false));
+        assert_eq!(ring_pixel(-r, 0.0, r, 6.0, 0.26).map(|p| p.1), Some(false));
+        // Nothing inside or outside the ring itself
+        assert!(ring_pixel(0.0, 0.0, r, 6.0, 1.0).is_none());
+        assert!(ring_pixel(0.0, -(r + 10.0), r, 6.0, 1.0).is_none());
+        // Full time left: the whole ring is arc
+        assert_eq!(ring_pixel(-1.0, -r, r, 6.0, 1.0).map(|p| p.1), Some(true));
+    }
+
+    #[test]
+    fn countdown_ring_reads_layer_json() {
+        let ring: CountdownRing = serde_json::from_value(json!({ "enabled": true, "color": "rgba(255, 0, 0, 1)" })).unwrap();
+        assert!(ring.enabled);
+        assert_eq!(ring.thickness, 6);
+        assert_eq!(ring.color, "rgba(255, 0, 0, 1)");
+        let tucked: CountdownRing = serde_json::from_value(json!({ "enabled": true, "gap": -5 })).unwrap();
+        assert_eq!(tucked.gap, -5);
     }
 }

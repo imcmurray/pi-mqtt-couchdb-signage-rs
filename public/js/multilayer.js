@@ -6,6 +6,11 @@ const SCREEN_HEIGHT = 1080;
 const DRAG_SNAP = 10;
 const MIN_LAYER_SIZE = 20;
 const RESIZE_CORNERS = ['nw', 'ne', 'sw', 'se'];
+// Countdown ring defaults (pi-slideshow-rs layer_data::CountdownRing)
+const RING_DEFAULTS = { enabled: false, color: 'rgba(201, 162, 39, 1)', trackColor: 'rgba(255, 255, 255, 0.25)', thickness: 6, gap: 4 };
+// Narrowest a table column can be dragged (TV pixels), and the step it moves in
+const MIN_COLUMN_WIDTH = 40;
+const COLUMN_SNAP = 5;
 const CORNER_GRAB_PX = 14;  // how close (screen px) to a layer's corner counts as grabbing it
 const CENTER_SNAP = 12;     // how close (TV px) a dragged layer's middle must be to snap to the screen's centre
 // Reordering renumbers priorities in steps: above the slideshow (1), below alerts (150+)
@@ -28,7 +33,7 @@ const PREVIEW_FONTS = {
 const TABLE_FIELDS = [
     { field: 'time', label: 'Time', fixed: 150 },
     { field: 'date', label: 'Date', fixed: 210 },
-    { field: 'courtroom', label: 'Courtroom', fixed: 180 },
+    { field: 'courtroom', label: 'Courtroom', fixed: 165 },
     { field: 'judge', label: 'Judge', weight: 1.25 },
     { field: 'case_number', label: 'Case Number', fixed: 200 },
     { field: 'case_title', label: 'Case Title', weight: 2 },
@@ -536,14 +541,71 @@ class MultiLayerManager {
                 ${spec.columns.map(c => `<span class="${c.field === 'status' ? 'status' : ''}">${this.escapeHtml(cell(row[c.field], c.field))}</span>`).join('')}
             </div>`).join('');
         const pages = Math.max(1, Math.ceil(rows.length / perPage));
+        // On the selected table, a grabber on each border between columns
+        const total = spec.columns.reduce((sum, c) => sum + c.width, 0) || 1;
+        let edge = 0;
+        const grabbers = layer.layer_id === this.selectedLayerId
+            ? spec.columns.slice(0, -1).map((c, i) => {
+                edge += c.width;
+                return `<span class="column-grabber" data-column="${i}" style="left:${(edge / total) * 100}%"
+                              title="Drag to resize ${this.escapeHtml(c.label)} and ${this.escapeHtml(spec.columns[i + 1].label)}"></span>`;
+            }).join('') + '<span class="column-size"></span>'
+            : '';
 
-        return `<div class="table-preview" style="color:${this.cssColor(spec.textColor)}; font-size:${(spec.fontSize || 28) * scale}px">
+        return `<div class="table-preview" style="color:${this.cssColor(spec.textColor)}; font-size:${(spec.fontSize || 28) * scale}px">${grabbers}
             <div class="table-preview-row header" style="height:${rowHeight}px; grid-template-columns:${columns};
                  background:${this.cssColor(spec.headerBackground)}; color:${this.cssColor(spec.headerTextColor)};
                  font-size:${(spec.headerFontSize || 26) * scale}px">${header}</div>
             ${body || `<div class="table-preview-empty" style="height:${rowHeight * 2}px">${this.escapeHtml(spec.emptyText || 'Nothing scheduled.')}</div>`}
             ${pages > 1 ? `<div class="table-preview-page" style="height:${rowHeight / 2}px">Page 1 of ${pages}</div>` : ''}
         </div>`;
+    }
+
+    // Countdown ring preview, three-quarters full (the TV drains it over each
+    // screen); same geometry as pi-slideshow-rs ring_geometry
+    ringSvg(position, settings) {
+        const ring = { ...RING_DEFAULTS, ...settings };
+        const thickness = Math.max(1, Number(ring.thickness));
+        const radius = Math.max(thickness / 2, Math.min(position.width, position.height) / 2 + Number(ring.gap) + thickness / 2);
+        const reach = radius + thickness;
+        const box = {
+            left: ((position.width / 2 - reach) / position.width) * 100,
+            top: ((position.height / 2 - reach) / position.height) * 100,
+            width: ((2 * reach) / position.width) * 100,
+            height: ((2 * reach) / position.height) * 100
+        };
+        return `<svg class="countdown-ring-preview" viewBox="${-reach} ${-reach} ${2 * reach} ${2 * reach}" aria-hidden="true"
+                     style="left:${box.left}%; top:${box.top}%; width:${box.width}%; height:${box.height}%">
+                    <circle r="${radius}" stroke-width="${thickness}" style="stroke:${this.cssColor(ring.trackColor)}"></circle>
+                    <circle r="${radius}" stroke-width="${thickness}" pathLength="100" stroke-dasharray="75 100" style="stroke:${this.cssColor(ring.color)}"></circle>
+                </svg>`;
+    }
+
+    readRingForm() {
+        const value = id => document.getElementById(id).value;
+        return {
+            enabled: document.getElementById('layerCountdownRing').checked,
+            color: this.hexToRgba(value('layerCountdownColor'), 1),
+            trackColor: this.hexToRgba(value('layerRingTrackColor'), Number(value('layerRingTrackAlpha')) / 100),
+            thickness: Math.min(40, Math.max(1, Number(value('layerRingThickness')) || RING_DEFAULTS.thickness)),
+            gap: Math.min(60, Math.max(-20, Number(value('layerRingGap')) || 0))
+        };
+    }
+
+    updateRingOptions() {
+        document.getElementById('ringSettings').hidden = !document.getElementById('layerCountdownRing').checked;
+        this.previewRingFromForm();
+    }
+
+    // Show ring changes on the selected layer before saving
+    previewRingFromForm() {
+        const element = this.selectedLayerId && document.querySelector(`#screenPreview .layer-preview[data-layer-id="${CSS.escape(this.selectedLayerId)}"]`);
+        const layer = this.layers.find(l => l.layer_id === this.selectedLayerId);
+        if (!element || !layer || this.mode !== 'tv') return;
+        element.querySelector('.countdown-ring-preview')?.remove();
+        const ring = this.readRingForm();
+        element.classList.toggle('has-ring', ring.enabled);
+        if (ring.enabled) element.insertAdjacentHTML('afterbegin', this.ringSvg(layer.position, ring));
     }
 
     libraryImageName(imageId) {
@@ -582,7 +644,7 @@ class MultiLayerManager {
                        value="${this.escapeHtml(table.match?.value || '')}" placeholder="e.g. North">
                 <datalist id="tableMatchValues"></datalist>
             </div>
-            <div class="table-editor-subtitle">Columns <small>(sized to fit; rename as you like)</small></div>
+            <div class="table-editor-subtitle">Columns <small>(rename as you like; drag the borders on the screen preview to resize)</small></div>
             <div class="table-editor-columns">
                 ${TABLE_FIELDS.map(f => `
                     <label class="table-column ${shown.has(f.field) ? 'on' : ''}">
@@ -607,7 +669,15 @@ class MultiLayerManager {
     readTableEditor(table, width) {
         const chosen = TABLE_FIELDS.filter(f => document.querySelector(`#tableEditor input[data-field="${f.field}"]`)?.checked);
         if (!chosen.length) throw new Error('Choose at least one column for the table');
-        const widths = tableColumnWidths(chosen, width);
+        // Same columns as before: keep their (possibly hand-dragged) widths, scaled
+        // if the table was resized. Different columns: size them afresh.
+        const sameColumns = chosen.length === table.columns.length && chosen.every((f, i) => f.field === table.columns[i].field);
+        const previous = table.columns.reduce((sum, c) => sum + c.width, 0);
+        let widths = tableColumnWidths(chosen, width);
+        if (sameColumns && previous > 0) {
+            widths = table.columns.map(c => Math.max(MIN_COLUMN_WIDTH, Math.round((c.width * width) / previous)));
+            widths[widths.length - 1] += width - widths.reduce((sum, w) => sum + w, 0);
+        }
         const columns = chosen.map((f, i) => {
             const label = document.querySelector(`#tableEditor input[data-label="${f.field}"]`).value.trim();
             return { field: f.field, label: label || f.label, width: widths[i] };
@@ -748,6 +818,7 @@ class MultiLayerManager {
             const classes = ['layer-preview',
                 isAlert ? 'alert-layer' : '',
                 layer.layer_id === this.selectedLayerId ? 'selected' : '',
+                content.countdownRing?.enabled ? 'has-ring' : '',
                 layer.visible ? '' : 'hidden-layer'].filter(Boolean).join(' ');
             const style = [
                 `left: ${(x / SCREEN_WIDTH) * 100}%`,
@@ -770,8 +841,9 @@ class MultiLayerManager {
                 ? RESIZE_CORNERS.map(corner => `<span class="resize-handle ${corner}" data-corner="${corner}"></span>`).join('')
                     + '<span class="resize-size"></span>'
                 : '';
+            const ring = content.countdownRing?.enabled ? this.ringSvg(layer.position, content.countdownRing) : '';
             return `<div class="${classes}" data-layer-id="${this.escapeHtml(layer.layer_id)}" style="${style}"
-                         title="${this.escapeHtml(layer.name)}">${handles}${table
+                         title="${this.escapeHtml(layer.name)}">${ring}${handles}${table
                 ? this.renderTablePreview(layer, scale)
                 : imageId
                 ? `<img class="layer-preview-image" src="/api/images/${encodeURIComponent(imageId)}/attachment?width=400" alt="" draggable="false">`
@@ -820,6 +892,11 @@ class MultiLayerManager {
     // Drag layers around the preview; a press without movement selects
     onPreviewPointerDown(event) {
         if (event.target.closest('[contenteditable="true"]')) return;
+        const grabber = event.target.closest('.column-grabber');
+        if (grabber && event.button === 0) {
+            this.startColumnDrag(event, grabber);
+            return;
+        }
         // Touch has no hover, so look for a corner on the press itself
         const hit = this.cornerAt(event.clientX, event.clientY);
         this.setPeek(hit);
@@ -881,6 +958,10 @@ class MultiLayerManager {
     }
 
     onPreviewPointerMove(event) {
+        if (this.columnDrag) {
+            this.moveColumnDrag(event);
+            return;
+        }
         const drag = this.drag;
         if (!drag) {
             if (event.pointerType === 'mouse') this.setPeek(this.cornerAt(event.clientX, event.clientY));
@@ -941,6 +1022,10 @@ class MultiLayerManager {
     }
 
     async onPreviewPointerUp() {
+        if (this.columnDrag) {
+            await this.endColumnDrag();
+            return;
+        }
         const drag = this.drag;
         this.setPeek(null);
         this.showCenterGuides(null);
@@ -979,6 +1064,83 @@ class MultiLayerManager {
         this.selectedLayerId = drag.layer.layer_id;
         await this.loadLayers();
         this.fillLayerForm(this.layers.find(l => l.layer_id === drag.layer.layer_id));
+    }
+
+    // Dragging the border between two table columns: the left one grows by what
+    // the right one gives up, so the table keeps its width
+    startColumnDrag(event, grabber) {
+        event.preventDefault();
+        event.stopPropagation();
+        const element = grabber.closest('.layer-preview');
+        const layer = this.layers.find(l => l.layer_id === element.dataset.layerId);
+        if (!layer?.content?.table) return;
+        const columns = layer.content.table.columns.map(c => ({ ...c }));
+        const table = grabber.closest('.table-preview');
+        grabber.setPointerCapture(event.pointerId);
+        this.columnDrag = {
+            element,
+            layer,
+            index: Number(grabber.dataset.column),
+            grabber,
+            startX: event.clientX,
+            start: columns.map(c => c.width),
+            columns,
+            // TV pixels per preview pixel across this table
+            ratio: columns.reduce((sum, c) => sum + c.width, 0) / table.clientWidth
+        };
+        grabber.classList.add('active');
+        this.showColumnSizes();
+    }
+
+    moveColumnDrag(event) {
+        const drag = this.columnDrag;
+        const { index, start } = drag;
+        let delta = Math.round(((event.clientX - drag.startX) * drag.ratio) / COLUMN_SNAP) * COLUMN_SNAP;
+        delta = Math.max(MIN_COLUMN_WIDTH - start[index], Math.min(start[index + 1] - MIN_COLUMN_WIDTH, delta));
+        drag.columns[index].width = start[index] + delta;
+        drag.columns[index + 1].width = start[index + 1] - delta;
+
+        // Redraw in place: column proportions and grabber positions
+        const template = drag.columns.map(c => `${c.width}fr`).join(' ');
+        drag.element.querySelectorAll('.table-preview-row').forEach(row => { row.style.gridTemplateColumns = template; });
+        const total = drag.columns.reduce((sum, c) => sum + c.width, 0);
+        let edge = 0;
+        drag.element.querySelectorAll('.column-grabber').forEach((grabber, i) => {
+            edge += drag.columns[i].width;
+            grabber.style.left = `${(edge / total) * 100}%`;
+        });
+        this.showColumnSizes();
+    }
+
+    showColumnSizes() {
+        const { element, columns, index } = this.columnDrag;
+        const label = element.querySelector('.column-size');
+        if (label) label.textContent = `${columns[index].label} ${columns[index].width}px · ${columns[index + 1].label} ${columns[index + 1].width}px`;
+    }
+
+    async endColumnDrag() {
+        const { layer, columns, start, grabber } = this.columnDrag;
+        this.columnDrag = null;
+        grabber.classList.remove('active');
+        if (columns.every((c, i) => c.width === start[i])) {
+            this.renderLayers();
+            return;
+        }
+        const content = { ...layer.content, table: { ...layer.content.table, columns } };
+        try {
+            const response = await fetch(this.layersUrl(`/${layer.layer_id}`), {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content })
+            });
+            if (!response.ok) throw new Error((await response.json()).error || response.statusText);
+            this.log(`Columns of "${layer.name}": ${columns.map(c => `${c.label} ${c.width}`).join(', ')}`);
+        } catch (error) {
+            this.log(`Failed to resize the columns: ${error.message}`, 'error');
+        }
+        this.selectedLayerId = layer.layer_id;
+        await this.loadLayers();
+        this.fillLayerForm(this.layers.find(l => l.layer_id === layer.layer_id));
     }
 
     connectWebSocket() {
@@ -1254,6 +1416,7 @@ class MultiLayerManager {
         document.getElementById('layerForm').reset();
         document.getElementById('layerBgColor').value = '#000000';
         document.getElementById('layerTextColor').value = '#ffffff';
+        document.getElementById('ringSettings').hidden = true;
         this.onLayerImageChange();
         this.setTableMode(null);
         this.setEditorMode(false);
@@ -1280,6 +1443,14 @@ class MultiLayerManager {
         set('layerBgAlpha', Math.round(this.parseColor(content.backgroundColor).a * 100));
         set('layerTextColor', this.colorToHex(content.textColor));
         document.getElementById('layerVisible').checked = layer.visible !== false;
+        const ring = { ...RING_DEFAULTS, ...(content.countdownRing || {}) };
+        document.getElementById('layerCountdownRing').checked = !!ring.enabled;
+        set('layerCountdownColor', this.colorToHex(ring.color));
+        set('layerRingTrackColor', this.colorToHex(ring.trackColor));
+        set('layerRingTrackAlpha', Math.round(this.parseColor(ring.trackColor).a * 100));
+        set('layerRingThickness', ring.thickness);
+        set('layerRingGap', ring.gap);
+        this.updateRingOptions();
         set('layerImage', content.image_id || '');
         this.onLayerImageChange();
         this.setTableMode(content.table);
@@ -1311,7 +1482,11 @@ class MultiLayerManager {
                 alignment: document.getElementById('layerAlignment').value,
                 verticalAlignment: document.getElementById('layerVerticalAlignment').value,
                 fontFamily: document.getElementById('layerFontFamily').value,
-                fontWeight: document.getElementById('layerFontWeight').value
+                fontWeight: document.getElementById('layerFontWeight').value,
+                // Overlays only (the TV times its screens, not scene elements)
+                ...(this.mode === 'tv' ? {
+                    countdownRing: this.readRingForm()
+                } : {})
             },
             position,
             visible: document.getElementById('layerVisible').checked,
