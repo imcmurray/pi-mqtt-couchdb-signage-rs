@@ -1,280 +1,132 @@
-# Digital Signage Management System
+# Courthouse Digital Signage (pi-signage-fleet)
 
-## Project Overview
-Building a digital signage solution using pi-slideshow-rs on Raspberry Pi endpoints with a centralized management system for 8 TV displays.
+Signage for the Frank E. Moss US Courthouse (U.S. Bankruptcy Court, District of
+Utah): a Node manager and Raspberry Pi TVs running `pi-slideshow-rs`. Courtrooms
+are **North** and **South** only.
 
-## Architecture
+## How it works
 
-### Communication Protocol Strategy
-Our system uses a **dual-protocol architecture** optimized for different data types and use cases:
+- **Sequences** (`sequence_<uuid>` in `layers_multilayer`) are what a TV plays: a
+  loop of clips, each an Image Library image or a **scene**, with durations and
+  optional schedules. A TV plays exactly one sequence.
+- **Scenes** (`scene_<uuid>`) are designed 1920×1080 screens: text with
+  `{tokens}`, images, colour blocks and **table** elements. The Pi renders them
+  live, so clocks tick and tables page.
+- **Overlays** (Layer Control) sit above every clip on a TV (seal, banners).
+  **Alerts** sit above everything.
+- **Data sets** (`dataset_<id>`) feed live content:
+  - `weather` (NWS, every 15 minutes) fills `{weather} {temp} {conditions}
+    {weather_icon} {location}`.
+  - `court_calendar` feeds calendar tables.
+  - The Pi reads data sets on each `sync_layers` and keeps them offline.
+- **Court calendar**: `calendarSourceService` follows a CouchDB database of court
+  hearing documents (`type: "hearing"`, `_design/calendar`). It works like this:
+  - It reads `by_date_courtroom_time` for today through the next 14 days, and
+    follows the *unfiltered* `_changes` feed (deletions have no `type`).
+  - It stamps `checked_at`; TVs show "Last updated…" after 35 minutes and hide
+    the calendar after 2 hours.
+  - Uploads accept docs, `_find`, `_all_docs`, view rows and `nested_calendar`
+    (`src/utils/calendarImport.js`).
+  - Table rows are styled by status: cancelled is struck through, continued is
+    amber, heard drops off after an hour, and the hearing on now is highlighted.
+- **CouchDB** stores everything. **MQTT** carries commands and status
+  (`signage/tv/<id>/{command,alerts,status,heartbeat,image/current}`).
 
-**CouchDB (Persistent Data Protocol):**
-- **Purpose**: Long-term storage, complex queries, large binary data
-- **Used for**: TV configurations, image metadata, image files (attachments), audit logs  
-- **Benefits**: ACID transactions, offline replication, conflict resolution, complex queries
-- **Access**: Direct database connections from both management server and TV endpoints
+## Code map
 
-**MQTT (Real-time Messaging Protocol):**
-- **Purpose**: Lightweight real-time communication, pub/sub patterns, ephemeral data
-- **Used for**: Control commands (play/pause/next), status updates, heartbeats, notifications
-- **Benefits**: Low latency, minimal bandwidth, automatic reconnection, QoS levels
-- **Access**: Publish/subscribe through central message broker
+- `src/services/`:
+  - `sequenceService`, `sceneService`, `datasetService`
+  - `calendarSourceService`, `weatherService`
+  - `alert*Service`, `demoService` (guided tour)
+  - `notifyService` (ntfy), `monitorService` (fleet checks), `backupService`
+  - `multilayer.mqttService` (live TV state; it also notes when each TV's
+    clip last changed)
+- `src/utils/`:
+  - `calendarImport.js`: normalises hearings.
+  - `layerSchema.js`: the shared layer/element Joi schema.
+  - `clipSchedule.js`
+- `src/config/courthousePresets.js`: the starter scenes, including one
+  calendar scene per CouchDB view (`calendarScene()`).
+- `public/js/`:
+  - `app.js`: dashboard, TV cards and their sequence strips.
+  - `sequences.js`: timeline editor.
+  - `multilayer.js`: the scene/overlay editor, table editor and Live Data.
+  - `system.js`: the System page.
+- `pi-slideshow-rs/src/`:
+  - `slideshow_controller.rs`: sequences, sync and cache.
+  - `layer_manager.rs`: compositing and tables.
+  - `layer_data.rs`: tokens, table rows, staleness and status styles.
+  - `http_server.rs`: the local API; control only from `SIGNAGE_HTTP_ALLOW`.
+  - `mqtt_client.rs`
+- `scripts/`:
+  - `deploy-fleet.sh`: canary rollout with rollback.
+  - `provision-pi.sh`: new TV from a fresh Pi OS Lite image.
+  - `secure-signage.sh` and `secure-couchdb.js`: per-service accounts.
+  - `restore-backup.js`
+  - `update-version.sh`
 
-- Realtime values should use MQTT and persistent storage will use CouchDB
+## Commands
 
-### System Components
-- **TV Endpoints**: Raspberry Pi 4 running pi-slideshow-rs with dual CouchDB+MQTT connections
-- **Backend**: Node.js/Express with CouchDB database and MQTT broker integration  
-- **Communication**: Hybrid CouchDB+MQTT for optimal performance and reliability
-- **Frontend**: Web-based admin panel with real-time WebSocket updates
+- `npm test`: Jest, with `resetMocks: true`.
+  - CouchDB integration tests only run with
+    `COUCHDB_TEST_URL=http://admin:…@host:5984 npx jest tests/integration/couchdb`.
+- `cd pi-slideshow-rs && cargo test`
+- `cd pi-slideshow-rs && ./build.sh`: aarch64 musl build. Only build the Pi app
+  inside `pi-slideshow-rs/`.
 
-## Technology Stack
+## Deploying (homelab)
 
-**Data Storage & Communication:**
-- **Database**: CouchDB (document-based storage, replication, image attachments)
-- **Message Broker**: MQTT (lightweight IoT messaging, pub/sub patterns)
-- **Backend**: Node.js with Express, WebSocket support for real-time UI updates
-- **TV Control**: pi-slideshow-rs with direct CouchDB connection and MQTT client
-- **Image Processing**: Sharp for server-side processing, local caching on TV endpoints
-- **Security**: Helmet.js, CORS, Joi validation, CouchDB authentication
+- **Manager** on dockge1 (`192.168.1.215:3000`, the `/opt/stacks/digsig-manager`
+  stack mounted as `/app`, nodemon restarts on `.js` changes):
 
-**Protocol Usage Decision Matrix:**
+  ```
+  tar cf - <files> | ssh dockge215 'docker run --rm -i -v /opt/stacks/digsig-manager:/w node:18-alpine tar xf - -C /w --no-same-owner'
+  ```
 
-| Operation Type | Protocol | Rationale |
-|----------------|----------|-----------|
-| Image uploads | CouchDB | Large binary data, permanent storage, attachment support |
-| TV configurations | CouchDB | Persistent settings, complex validation, ACID transactions |
-| Image assignments | CouchDB | Relational data, complex queries, referential integrity |
-| Play/pause commands | MQTT | Real-time response, ephemeral, fire-and-forget |
-| Status updates | MQTT | High frequency, lightweight, pub/sub to dashboard |
-| Heartbeats | MQTT | Frequent ping data, automatic cleanup |
-| Current image sync | Both | MQTT for real-time notification + CouchDB for persistence |
+  Then wait for `/health`. Never use Dockge's Update button on this stack.
+- **TVs**: run `scripts/deploy-fleet.sh`. It builds once, updates a canary
+  first, checks health and version, and rolls a TV back if it fails. pi21
+  (`192.168.1.114`) is the dev TV.
+- **New TV**: run `scripts/provision-pi.sh <ip> --name … --location …`.
+- **Fleet versions**: the System page shows each TV's version, and the
+  manager's ntfy pushes when one differs.
 
-## Development Commands
-- `npm run dev` - Start development server with nodemon
-- `npm test` - Run Jest tests
-- `npm run lint` - Run ESLint
-- `npm run build` - Build for production (Node.js - no build step needed)
+## Releases
 
-## Version Management
-- `./scripts/update-version.sh <version>` - Update version across all components
-- `npm version patch|minor|major` - Alternative npm-based versioning
-- Always update: package.json, pi-slideshow-rs/Cargo.toml, and public/js/app.js
+1. Run `scripts/update-version.sh X.Y.Z`. It updates `package.json`,
+   `Cargo.toml` and `app.js`.
+2. Write `src/version.json` for `vX.Y.Z`.
+3. Commit with `--no-verify`, because the pre-commit hook resets `package.json`
+   to the latest tag until the new tag exists.
+4. Make an annotated tag `vX.Y.Z` and push it.
 
-## Current Implementation Status
-### Completed Components
+## Operations
 
-**Core Infrastructure (v0.2.0-v0.3.0):**
-- Basic Express server structure with middleware
-- CouchDB database configuration and models (TV, Image, CourtHearing, Alert, AlertTemplate)
-- MQTT service integration for real-time communication
-- File upload middleware with Sharp image processing
-- REST API routes for TVs, images, dashboard, court hearings, and emergency alerts
-- Rust-based slideshow controller with HTTP server and MQTT client
+- **Notifications** use ntfy, with the same rules as the homelab's
+  cluster-health-alert and Overseer:
+  - push on state change only, recoveries too, and never for successes;
+  - set the topic with `NTFY_URL` or on the System page;
+  - checks: TV offline 5+ minutes, TV stuck on one clip, calendar source
+    failing 5+ minutes, backup failed, TV version mismatch.
+- **Backups**: nightly at 2:15 AM Denver time to `/opt/stacks/digsig-manager/backups`
+  (owned by uid 1001, mode 700). The newest 7 are kept, all signage databases
+  are included, with attachments. Restore with
+  `node scripts/restore-backup.js <file> [--prefix restoretest_]`.
+- **Security**:
+  - The CouchDB on dockge1 is **shared with other apps**. Never change its
+    admin account.
+  - `scripts/secure-signage.sh` moves the signage to `signage_manager` and
+    `signage_tv` (read-only, enforced by `_design/signage_access`), with
+    passwords in `/etc/signage-secrets.conf` on the host. It also enables
+    MQTT passwords with per-TV topic ACLs.
+  - TVs read credentials from `/etc/signage/slideshow.env`.
 
-**✅ Phase 2: Basic Layer Infrastructure (v0.3.0)**
-- 2-layer compositing system (slideshow + static overlay)
-- Layer configuration storage in TV model
-- API-to-Database-to-Rust pipeline for layer config
-- Real-time layer control via MQTT commands
-- Working logo overlay demonstration
+## Conventions
 
-**✅ Phase 4: Court Hearing Integration (v0.4.0)**
-- Full court hearing CRUD operations with CourtHearing model
-- Automated layer generation from hearing data
-- Time-based color coding (red/orange/blue/green/gray)
-- Status workflow management (scheduled → in progress → completed)
-- CSV bulk import capability
-- Automated refresh every 5 minutes via cron jobs
-- Web-based admin interface for hearing management
-- Real-time MQTT updates to TV displays
-- Multi-TV support with auto-stacking layout
-
-**✅ Phase 5: Emergency Alert System (v0.5.0)**
-- **Core Alert System:** 3-tier priority broadcasting with auto-dismiss
-- **Alert Templates:** 10 built-in templates + custom template creation
-- **Alert Queueing:** Priority-based queue with intelligent interruption logic
-- **Alert Scheduling:** Cron-based scheduling with recurring patterns (hourly/daily/weekly/monthly)
-- **Alert Preview:** Generate alert preview without broadcasting
-- **Complete UI:** Template manager, queue status, scheduled alerts dashboard
-- **23 API Endpoints:** Full REST API for all alert operations
-- **83 Test Cases:** Comprehensive test coverage across all features
-- **Production Ready:** ~5,200 lines of production code, fully documented
-
-**✅ Phase 6: Layer Template & Multi-TV Management (v0.6.0)**
-- **Layer Template System:** Reusable presets with category organization (court/emergency/info/layout/custom)
-- **Multi-TV Operations:** Bulk preset application with per-TV success/failure results
-- **Save Layer as Template:** Convert any layer to reusable preset with smart tag filtering
-- **Template Sidebar UI:** Category filtering and quick template application
-- **Single/Multi TV Selection:** Toggle between individual and bulk TV targeting
-- **MQTT Batch Notifications:** Real-time layer updates via `publishLayerBatch()`
-- **12 Preset API Endpoints:** Full REST API for template management
-- **~250 Lines JavaScript:** Template management methods in multilayer.js
-
-### Project Structure
-```
-src/
-├── config/
-│   ├── database.js           # CouchDB connection setup
-│   └── multilayer.config.js  # Multi-layer configuration
-├── controllers/
-│   ├── alertController.js           # Emergency alert operations
-│   ├── alertTemplateController.js   # Alert template management
-│   ├── courtHearingController.js    # Court hearing management
-│   ├── dashboardController.js       # Dashboard logic
-│   ├── imageController.js           # Image operations
-│   ├── layerController.js           # Layer operations + save-as-template
-│   ├── presetController.js          # Preset/template management + bulk apply
-│   └── tvController.js              # TV operations
-├── middleware/upload.js      # Multer file upload with Sharp processing
-├── models/
-│   ├── BaseModel.js         # Base model with common CRUD
-│   ├── Alert.js             # Alert model with queue/schedule support
-│   ├── AlertTemplate.js     # Alert template model
-│   ├── CourtHearing.js      # Court hearing model
-│   ├── image.js             # Image document model
-│   ├── Layer.js             # Layer document model
-│   ├── Preset.js            # Preset/template model with categories
-│   └── tv.js                # TV document model
-├── routes/
-│   ├── alertRoutes.js             # Emergency alert API (13 endpoints)
-│   ├── alertTemplateRoutes.js     # Template API (10 endpoints)
-│   ├── courtHearingRoutes.js      # Court hearing API endpoints
-│   ├── dashboardRoutes.js         # Dashboard API endpoints
-│   ├── imageRoutes.js             # Image management endpoints
-│   ├── layerRoutes.js             # Layer management + save-as-template
-│   ├── presetRoutes.js            # Preset/template API (12 endpoints)
-│   └── tvRoutes.js                # TV management endpoints
-├── services/
-│   ├── alertService.js          # Alert broadcasting and management
-│   ├── alertQueueService.js     # Priority-based alert queue
-│   ├── alertScheduleService.js  # Cron-based alert scheduling
-│   ├── templateService.js       # Template CRUD and rendering
-│   ├── courtDisplayService.js   # Layer generation from hearings
-│   ├── layerAutomation.js       # Cron jobs for automated updates
-│   └── mqttService.js           # MQTT client service
-├── server.js                 # Main application entry point (multi-layer enabled)
-└── utils/                    # Utility functions
-
-pi-slideshow-rs/
-├── src/
-│   ├── main.rs                    # Main application entry
-│   ├── slideshow_controller.rs    # Core slideshow logic + MQTT layer commands
-│   ├── layer_manager.rs           # Layer compositing system
-│   ├── layer_animation.rs         # Animation types and easing functions
-│   ├── http_server.rs             # REST API server
-│   └── mqtt_client.rs             # MQTT communication
-└── images/                        # Sample slideshow images
-
-public/
-├── index.html             # Admin panel frontend
-├── court-schedule.html    # Court hearing management UI
-├── multilayer.html        # Multi-layer dashboard with template sidebar
-├── alert-templates.html   # Alert template manager UI
-├── preset-manager.html    # Preset/template management UI
-├── css/style.css         # Frontend styling
-└── js/
-    ├── app.js               # Main frontend JavaScript
-    ├── court-schedule.js    # Court hearing UI logic
-    ├── multilayer.js        # Multi-layer + alert management
-    └── alert-templates.js   # Template manager JavaScript
-
-tests/
-├── unit/
-│   ├── models/
-│   │   ├── Alert.test.js         # Alert model tests (22 tests)
-│   │   └── AlertTemplate.test.js # Template model tests (19 tests)
-│   └── services/
-│       └── templateService.test.js # Template service tests (42 tests)
-└── demo-court-hearings.js    # Court hearing demo script
-```
-
-## Key Features
-### ✅ Implemented (v0.3.0+)
-- Image upload/management per TV
-- Real-time TV status dashboard via WebSocket
-- Basic 2-layer compositing (slideshow + static overlay)
-- Layer configuration via web interface
-- Real-time layer control via MQTT
-- Image resizing and optimization
-- **Court hearing integration** with automated display updates
-- CSV import for bulk hearing creation
-- Status workflow management (scheduled/delayed/in-progress/completed/cancelled)
-- Automated cron jobs for display refresh and cleanup
-- Time-based color coding for hearing urgency
-
-### ✅ Implemented (Emergency Alert System - v0.5.0)
-- **Emergency Alert Broadcasting** - 3-tier priority system (CRITICAL/URGENT/INFO)
-- **Alert Templates** - 10 built-in templates + custom template creation
-- **Alert Queueing** - Priority-based queue with intelligent interruption
-- **Alert Scheduling** - Cron-based scheduling with recurring patterns
-- **Alert Preview** - Generate preview without broadcasting
-- 23 API endpoints for complete alert management
-- 83 comprehensive test cases
-
-### ✅ Implemented (Layer Template System - v0.6.0)
-- **Layer Template Management** - Reusable presets with categories (court/emergency/info/layout/custom)
-- **Multi-TV Operations** - Bulk preset application with per-TV results
-- **Template Sidebar UI** - Category filtering and quick template application
-- **Save Layer as Template** - Convert any layer to reusable preset
-- **Smart Tag Filtering** - Auto-removes template-specific tags (from-preset, from-layer:)
-- **MQTT Batch Updates** - Real-time notifications via `publishLayerBatch()`
-- **Single/Multi TV Selection** - Toggle between individual and bulk TV targeting
-- 12 preset management API endpoints
-
-### 🎯 Planned (Future Phases)
-- Multi-layer support (>2 layers)
-- Location-based filtering for hearings
-- Judge photo integration
-- Alert acknowledgment system
-- Multi-language support
-
-## TV Endpoint Structure
-Each TV operates with hybrid connectivity for optimal performance:
-
-**Data Connections:**
-- **CouchDB**: Direct database connection for image downloads and configuration sync
-- **MQTT**: Real-time command/status communication via broker
-- **Local Storage**: Cached images in `pi-slideshow-rs/images/` for offline operation
-
-**Communication Patterns:**
-- MQTT command topic: `signage/tv/{id}/command` (receive control commands)
-- MQTT status topic: `signage/tv/{id}/status` (publish status updates)
-- MQTT heartbeat topic: `signage/tv/{id}/heartbeat` (health monitoring)
-- MQTT layer topic: `signage/tv/{id}/layers` (layer batch operations)
-- CouchDB queries: Direct database access for images and configuration
-- HTTP API: `http://pi-ip:8080/api/` (local control interface)
-
-**MQTT Layer Commands (Rust):**
-- `AddLayer` - Add new layer to composition
-- `RemoveLayer` - Remove layer by ID
-- `UpdateLayer` - Update existing layer configuration
-- `SetLayerVisibility` - Toggle layer visibility
-- `SetLayerOpacity` - Adjust layer opacity (0.0-1.0)
-- `AnimateLayer` - Trigger layer animation (slide/fade/move with easing)
-
-**Operational Flow:**
-1. **Startup**: Connect to both CouchDB and MQTT broker
-2. **Image Sync**: Query CouchDB for assigned images, download as attachments
-3. **Layer Config**: Load layer configuration from CouchDB
-4. **Compositing**: Render slideshow with optional static overlay
-5. **Real-time Control**: Listen for MQTT commands, respond immediately  
-6. **Status Reporting**: Publish status via MQTT, persist state in CouchDB
-7. **Offline Operation**: Continue slideshow using cached images if network fails
-
-## Dependencies
-- **Express**: Web framework
-- **nano**: CouchDB client
-- **mqtt**: MQTT client
-- **multer**: File upload handling
-- **sharp**: Image processing
-- **ws**: WebSocket support
-- **joi**: Input validation
-- **helmet**: Security headers
-- **node-cron**: Scheduled task automation
-
-## Development Best Practices
-- Don't duplicate code and create duplicate functions that do the same thing with a different name.
-
-## Development Guidelines
-- Only build @pi-slideshow-rs/ in @pi-slideshow-rs/ directory
+- Don't duplicate functions under new names; extend the existing one.
+- Courthouse time is `America/Denver` (`COURT_TIME_ZONE`); the server runs in
+  UTC, so use `courthouseToday()`.
+- Emoji on the TV:
+  - TV text uses bundled Noto Color Emoji, but avoid ZWJ sequences (👨‍⚖️
+    splits apart).
+  - Table cells have no emoji fallback.

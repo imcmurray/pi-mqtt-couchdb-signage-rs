@@ -22,7 +22,6 @@ const tvRoutes = require('./routes/tvRoutes');
 const imageRoutes = require('./routes/imageRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
 const layerRoutes = require('./routes/layerRoutes');
-const courtHearingRoutes = require('./routes/courtHearingRoutes');
 const presetRoutes = require('./routes/presetRoutes');
 const bulkRoutes = require('./routes/bulkRoutes');
 
@@ -222,7 +221,6 @@ const alertTemplateRoutes = require('./routes/alertTemplateRoutes');
 const alertRoutes = require('./routes/alertRoutes');
 app.use('/api/alerts/templates', alertTemplateRoutes); // Alert template management (must be before /api/alerts)
 app.use('/api/alerts', alertRoutes); // Emergency alert routes
-app.use('/api/hearings', courtHearingRoutes); // Court hearing management routes
 app.use('/api/presets', presetRoutes); // Zone preset templates
 app.use('/api/bulk', bulkRoutes); // Bulk operations for multi-TV management
 app.use('/api/datasets', require('./routes/datasetRoutes')); // Court calendar + weather data for live layers

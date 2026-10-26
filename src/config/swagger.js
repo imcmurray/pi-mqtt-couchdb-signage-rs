@@ -11,11 +11,11 @@ const options = {
 # Digital Signage Management System API
 
 Comprehensive REST API for managing digital signage displays with multi-layer compositing,
-court hearing schedules, emergency alerts, and real-time control via MQTT.
+scenes and sequences, a live court calendar, emergency alerts, and real-time control via MQTT.
 
 ## Features
 - Multi-layer display compositing with animations
-- Court hearing schedule integration
+- Live court calendar from CouchDB hearing documents (data sets)
 - Emergency alert broadcasting
 - Zone preset templates for quick configuration
 - Bulk operations for multi-TV management
@@ -65,10 +65,6 @@ court hearing schedules, emergency alerts, and real-time control via MQTT.
       {
         name: 'Alerts',
         description: 'Emergency alert broadcasting system'
-      },
-      {
-        name: 'Court Hearings',
-        description: 'Court hearing schedule management'
       },
       {
         name: 'Bulk Operations',
@@ -606,91 +602,6 @@ court hearing schedules, emergency alerts, and real-time control via MQTT.
           }
         },
 
-        // Court Hearing Schemas
-        CourtHearing: {
-          type: 'object',
-          required: ['hearing_id', 'case_number', 'scheduled_time', 'courtroom'],
-          properties: {
-            _id: {
-              type: 'string'
-            },
-            hearing_id: {
-              type: 'string'
-            },
-            case_number: {
-              type: 'string',
-              example: '2024-CV-12345'
-            },
-            case_title: {
-              type: 'string',
-              example: 'Smith vs. Jones'
-            },
-            hearing_type: {
-              type: 'string',
-              enum: ['civil', 'criminal', 'family', 'probate', 'traffic', 'other'],
-              default: 'civil'
-            },
-            scheduled_time: {
-              type: 'string',
-              format: 'date-time',
-              description: 'Scheduled hearing start time'
-            },
-            expected_duration_minutes: {
-              type: 'integer',
-              minimum: 5,
-              maximum: 480,
-              default: 60
-            },
-            courtroom: {
-              type: 'string',
-              example: 'Courtroom 1A'
-            },
-            judge: {
-              type: 'string',
-              example: 'Hon. Jane Smith'
-            },
-            parties: {
-              type: 'object',
-              properties: {
-                plaintiff: {
-                  type: 'string'
-                },
-                defendant: {
-                  type: 'string'
-                },
-                attorneys: {
-                  type: 'array',
-                  items: {
-                    type: 'string'
-                  }
-                }
-              }
-            },
-            status: {
-              type: 'string',
-              enum: ['scheduled', 'delayed', 'in_progress', 'completed', 'cancelled'],
-              default: 'scheduled'
-            },
-            delay_minutes: {
-              type: 'integer',
-              minimum: 0,
-              default: 0
-            },
-            notes: {
-              type: 'string'
-            },
-            created_at: {
-              type: 'string',
-              format: 'date-time'
-            },
-            updated_at: {
-              type: 'string',
-              format: 'date-time'
-            }
-          }
-        },
-
-        // Common Response Schemas
         SuccessResponse: {
           type: 'object',
           properties: {

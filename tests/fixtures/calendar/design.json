@@ -1,0 +1,34 @@
+{
+ "_id": "_design/calendar",
+ "language": "javascript",
+ "views": {
+  "by_date_courtroom_time": {
+   "map": "function (doc) {\n  if (doc.type === 'hearing' && doc.date && doc.courtroom && doc.start_time) {\n    emit([doc.date, doc.courtroom, doc.start_time, doc.judge, doc.case_number], {\n      id: doc._id,\n      judge: doc.judge,\n      case_number: doc.case_number,\n      case_title: doc.case_title,\n      matter: doc.matter,\n      movant: doc.movant || null,\n      trustee: doc.trustee || null,\n      status: doc.status || 'scheduled'\n    });\n  }\n}"
+  },
+  "by_judge_date": {
+   "map": "function (doc) {\n  if (doc.type === 'hearing' && doc.judge && doc.date) {\n    emit([doc.judge, doc.date, doc.start_time, doc.courtroom], {\n      id: doc._id,\n      courtroom: doc.courtroom,\n      case_number: doc.case_number,\n      case_title: doc.case_title,\n      matter: doc.matter,\n      movant: doc.movant || null,\n      trustee: doc.trustee || null,\n      status: doc.status || 'scheduled'\n    });\n  }\n}"
+  },
+  "by_courtroom_date": {
+   "map": "function (doc) {\n  if (doc.type === 'hearing' && doc.courtroom && doc.date) {\n    emit([doc.courtroom, doc.date, doc.start_time, doc.judge], {\n      id: doc._id,\n      judge: doc.judge,\n      case_number: doc.case_number,\n      case_title: doc.case_title,\n      matter: doc.matter,\n      movant: doc.movant || null,\n      trustee: doc.trustee || null,\n      status: doc.status || 'scheduled'\n    });\n  }\n}"
+  },
+  "by_case": {
+   "map": "function (doc) {\n  if (doc.type === 'hearing' && doc.case_number) {\n    emit([doc.case_number, doc.date, doc.start_time], {\n      id: doc._id,\n      courtroom: doc.courtroom,\n      judge: doc.judge,\n      matter: doc.matter,\n      movant: doc.movant || null,\n      trustee: doc.trustee || null,\n      status: doc.status || 'scheduled'\n    });\n  }\n}"
+  },
+  "by_movant": {
+   "map": "function (doc) {\n  if (doc.type === 'hearing' && doc.movant) {\n    emit([doc.movant, doc.date, doc.start_time], {\n      id: doc._id,\n      case_number: doc.case_number,\n      case_title: doc.case_title,\n      courtroom: doc.courtroom,\n      judge: doc.judge,\n      matter: doc.matter,\n      trustee: doc.trustee || null,\n      status: doc.status || 'scheduled'\n    });\n  }\n}"
+  },
+  "by_trustee": {
+   "map": "function (doc) {\n  if (doc.type === 'hearing' && doc.trustee) {\n    emit([doc.trustee, doc.date, doc.start_time], {\n      id: doc._id,\n      case_number: doc.case_number,\n      case_title: doc.case_title,\n      courtroom: doc.courtroom,\n      judge: doc.judge,\n      matter: doc.matter,\n      movant: doc.movant || null,\n      status: doc.status || 'scheduled'\n    });\n  }\n}"
+  },
+  "by_status": {
+   "map": "function (doc) {\n  if (doc.type === 'hearing' && doc.status) {\n    emit([doc.date, doc.status, doc.courtroom, doc.start_time], {\n      id: doc._id,\n      case_number: doc.case_number,\n      matter: doc.matter,\n      judge: doc.judge,\n      trustee: doc.trustee || null\n    });\n  }\n}"
+  }
+ },
+ "lists": {
+  "nested_calendar": "function (head, req) {\n  var row;\n  var result = {\n    date: null,\n    timezone: 'America/Denver',\n    court: 'U.S. Bankruptcy Court, District of Utah',\n    sessions: []\n  };\n  var sessions = {};\n\n  while ((row = getRow())) {\n    var key = row.key;\n    var val = row.value;\n    var date = key[0];\n    var courtroom = key[1];\n    var start_time = key[2];\n    var judge = key[3];\n    var case_number = key[4];\n\n    if (!result.date) result.date = date;\n\n    if (!sessions[courtroom]) {\n      sessions[courtroom] = { courtroom: courtroom, slots: {} };\n    }\n    var room = sessions[courtroom];\n\n    if (!room.slots[start_time]) {\n      room.slots[start_time] = { start_time: start_time, judges: {} };\n    }\n    var slot = room.slots[start_time];\n\n    if (!slot.judges[judge]) {\n      slot.judges[judge] = { judge: judge, cases: {} };\n    }\n    var j = slot.judges[judge];\n\n    if (!j.cases[case_number]) {\n      j.cases[case_number] = {\n        case: { number: case_number, title: val.case_title },\n        matters: []\n      };\n    }\n    j.cases[case_number].matters.push({\n      id: val.id,\n      matter: val.matter,\n      movant: val.movant,\n      trustee: val.trustee,\n      status: val.status\n    });\n  }\n\n  Object.keys(sessions).sort().forEach(function (roomName) {\n    var room = sessions[roomName];\n    var slotsArr = Object.keys(room.slots).sort().map(function (t) {\n      var slot = room.slots[t];\n      slot.judges = Object.keys(slot.judges).sort().map(function (jn) {\n        var j = slot.judges[jn];\n        j.cases = Object.keys(j.cases).map(function (cn) { return j.cases[cn]; });\n        return j;\n      });\n      return slot;\n    });\n    room.slots = slotsArr;\n    result.sessions.push(room);\n  });\n\n  send(JSON.stringify(result, null, 2));\n}"
+ },
+ "filters": {
+  "hearings": "function (doc, req) {\n  return doc.type === 'hearing';\n}",
+  "hearings_by_date": "function (doc, req) {\n  if (doc.type !== 'hearing') return false;\n  if (req.query.date && doc.date !== req.query.date) return false;\n  return true;\n}"
+ }
+}
