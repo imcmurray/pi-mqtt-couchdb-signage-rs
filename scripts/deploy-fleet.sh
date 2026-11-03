@@ -1,7 +1,7 @@
 #!/bin/bash
 # Build pi-slideshow-rs once and roll it out to every TV the manager knows.
 #
-#   scripts/deploy-fleet.sh [--manager http://192.168.1.215:3000] [--only <ip>] [--dry-run]
+#   scripts/deploy-fleet.sh [--manager http://192.168.1.70:3000] [--only <ip>] [--dry-run]
 #
 # Canary first: the first TV is updated and must come back healthy (service
 # active and reporting the new version) before the rest are touched. Each TV
@@ -10,7 +10,7 @@
 # Needs key-based SSH as pi@<tv> with passwordless sudo for systemctl.
 set -euo pipefail
 
-MANAGER="${SIGNAGE_MANAGER:-http://192.168.1.215:3000}"
+MANAGER="${SIGNAGE_MANAGER:-http://192.168.1.70:3000}"
 ONLY=""
 DRY_RUN=false
 while [[ $# -gt 0 ]]; do

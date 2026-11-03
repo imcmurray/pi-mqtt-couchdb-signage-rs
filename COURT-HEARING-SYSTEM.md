@@ -561,7 +561,7 @@ Hearings are converted to DataRow layers with this structure:
 
 3. Check CouchDB connection:
    ```bash
-   curl http://192.168.1.215:5984/layers/_all_docs
+   curl http://192.168.1.70:5984/layers/_all_docs
    ```
 
 ### CSV import failing

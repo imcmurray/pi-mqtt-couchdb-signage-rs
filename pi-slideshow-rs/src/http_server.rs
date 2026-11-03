@@ -389,7 +389,7 @@ mod tests {
 
     #[test]
     fn control_only_from_allowed_peers() {
-        let manager: IpAddr = "192.168.1.215".parse().unwrap();
+        let manager: IpAddr = "192.168.1.70".parse().unwrap();
         let laptop: IpAddr = "192.168.1.50".parse().unwrap();
         let local: IpAddr = "127.0.0.1".parse().unwrap();
         assert!(peer_allowed(&[], Some(laptop)), "no list keeps the old open behaviour");

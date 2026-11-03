@@ -31,7 +31,7 @@ tests/
 ## Running Tests
 
 ### Prerequisites
-- MQTT broker running on 192.168.1.215:1883
+- MQTT broker running on 192.168.1.70:1883
 - pi-slideshow-rs built and ready to run
 - Node.js dependencies installed (`npm install`)
 

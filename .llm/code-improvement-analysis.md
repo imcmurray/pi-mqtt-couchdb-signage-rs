@@ -35,8 +35,8 @@
 
 ### 4. Hardcoded Configuration Values 🔧
 - **Found hardcoded values**:
-  - Default MQTT broker: `mqtt://192.168.1.215:1883`
-  - Default CouchDB: `http://192.168.1.215:5984`
+  - Default MQTT broker: `mqtt://192.168.1.70:1883`
+  - Default CouchDB: `http://192.168.1.70:5984`
   - Port: `3000`
   - Heartbeat interval: `30000` (30 seconds)
 - **Files affected**: 

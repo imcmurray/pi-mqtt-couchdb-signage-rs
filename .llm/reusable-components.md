@@ -237,7 +237,7 @@ try {
 **Environment-based URL Building** (lines 5-18):
 ```javascript
 const couchdbUrl = (() => {
-  const baseUrl = process.env.COUCHDB_URL || 'http://192.168.1.215:5984';
+  const baseUrl = process.env.COUCHDB_URL || 'http://192.168.1.70:5984';
   const username = process.env.COUCHDB_USERNAME;
   const password = process.env.COUCHDB_PASSWORD;
   
@@ -371,7 +371,7 @@ struct Args {
     #[arg(short, long, default_value_t = 30)]
     delay: u64,
     
-    #[arg(long, default_value = "mqtt://192.168.1.215:1883")]
+    #[arg(long, default_value = "mqtt://192.168.1.70:1883")]
     mqtt_broker: String,
     
     // ... more arguments with defaults

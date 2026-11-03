@@ -347,8 +347,8 @@ alert.dismiss(reason) - mark as dismissed
 ## Testing Instructions
 
 ### Prerequisites
-1. **CouchDB** running at configured URL (default: http://192.168.1.215:5984)
-2. **MQTT Broker** running at configured URL (default: mqtt://192.168.1.215:1883)
+1. **CouchDB** running at configured URL (default: http://192.168.1.70:5984)
+2. **MQTT Broker** running at configured URL (default: mqtt://192.168.1.70:1883)
 3. **At least one TV** registered in the system with multi-layer support
 
 ### Unit Tests (✅ Passing)
@@ -406,7 +406,7 @@ npm test
 ### MQTT Message Verification
 Monitor MQTT traffic to verify alert delivery:
 ```bash
-mosquitto_sub -h 192.168.1.215 -t 'signage_dev/tv/+/alert' -v
+mosquitto_sub -h 192.168.1.70 -t 'signage_dev/tv/+/alert' -v
 ```
 
 Expected message format:
@@ -429,10 +429,10 @@ Expected message format:
 Check CouchDB to verify data persistence:
 ```bash
 # Check alerts database
-curl http://192.168.1.215:5984/signage_dev_alerts/_all_docs?include_docs=true
+curl http://192.168.1.70:5984/signage_dev_alerts/_all_docs?include_docs=true
 
 # Check layers database for emergency layers
-curl http://192.168.1.215:5984/signage_dev_layers/_all_docs?include_docs=true
+curl http://192.168.1.70:5984/signage_dev_layers/_all_docs?include_docs=true
 ```
 
 ## Current Limitations & Future Enhancements

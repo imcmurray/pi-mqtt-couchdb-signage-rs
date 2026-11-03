@@ -1,7 +1,7 @@
 // The live court calendar against a real CouchDB, with the court's
 // _design/calendar (tests/fixtures/calendar/design.json). Skipped unless
 // COUCHDB_TEST_URL is set, e.g.
-//   COUCHDB_TEST_URL=http://admin:password@192.168.1.215:5984 npx jest tests/integration/couchdb
+//   COUCHDB_TEST_URL=http://admin:password@192.168.1.70:5984 npx jest tests/integration/couchdb
 // Creates and deletes its own scratch database; touches nothing else.
 const calendarSourceService = require('../../../src/services/calendarSourceService');
 const datasetService = require('../../../src/services/datasetService');

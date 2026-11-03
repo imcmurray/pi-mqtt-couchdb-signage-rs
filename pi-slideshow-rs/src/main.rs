@@ -88,7 +88,7 @@ struct Args {
     framebuffer: PathBuf,
 
     /// MQTT broker URL
-    #[arg(long, default_value = "mqtt://192.168.1.215:1883")]
+    #[arg(long, default_value = "mqtt://192.168.1.70:1883")]
     mqtt_broker: String,
 
     /// CouchDB server URL

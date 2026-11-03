@@ -76,7 +76,7 @@ are **North** and **South** only.
 
 ## Deploying (homelab)
 
-- **Manager** on dockge1 (`192.168.1.215:3000`, the `/opt/stacks/digsig-manager`
+- **Manager** on dockge1 (`192.168.1.70:3000`, the `/opt/stacks/digsig-manager`
   stack mounted as `/app`, nodemon restarts on `.js` changes):
 
   ```

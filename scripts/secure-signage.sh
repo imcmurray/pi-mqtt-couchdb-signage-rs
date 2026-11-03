@@ -2,7 +2,7 @@
 # Move the signage off shared admin credentials and lock down MQTT and the TVs'
 # HTTP control, in an order that keeps everything running at each step.
 #
-#   COUCHDB_ADMIN_URL=http://admin:…@192.168.1.215:5984 scripts/secure-signage.sh [--host dockge215] [--step N]
+#   COUCHDB_ADMIN_URL=http://admin:…@192.168.1.70:5984 scripts/secure-signage.sh [--host dockge215] [--step N]
 #
 # Run from a machine with SSH to the Docker host (docker group) and to each TV as
 # pi (passwordless sudo). Steps (each is safe to re-run; --step N starts at N):
@@ -25,7 +25,7 @@ set -euo pipefail
 HOST="dockge215"
 STACK="/opt/stacks/digsig-manager"
 MQTT_CONF_DIR="/opt/MQTT/mosquitto/config"
-SERVER_IP="192.168.1.215"
+SERVER_IP="192.168.1.70"
 MANAGER="http://$SERVER_IP:3000"
 START=1
 while [[ $# -gt 0 ]]; do

@@ -2,7 +2,7 @@
 # Turn a freshly imaged Raspberry Pi into a signage TV, the same way pi21 is set up.
 #
 #   scripts/provision-pi.sh <pi-ip> --name "Courtroom North Door" --location "3rd floor" \
-#       [--manager http://192.168.1.215:3000] [--server 192.168.1.215] [--reboot]
+#       [--manager http://192.168.1.70:3000] [--server 192.168.1.70] [--reboot]
 #
 # Before: flash Raspberry Pi OS Lite (64-bit, bookworm) with Raspberry Pi Imager,
 # user "pi", your SSH key, and the hostname you want; boot it on the network.
@@ -18,8 +18,8 @@ set -euo pipefail
 
 PI_IP="${1:-}"; shift || true
 NAME=""; LOCATION=""; REBOOT=false
-MANAGER="${SIGNAGE_MANAGER:-http://192.168.1.215:3000}"
-SERVER="192.168.1.215"
+MANAGER="${SIGNAGE_MANAGER:-http://192.168.1.70:3000}"
+SERVER="192.168.1.70"
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --name) NAME="$2"; shift 2 ;;
