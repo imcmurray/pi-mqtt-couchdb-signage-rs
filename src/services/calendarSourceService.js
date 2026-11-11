@@ -222,13 +222,23 @@ class CalendarSourceService {
           `/_changes?feed=longpoll&since=${encodeURIComponent(since)}&timeout=${LONGPOLL_MS}`,
           LONGPOLL_MS + 10000);
         if (generation !== this.generation) return;
-        since = changes.last_seq;
+        since = changes.last_seq ?? 'now';
         if (changes.results?.length) {
           clearTimeout(this.changeTimer);
           this.changeTimer = setTimeout(() => this.sync().catch(() => {}), CHANGE_DEBOUNCE_MS);
         }
       } catch (error) {
         if (generation !== this.generation) return;
+        if (error.status === 400 && since !== 'now') {
+          // CouchDB rejected our position in the feed (seen after the server was
+          // upgraded/recreated under a long-running follower). Retrying the same
+          // value can never succeed, so start over from 'now' and re-read the
+          // calendar at once so nothing changed in the gap is missed.
+          console.warn(`Calendar change feed rejected since=${since} (${error.message}); restarting from now`);
+          since = 'now';
+          this.sync().catch(() => {});
+          continue;
+        }
         this.status = { ...this.status, state: 'error', error: `Change feed: ${error.message}` };
         await sleep(RETRY_MS);
       }

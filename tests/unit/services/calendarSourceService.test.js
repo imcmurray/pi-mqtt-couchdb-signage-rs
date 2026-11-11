@@ -91,3 +91,48 @@ describe('calendarSourceService.syncOnce', () => {
     expect(service.status.state).toBe('error');
   });
 });
+
+describe('calendarSourceService.follow', () => {
+  const service = require('../../../src/services/calendarSourceService');
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+    service.stop();
+  });
+
+  it('restarts from now and re-reads when CouchDB rejects the saved sequence (e.g. after a server upgrade)', async () => {
+    service.settings = { database: 'court_calendar', server_url: 'http://couch:5984' };
+    service.status = { state: 'live' };
+    const generation = service.generation;
+    const sinces = [];
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const sync = jest.spyOn(service, 'sync').mockResolvedValue();
+    jest.spyOn(service, 'request').mockImplementation(async (conn, path) => {
+      const since = decodeURIComponent(path.match(/since=([^&]*)/)[1]);
+      sinces.push(since);
+      if (sinces.length === 1) return { results: [], last_seq: '12-g1AAAAold' };
+      if (sinces.length === 2) {
+        throw Object.assign(new Error("400 Malformed sequence supplied in 'since' parameter."), { status: 400 });
+      }
+      service.generation++; // stop the loop
+      return { results: [], last_seq: '1-g1AAAAnew' };
+    });
+    await service.follow(generation);
+    expect(sinces).toEqual(['now', '12-g1AAAAold', 'now']);
+    expect(sync).toHaveBeenCalledTimes(1);
+    expect(service.status.state).not.toBe('error');
+  });
+
+  it('falls back to now when the feed returns no last_seq', async () => {
+    service.settings = { database: 'court_calendar', server_url: 'http://couch:5984' };
+    const generation = service.generation;
+    const sinces = [];
+    jest.spyOn(service, 'request').mockImplementation(async (conn, path) => {
+      sinces.push(decodeURIComponent(path.match(/since=([^&]*)/)[1]));
+      if (sinces.length === 2) service.generation++;
+      return { results: [] };
+    });
+    await service.follow(generation);
+    expect(sinces).toEqual(['now', 'now']);
+  });
+});
