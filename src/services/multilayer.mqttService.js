@@ -34,7 +34,13 @@ class MultilayerMqttService extends EventEmitter {
 
     this.client.on('error', (error) => {
       console.error('MQTT error:', error);
-      this.emit('error', error);
+      // The mqtt client reconnects on its own (reconnectPeriod), so a broker
+      // restart is recoverable. Only re-emit when something listens: emitting
+      // 'error' on an EventEmitter with no listener throws, which killed the
+      // whole server on every Mosquitto restart (ECONNRESET, 2026-11-25).
+      if (this.listenerCount('error') > 0) {
+        this.emit('error', error);
+      }
     });
 
     this.client.on('close', () => {
